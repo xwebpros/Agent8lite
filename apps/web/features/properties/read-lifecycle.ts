@@ -4,11 +4,13 @@ type PropertyRead = { kind: ReadKind; scope: string; controller: AbortController
 /** A cleared surface cannot be restored by a transport that finishes after abort. */
 export class PropertyReads {
   private pending = new Map<ReadKind, PropertyRead>();
+  private ongoing = new Set<PropertyRead>();
 
   begin(kind: ReadKind, scope: string): PropertyRead {
     this.cancel(kind);
     const read = { kind, scope, controller: new AbortController() };
     this.pending.set(kind, read);
+    this.ongoing.add(read);
     return read;
   }
 
@@ -22,8 +24,21 @@ export class PropertyReads {
   }
 
   cancel(kind: ReadKind) {
-    this.pending.get(kind)?.controller.abort();
+    const read = this.pending.get(kind);
+    if (read) {
+      read.controller.abort();
+      this.ongoing.delete(read);
+    }
     this.pending.delete(kind);
+  }
+
+  busy(kind: ReadKind) {
+    const read = this.pending.get(kind);
+    return read !== undefined && this.ongoing.has(read);
+  }
+
+  finish(read: PropertyRead) {
+    this.ongoing.delete(read);
   }
 
   clear() {

@@ -14,6 +14,31 @@ function deferred<T>() {
 }
 
 describe("W07 private property read completion ordering (no browser acceptance)", () => {
+  it("marks completed reads idle while keeping a queued current state update valid", () => {
+    const reads = new PropertyReads();
+    const list = reads.begin("list", "current-scope");
+    const detail = reads.begin("detail", "current-scope");
+    expect(reads.busy("list") || reads.busy("detail")).toBe(true);
+    reads.finish(list);
+    expect(reads.busy("list")).toBe(false);
+    expect(reads.busy("detail")).toBe(true);
+    expect(reads.current(list, "current-scope", true)).toBe(true);
+    reads.finish(detail);
+    expect(reads.busy("list") || reads.busy("detail")).toBe(false);
+  });
+
+  it("finishing an aborted old read does not mark its replacement idle", () => {
+    const reads = new PropertyReads();
+    const old = reads.begin("list", "current-scope");
+    const replacement = reads.begin("list", "current-scope");
+    reads.finish(old);
+    expect(reads.busy("list")).toBe(true);
+    expect(reads.current(old, "current-scope", true)).toBe(false);
+    expect(reads.current(replacement, "current-scope", true)).toBe(true);
+    reads.clear();
+    expect(reads.busy("list")).toBe(false);
+  });
+
   it.each(["list-first", "detail-first"])(
     "keeps unavailable detail invalidation final even when a list transport ignores abort (%s)",
     async (order) => {

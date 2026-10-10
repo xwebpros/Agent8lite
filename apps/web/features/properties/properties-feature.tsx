@@ -6,6 +6,7 @@ import type { components } from "../../../../packages/contracts/generated/api";
 import { api, ApiError } from "../../lib/api";
 import { PropertyCard, PropertyDetail, type PropertyListing } from "./property-view";
 import { propertiesAreCurrent, propertyExpiryDelay, PropertyReads } from "./read-lifecycle";
+import { refreshPropertyPages } from "./refresh-pages";
 import {
   emptyPropertyFilters,
   propertySearchParams,
@@ -54,6 +55,8 @@ export default function PropertiesFeature({
   const [reads] = useState(() => new PropertyReads());
   const currentSelection = useRef<string | null>(null);
   const applied = useRef(propertySearchParams(emptyPropertyFilters, "updated_desc"));
+  const paging = useRef(new URLSearchParams(applied.current));
+  const visibleCount = useRef(20);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const focusDetailOnce = useRef(false);
   const returnFocus = useRef<HTMLButtonElement | null>(null);
@@ -69,9 +72,12 @@ export default function PropertiesFeature({
   const expired = !propertiesAreCurrent([...scopedPage.items, ...(scopedDetail ? [scopedDetail] : [])]);
   const page = expired ? emptyPage : scopedPage;
   const currentDetail = expired ? null : scopedDetail;
+  if (enabled && result?.scope === context && !expired) visibleCount.current = page.items.length;
 
   const clearPrivate = useCallback(() => {
     reads.clear();
+    visibleCount.current = 20;
+    paging.current = new URLSearchParams(applied.current);
     setResult(null);
     setDetail(null);
     setLoaded(false);
@@ -115,16 +121,17 @@ export default function PropertiesFeature({
         setDetailError(failed(failure));
       } finally {
         if (reads.current(request, live.current.scope, live.current.enabled)) setDetailLoading(false);
+        reads.finish(request);
       }
     },
     [base, context, clearPrivate, failed, reads],
   );
 
   const loadPage = useCallback(
-    async (params: URLSearchParams, append = false, cursor?: string | null) => {
+    async (params: URLSearchParams, append = false, cursor?: string | null, count = 20) => {
       if (!live.current.enabled || live.current.scope !== context) return;
       const request = reads.begin("list", context);
-      const query = new URLSearchParams(params);
+      const query = new URLSearchParams(append ? paging.current : params);
       if (append && cursor) query.set("cursor", cursor);
       if (!append) {
         setResult(null);
@@ -134,19 +141,27 @@ export default function PropertiesFeature({
       setError("");
       setNotice("");
       try {
-        const response = await api<Page>(`${base}?${query}`, { signal: request.controller.signal });
+        const read = async (query: URLSearchParams) =>
+          (await api<Page>(`${base}?${query}`, { signal: request.controller.signal })).data;
+        const response = append
+          ? { page: await read(query), params: new URLSearchParams(paging.current) }
+          : await refreshPropertyPages(params, count, read, () =>
+              reads.current(request, live.current.scope, live.current.enabled),
+            );
         if (!reads.current(request, live.current.scope, live.current.enabled)) return;
-        if (!propertiesAreCurrent(response.data.items))
+        if (!response) return;
+        if (!propertiesAreCurrent(response.page.items))
           throw new Error("These synthetic results expired while loading. Refresh the search.");
+        paging.current = response.params;
         setResult((previous) => {
           if (!reads.current(request, live.current.scope, live.current.enabled)) return previous;
           const items =
             append && previous?.scope === context
-              ? [...previous.page.items, ...response.data.items]
-              : response.data.items;
+              ? [...previous.page.items, ...response.page.items]
+              : response.page.items;
           return {
             scope: context,
-            page: { ...response.data, items: [...new Map(items.map((item) => [item.id, item])).values()] },
+            page: { ...response.page, items: [...new Map(items.map((item) => [item.id, item])).values()] },
           };
         });
         setLoaded(true);
@@ -157,6 +172,7 @@ export default function PropertiesFeature({
         setError(failed(failure));
       } finally {
         if (reads.current(request, live.current.scope, live.current.enabled)) setLoading(false);
+        reads.finish(request);
       }
     },
     [base, context, clearPrivate, failed, reads],
@@ -172,6 +188,7 @@ export default function PropertiesFeature({
     setFilters({ ...emptyPropertyFilters });
     setSort("updated_desc");
     applied.current = propertySearchParams(emptyPropertyFilters, "updated_desc");
+    paging.current = new URLSearchParams(applied.current);
     if (permitted && online) void loadPage(applied.current);
     return () => reads.clear();
   }, [context, online, permitted, clearPrivate, loadPage, reads]);
@@ -179,7 +196,8 @@ export default function PropertiesFeature({
   useEffect(() => {
     if (!enabled) return;
     const refresh = () => {
-      void loadPage(applied.current);
+      if (reads.busy("list") || reads.busy("detail")) return;
+      void loadPage(applied.current, false, null, visibleCount.current);
       if (currentSelection.current) void loadDetail(currentSelection.current);
     };
     const timer = setInterval(refresh, 30_000);
@@ -193,7 +211,7 @@ export default function PropertiesFeature({
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [enabled, loadPage, loadDetail]);
+  }, [enabled, loadPage, loadDetail, reads]);
 
   useEffect(() => {
     const items = [...scopedPage.items, ...(scopedDetail ? [scopedDetail] : [])];
@@ -259,7 +277,7 @@ export default function PropertiesFeature({
           type="button"
           disabled={!enabled || loading}
           onClick={() => {
-            void loadPage(applied.current);
+            void loadPage(applied.current, false, null, visibleCount.current);
             if (currentSelection.current) void loadDetail(currentSelection.current);
           }}
         >
