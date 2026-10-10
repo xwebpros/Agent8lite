@@ -345,6 +345,87 @@ describe("atomic commit, replay and crash recovery", () => {
 });
 
 describe("withdrawal, overlap and freshness", () => {
+  it("keeps pending B when historical equal-timestamp A replays before a later page failure", async () => {
+    const h = await replicationHarness([]);
+    const active = { ...h.records[0], sourceModifiedAt: watermark };
+    const pending = { ...active, status: "pending" as const, sourceStatus: "Mock pending" };
+    (h.adapter as ScriptedMock).script.push(
+      page([upsert(active)], "initial-B", null),
+      page([upsert(pending)]),
+      page([upsert(active)], "historical-B", null),
+      new Error("synthetic later overlap page failure"),
+      page([upsert(pending)]),
+    );
+    await finishCycle(h);
+    const before = structuredClone(h.store.listings.get(active.sourceListingKey)!);
+    const invalidations = [...h.store.invalidations];
+    expect(before.canonical.status).toBe("pending");
+    expect((await stepMockReplication(h.store.checkpoint, h.ports)).status).toBe("advanced");
+    expect(h.store.listings.get(active.sourceListingKey)).toEqual(before);
+    const boundary = structuredClone(h.store.checkpoint);
+    expect(await stepMockReplication(boundary, h.ports)).toEqual(blocked("read_failed"));
+    expect(h.store.checkpoint).toEqual(boundary);
+    expect(h.store.listings.get(active.sourceListingKey)).toEqual(before);
+    await finishCycle(h);
+    expect(h.store.listings.get(active.sourceListingKey)).toEqual(before);
+    expect([...h.store.invalidations]).toEqual(invalidations);
+    expect(h.store.appliedSourceChanges.get(active.sourceListingKey)?.size).toBe(2);
+  });
+
+  it("recognizes historical source identity despite reordered fields and refreshed ingestion clocks", async () => {
+    const h = await replicationHarness([]);
+    const active = h.records[0];
+    const pending = { ...active, status: "pending" as const, sourceStatus: "Mock pending" };
+    const historical = {
+      ...active,
+      ingestedAt: "2026-10-11T00:01:00Z",
+      expiresAt: "2026-10-12T00:01:00Z",
+      attribution: Object.fromEntries(
+        Object.entries(active.attribution).reverse(),
+      ) as typeof active.attribution,
+    };
+    (h.adapter as ScriptedMock).script.push(
+      page([upsert(active)]),
+      page([upsert(pending)]),
+      page([upsert(historical)]),
+    );
+    await finishCycle(h);
+    await finishCycle(h);
+    const before = structuredClone(h.store.listings.get(active.sourceListingKey)!);
+    await finishCycle(h);
+    expect(h.store.listings.get(active.sourceListingKey)).toEqual(before);
+    expect(h.store.appliedSourceChanges.get(active.sourceListingKey)?.size).toBe(2);
+  });
+
+  it.each([1, "before_commit"] as const)(
+    "rolls back source identities on %s and permits the original retry",
+    async (failure) => {
+      const h = await replicationHarness([]);
+      const changes = [upsert(h.records[0]), upsert(h.records[1])];
+      (h.adapter as ScriptedMock).script.push(page(changes), page(changes));
+      h.store.failure = failure;
+      expect(await stepMockReplication(h.store.checkpoint, h.ports)).toEqual(unknownCommit);
+      expect(h.store.appliedSourceChanges.size).toBe(0);
+      expect(h.store.listings.size).toBe(0);
+      h.store.failure = null;
+      expect((await stepMockReplication(h.store.checkpoint, h.ports)).status).toBe("completed");
+      expect(h.store.listings.size).toBe(2);
+      expect(h.store.appliedSourceChanges.size).toBe(2);
+    },
+  );
+
+  it("publishes the source identity ledger with an acknowledged-lost commit", async () => {
+    const h = await replicationHarness([]);
+    (h.adapter as ScriptedMock).script.push(page([upsert(h.records[0])]), page([upsert(h.records[0])]));
+    h.store.failure = "after_commit";
+    expect(await stepMockReplication(h.store.checkpoint, h.ports)).toEqual(unknownCommit);
+    expect(h.store.appliedSourceChanges.get(h.records[0].sourceListingKey)?.size).toBe(1);
+    const before = structuredClone(h.store.listings.get(h.records[0].sourceListingKey)!);
+    h.store.failure = null;
+    await finishCycle(h);
+    expect(h.store.listings.get(h.records[0].sourceListingKey)).toEqual(before);
+  });
+
   it("replays the existing mock without duplicate native IDs, invalidations or expiry renewal", async () => {
     const h = await replicationHarness();
     await finishCycle(h);

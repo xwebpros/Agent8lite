@@ -40,8 +40,18 @@ export class ScriptedMock extends MockMlsAdapter {
   }
 }
 
+function stableContent(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableContent);
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, stableContent(item)]),
+    );
+  return value;
+}
 const content = (listing: CanonicalListing) =>
-  JSON.stringify({ ...listing, ingestedAt: null, expiresAt: null });
+  JSON.stringify(stableContent({ ...listing, ingestedAt: null, expiresAt: null }));
 const copy = <T>(value: T): T => structuredClone(value);
 
 /** In-memory transaction model only. It proves atomic publish/order/CAS; it is not DB durability. */
@@ -50,6 +60,7 @@ export class MemoryReplicationStore {
   tombstones = new Set<string>();
   invalidations = new Set<string>();
   receipts = new Set<string>();
+  appliedSourceChanges = new Map<string, Set<string>>();
   readonly events: string[] = [];
   failure: "before_commit" | "after_commit" | number | null = null;
   beforePublish?: () => Promise<void>;
@@ -71,6 +82,9 @@ export class MemoryReplicationStore {
     const listings = new Map([...this.listings].map(([key, listing]) => [key, copy(listing)]));
     const tombstones = new Set(this.tombstones);
     const invalidations = new Set(this.invalidations);
+    const appliedSourceChanges = new Map(
+      [...this.appliedSourceChanges].map(([key, identities]) => [key, new Set(identities)]),
+    );
     for (const [index, change] of plan.changes.entries()) {
       if (this.failure === index) throw new Error("synthetic change-processing crash");
       const key = change.sourceListingKey;
@@ -84,6 +98,10 @@ export class MemoryReplicationStore {
         }
       } else if (change.listing && !tombstones.has(key)) {
         const listing = change.listing;
+        // Retain every applied version, not only the latest row. Historical A cannot undo B
+        // when source timestamps tie and an overlap cycle replays A on an earlier page.
+        const identity = createHash("sha256").update(content(listing)).digest("hex");
+        if (appliedSourceChanges.get(key)?.has(identity)) continue;
         // Test contract: unchanged overlap does not renew age/expiry or duplicate invalidations.
         if (existing && content(existing.canonical) === content(listing)) continue;
         // Known older changes cannot roll back a newer value; equal timestamps still process.
@@ -107,6 +125,9 @@ export class MemoryReplicationStore {
           withdrawnAt: listing.status === "off_market" || listing.status === "closed" ? watermark : null,
           canonical: copy(listing),
         });
+        const identities = appliedSourceChanges.get(key) ?? new Set<string>();
+        identities.add(identity);
+        appliedSourceChanges.set(key, identities);
         // Stable event identity for this test ledger; production source identity needs review.
         invalidations.add(`change:${key}:${content(listing)}`);
         if (listing.status === "off_market" || listing.status === "closed") {
@@ -124,6 +145,7 @@ export class MemoryReplicationStore {
     this.listings = listings;
     this.tombstones = tombstones;
     this.invalidations = invalidations;
+    this.appliedSourceChanges = appliedSourceChanges;
     this.checkpoint = copy(plan.next);
     this.receipts.add(plan.receiptId);
     this.events.push("commit");
