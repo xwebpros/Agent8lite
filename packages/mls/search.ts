@@ -118,7 +118,10 @@ export function searchNativeMockListings(
       JSON.stringify(
         stable({
           context: {
-            ...context,
+            organizationId: context.organizationId,
+            userId: context.userId,
+            memberId: context.memberId,
+            roleId: context.roleId,
             permissions: [...context.permissions].sort(
               (a, b) => a.code.localeCompare(b.code) || a.scope.localeCompare(b.scope),
             ),
@@ -126,6 +129,7 @@ export function searchNativeMockListings(
           criteria,
           limit,
           sort,
+          generation: snapshot.generation,
           feeds: [...snapshot.feeds].sort((a, b) => a.id.localeCompare(b.id)),
           listings: [...snapshot.listings].sort((a, b) => a.id.localeCompare(b.id)),
         }),

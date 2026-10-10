@@ -22,6 +22,10 @@ Review packet: `docs/proposals/W07/integration-boundary.md`, unnumbered `propose
 
 ## Executed verification
 
+Approved backend now implemented behind unregistered routes: `apps/api/src/mls/index.ts` exports `tryNativeMockRead`, `NativeMockReadService`, `NativeMockListingRepository`. Exact shared patch/source mapping: `docs/proposals/W07/backend-export-contract.md`. The service rechecks existing MLS entitlement and org-only permission; current source locks precede DB clock; current raw metadata generation invalidates cursors. No business write or session bypass. Responsive owned feature is the next step.
+
+`node tests/mls/run-isolated.mjs` repository and HTTP batches: 9/9 and 7/7 PASS in fresh separate disposable databases on 0001–0011 plus approved candidate. Actual role/RLS, lock races/expiry while blocked, denied business writes, source/rights/capability/membership current-state denial, cursor withdrawal/invalidation and authenticated HTTP/no-store/generic 404 boundaries verified. Initial failures were test-only duplicate role names and a nonnested inquiry path expectation, corrected without relaxing product behavior. All created DBs/private directories/ephemeral HTTP listeners removed by the owned runner. No browser used.
+
 Branch/worktree clean before branching; supplied foundation commit exists. Node 24.19.0 / pnpm 11.25.0 match. `pnpm install --frozen-lockfile` passed without shared file changes.
 
 - `pnpm exec tsc --noEmit -p tests/mls/tsconfig.json`: PASS.
