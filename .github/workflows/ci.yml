@@ -51,10 +51,16 @@ jobs:
       - run: pnpm db:seed
       - run: pnpm typecheck
       - run: pnpm lint
+      - name: Hosted launch and read-only preflight boundaries
+        run: |
+          pnpm exec vitest run --config scripts/vitest.launch.config.mts
+          pnpm exec vitest run --config scripts/hosting/vitest.config.mts
       - run: pnpm build
       - run: pnpm verify:runtime
       - name: Compiled API fixture-mode and production-denial smoke
         run: pnpm verify:runtime:local
+      - name: Assigned-port application and isolated hosted-demo smoke
+        run: pnpm verify:launch:local
       - run: pnpm dev > /tmp/estate-dev.log 2>&1 &
       - name: Await synthetic servers
         run: node scripts/wait-ready.mjs

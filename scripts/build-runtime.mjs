@@ -75,7 +75,7 @@ async function build() {
   if (
     process.version !== "v" + workspace.engines.node ||
     process.argv.length !== 2 ||
-    compiler !== workspace.devDependencies.typescript
+    compiler !== workspace.dependencies.typescript
   )
     throw new Error("runtime_build_configuration_invalid");
   if (await existing(dist)) await checkedDirectory(dist);

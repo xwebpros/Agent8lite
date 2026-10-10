@@ -11,3 +11,5 @@ Open the application at `http://localhost:3000`. Synthetic sign-in offers fictio
 Run `pnpm contracts:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test:isolated` and `pnpm build` for non-browser verification. The isolated test runner creates and removes only its own databases, API processes and private-object directories. Browser tests use the approved Playwright harness when browser access is available.
 
 Trestle is the selected future MLS provider. Live feeds, outbound messaging, charges and production deployment remain disabled until their documented authorization and integration gates are satisfied.
+
+For GoDaddy Node.js hosting, root `npm run build` and `npm start` now use the assigned `PORT`. An explicit password-protected temporary demo can run without PostgreSQL or production identity. See the [GoDaddy launch runbook](docs/runbooks/godaddy-nodejs.md) for required environment variables and the preview's limitations.

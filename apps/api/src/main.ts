@@ -962,10 +962,44 @@ export async function createApplication() {
 
 if (typeof require === "function" && typeof module !== "undefined" && require.main === module) {
   let startingApplication: NestExpressApplication | undefined;
+  const supervised = process.connected;
+  let closing = false;
+  let shutdownRequested = false;
+  const shutdown = async () => {
+    shutdownRequested = true;
+    if (closing || !startingApplication) return;
+    closing = true;
+    try {
+      await startingApplication.close();
+    } catch {
+      process.exitCode = 1;
+    } finally {
+      if (process.connected) process.disconnect();
+    }
+  };
+  if (supervised) {
+    process.on("message", (message: unknown) => {
+      if ((message as { type?: unknown })?.type === "estate-shutdown") void shutdown();
+    });
+    process.on("disconnect", () => void shutdown());
+  }
   createApplication()
     .then(async (app) => {
       startingApplication = app;
+      if (shutdownRequested) {
+        await shutdown();
+        return;
+      }
       await app.listen(Number(process.env.API_PORT ?? 3001), process.env.API_HOST ?? "127.0.0.1");
+      if (shutdownRequested) {
+        await app.close();
+        return;
+      }
+      if (supervised && process.connected) {
+        const address = app.getHttpServer().address();
+        if (!address || typeof address === "string") throw new Error("api_address_invalid");
+        process.send?.({ type: "estate-api-ready", port: address.port });
+      }
       console.log(
         JSON.stringify({
           status: "listening",
@@ -990,5 +1024,6 @@ if (typeof require === "function" && typeof module !== "undefined" && require.ma
       } catch {
         /* Startup logs contain only fixed codes. */
       }
+      if (process.connected) process.disconnect();
     });
 }

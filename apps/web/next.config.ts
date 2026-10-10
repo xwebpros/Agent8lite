@@ -5,6 +5,7 @@ const config: NextConfig = {
   poweredByHeader: false,
   async headers() {
     return [
+      { source: "/demo/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
       {
         source: "/sw.js",
         headers: [

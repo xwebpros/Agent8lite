@@ -79,6 +79,11 @@ async function boundedBody(request: NextRequest, maximum: number): Promise<Array
   return joined.buffer;
 }
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+  if (process.env.HOSTED_DEMO_ENABLED === "true")
+    return Response.json(
+      { code: "preview_api_isolated", title: "Full application API is unavailable in temporary demo mode." },
+      { status: 503, headers: { "Cache-Control": "private, no-store" } },
+    );
   const { path } = await context.params;
   if (
     !path.length ||

@@ -120,7 +120,7 @@ try {
   if (
     manifest.schemaVersion !== 1 ||
     manifest.node !== workspace.engines.node ||
-    manifest.typescript !== workspace.devDependencies.typescript ||
+    manifest.typescript !== workspace.dependencies.typescript ||
     manifest.packageManager !== workspace.packageManager ||
     JSON.stringify(manifest.entrypoints) !== JSON.stringify(entrypoints) ||
     JSON.stringify(manifest.files) !== JSON.stringify(files) ||
