@@ -1,0 +1,166 @@
+.editor {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+  min-width: 0;
+  color: var(--color-ink);
+}
+.editor > * {
+  min-width: 0;
+}
+.editor :is(h2, p, label, legend) {
+  overflow-wrap: anywhere;
+}
+.editor select {
+  max-width: 100%;
+  min-width: 0;
+}
+.heading,
+.blockHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.fields,
+.stack,
+.block,
+.recovery {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.fields {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+.fields legend {
+  padding: 0 8px;
+  font-weight: 600;
+}
+.blocks {
+  display: grid;
+  gap: 20px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.block {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+.blockHeading h3 {
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.actions select {
+  flex: 1 1 150px;
+  width: auto;
+}
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.field input,
+.field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px;
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font: inherit;
+}
+.field textarea {
+  resize: vertical;
+}
+.field [aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+.fieldError {
+  color: var(--color-danger);
+  font-size: 0.875rem;
+}
+.link {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.checkbox input {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  flex-shrink: 0;
+}
+.notice {
+  padding: 12px;
+  background: var(--color-canvas);
+  border-radius: var(--radius-control);
+}
+.help {
+  color: var(--color-muted);
+}
+.recovery pre {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.issues {
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+.issues ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+}
+.issues button {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.editor :is(button, input, textarea, select, pre, h3):focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.editor :is(button, select) {
+  min-height: 44px;
+}
+@media (max-width: 540px) {
+  .link {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fields {
+    padding: 12px;
+  }
+  .actions button {
+    flex: 1 1 auto;
+    white-space: normal;
+  }
+  .actions select {
+    flex-basis: 100%;
+  }
+}

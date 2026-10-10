@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/internal/mock-replication-source-proof-v1",
+  "title": "Ordered synthetic source page proof v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "profile", "context", "generation", "pageDigest", "entries"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "profile": { "const": "ordered-synthetic-v1" },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["organizationId", "feedId", "policyVersion"],
+      "properties": {
+        "organizationId": { "type": "string", "format": "uuid" },
+        "feedId": { "type": "string", "format": "uuid" },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "generation": { "type": "string", "format": "uuid" },
+    "pageDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "entries": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "changeId", "sequence"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0, "maximum": 99 },
+          "changeId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+        }
+      }
+    }
+  }
+}

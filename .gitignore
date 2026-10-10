@@ -1,10 +1,16 @@
+node_modules/
+.next/
+.next-build/
+.pnpm-store/
+dist/
 .local/
 .env
 .env.*
 !.env.example
-node_modules/
 __pycache__/
 *.pyc
 reports/executive/qa/
 test-results/
 playwright-report/
+coverage/
+*.tsbuildinfo

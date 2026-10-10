@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/native-cms-revision-history-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "hasMore", "nextCursor"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "documentId", "schemaVersion", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "documentId": { "type": "string", "format": "uuid" },
+          "schemaVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+          "createdAt": { "type": "string", "format": "date-time", "maxLength": 35 }
+        }
+      }
+    },
+    "hasMore": { "type": "boolean" },
+    "nextCursor": { "type": ["string", "null"], "minLength": 1, "maxLength": 4096 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "hasMore": { "const": false } } },
+      "then": { "properties": { "nextCursor": { "type": "null" } } },
+      "else": { "properties": { "nextCursor": { "type": "string" }, "items": { "minItems": 1 } } }
+    }
+  ]
+}

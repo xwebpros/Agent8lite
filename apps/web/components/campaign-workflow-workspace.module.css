@@ -1,0 +1,277 @@
+.workspace {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  color: var(--color-ink);
+  font-size: 16px;
+}
+.header,
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+.header h2 {
+  margin: 4px 0 8px;
+  font-size: 26px;
+}
+.header p {
+  max-width: 64ch;
+}
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.layout {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.75fr) minmax(0, 1.5fr);
+  gap: 20px;
+  align-items: start;
+  min-width: 0;
+}
+.card {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  min-width: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.heading h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 18px;
+}
+.card h4 {
+  font-size: 16px;
+}
+.help {
+  font-size: 14px;
+  color: var(--color-muted);
+}
+.caption {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.workspace button {
+  min-height: 44px;
+  font-size: 14px;
+}
+.workspace input,
+.workspace select {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  font-size: 16px;
+}
+.workspace label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.workspace :focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.notice svg {
+  flex-shrink: 0;
+}
+.error {
+  padding: 16px;
+  background: var(--color-danger-surface);
+  border-left: 3px solid var(--color-danger);
+  border-radius: 4px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.error ul {
+  padding-left: 20px;
+}
+.versions,
+.steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.version {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  text-align: left;
+}
+.version > span:first-child {
+  display: grid;
+  gap: 6px;
+}
+.version strong {
+  font-size: 16px;
+}
+.version span span {
+  font-size: 14px;
+  color: var(--color-muted);
+}
+.step,
+.preview,
+.receipt,
+.designCatalogue,
+.designPreview {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.designPreview pre {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.6;
+}
+.designCheck {
+  max-width: 100%;
+  margin-top: 12px;
+  white-space: normal;
+}
+.designCheck svg {
+  flex-shrink: 0;
+}
+.preview h3,
+.receipt h3 {
+  font-size: 18px;
+}
+.policy {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+.policy legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.workspace .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin: 0;
+}
+.workspace .checkbox input {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  flex-shrink: 0;
+}
+.times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.references {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 14px;
+}
+.references dt {
+  font-weight: 600;
+}
+.references dd {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.links {
+  padding-left: 20px;
+  font-size: 14px;
+}
+.timeline {
+  display: grid;
+  gap: 18px;
+  padding-left: 20px;
+  font-size: 14px;
+}
+.timeline li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.timeline time {
+  display: block;
+  margin: 8px 0;
+  font-variant-numeric: tabular-nums;
+}
+.timeline ul {
+  margin-top: 8px;
+  padding-left: 18px;
+}
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card {
+    padding: 16px;
+  }
+  .step,
+  .preview,
+  .receipt {
+    padding: 14px;
+  }
+  .header h2 {
+    font-size: 24px;
+  }
+  .actions button,
+  .heading button {
+    width: 100%;
+  }
+}
+@media (max-width: 420px) {
+  .times {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace * {
+    scroll-behavior: auto;
+    transition: none;
+  }
+}

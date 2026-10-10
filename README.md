@@ -1,13 +1,18 @@
-# Agent8lite
+# Agent8lite — Estate Workspace
 
-Agent8lite is an in-progress real estate SaaS web application, designed to work as an installable iPhone and Android PWA without app-store distribution. The selected MLS provider is Cotality/CoreLogic Trestle.
+An independent real-estate web application and PWA, currently running with synthetic identities, listings and external-service simulators. Implementation follows the approved technical design in docs/tdd and the frozen contracts in packages/contracts. The reviewed application is integrated on main; no milestone or production release is claimed.
 
-## Application workstreams
+The local application includes organization switching and administration, contacts, opportunities, follow-up tasks, notes, pipeline and deals, CRM configuration, routing, reviewed CSV imports/exports, billing simulation and support. The PWA includes install guidance, a generic offline shell and draft protection. Remaining module and milestone gates are recorded in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md); local success does not authorize a production release or live MLS access.
 
-- [Committed application foundation](https://github.com/xwebpros/Agent8lite/tree/feat/W01-foundation): runtime, database, API, web/PWA and tested implementation checkpoints. Read that branch's `IMPLEMENTATION_STATUS.md` for verified outcomes and remaining gates.
-- [Trestle Web API scaffold](https://github.com/xwebpros/Agent8lite/tree/feat/W07-trestle-scaffold): disabled server adapter, OAuth, policy-bound listing mapping, mocked tests and a separately enabled read-only metadata probe. The [runbook](https://github.com/xwebpros/Agent8lite/blob/feat/W07-trestle-scaffold/docs/runbooks/trestle-feed.md) describes secure local setup.
+Use Node24.19.0 and pnpm11.25.0. Start the dedicated PostgreSQL/PostGIS service, migrate and seed explicitly enabled synthetic data, then run `pnpm dev`. The existing Windows workspace uses a dedicated portable database on loopback port55432. Follow the [local development runbook](docs/runbooks/local-development.md) for setup, role separation and verification commands.
 
-Feature branches preserve ongoing work for coordinator review. Publication is not a production release or a claim that all requirements have been implemented. Active uncommitted owner changes are not included in these checkpoints; no automatic merge or live-provider activation occurs.
+Open the local application at http://localhost:3000. Synthetic sign-in offers fictional owner and agent identities. No app-store distribution is required; actual iPhone/Android installation acceptance needs HTTPS staging and physical-device checks.
+
+Run `pnpm contracts:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test:isolated` and `pnpm build` for non-browser verification. The isolated runner creates/removes only its own databases, API processes and private-object directories. Browser tests use the approved Playwright harness when browser access is available.
+
+For GoDaddy Node.js hosting, root `npm run build` and `npm start` use the assigned PORT. An explicit password-protected temporary demo runs without PostgreSQL or production identity. See the [GoDaddy launch runbook](docs/runbooks/godaddy-nodejs.md) for environment variables and preview limitations. Agents remain paused; deployment is a separate owner action.
+
+Cotality/CoreLogic Trestle is the selected future MLS provider. The [disabled server scaffold and secure setup runbook](docs/runbooks/trestle-feed.md) are included. Live feeds, outbound messaging, charges and production deployment remain disabled until their documented authorization and integration gates are satisfied.
 
 ## Requirements and reference artifacts
 
@@ -19,4 +24,4 @@ Feature branches preserve ongoing work for coordinator review. Publication is no
 
 The audit is reference evidence about the observed platform, not permission to reuse proprietary functionality or a statement that inferred internal architecture is known. The blueprint describes planned behavior. The executive document is the forward-facing product requirements artifact.
 
-See [publication notes](PUBLICATION_NOTES.md) for the archive redaction and reference-integrity boundary. Local environments, credentials, source Trestle PDF manuals, dependencies, databases, rendering QA and transient caches are excluded.
+See [publication notes](PUBLICATION_NOTES.md) for archive redaction and reference integrity. Existing main history and sanitized artifacts are preserved. Local environments, credentials, source Trestle PDF manuals, dependencies, databases, rendering QA and transient caches are excluded.

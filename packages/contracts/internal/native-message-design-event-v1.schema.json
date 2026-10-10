@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/message-design-draft-event-v1",
+  "title": "Native static message-design draft changed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "type",
+    "version",
+    "tenantId",
+    "occurredAt",
+    "ingestedAt",
+    "producer",
+    "aggregateType",
+    "aggregateId",
+    "correlationId",
+    "payload"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "type": { "const": "message_design.draft_changed" },
+    "version": { "const": 1 },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "ingestedAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "marketing" },
+    "aggregateType": { "const": "message_design" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageDesignId", "designVersion", "operation"],
+      "properties": {
+        "messageDesignId": { "type": "string", "format": "uuid" },
+        "designVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "operation": { "enum": ["create", "update"] }
+      }
+    }
+  }
+}

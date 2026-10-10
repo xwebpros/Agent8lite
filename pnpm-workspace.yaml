@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  '@embedded-postgres/windows-x64': true
+  '@nestjs/core': false
+  '@tailwindcss/oxide': true
+  esbuild: true
+  msgpackr-extract: false
+  sharp: true

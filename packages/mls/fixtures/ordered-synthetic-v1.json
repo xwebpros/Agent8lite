@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "profile": "ordered-synthetic-v1",
+  "generation": "5d753531-7ad1-4bc4-87a2-036cf442f527",
+  "completedWatermark": "2026-10-10T00:10:00Z",
+  "pricingCurrency": "USD",
+  "changes": [
+    {
+      "changeId": "SYNTHETIC-CHANGE-A-ACTIVE",
+      "sequence": 10,
+      "observedAt": "2026-10-10T00:01:00Z",
+      "change": {
+        "kind": "upsert",
+        "sourceListingKey": "SYNTHETIC-ORDERED-A",
+        "listing": {
+          "sourceModifiedAt": "2026-10-10T00:00:00Z",
+          "listPrice": 420000,
+          "bedrooms": 3,
+          "bathrooms": 2.5,
+          "area": {
+            "value": 1800,
+            "unit": "sqft"
+          },
+          "address": "Fictional sample address — synthetic only",
+          "coordinates": [-115.14, 36.16],
+          "publicRemarks": "Synthetic sample property. No real listing or inquiry.",
+          "propertyType": "synthetic residential",
+          "displayAllowed": true,
+          "addressAllowed": true,
+          "attribution": {
+            "brokerage": "Fictional Sample Brokerage",
+            "agent": "Synthetic Listing Participant",
+            "disclaimer": "SYNTHETIC SAMPLE — NOT A REAL PROPERTY",
+            "contact": {
+              "kind": "email",
+              "value": "listing@fictional-brokerage.example.invalid"
+            }
+          },
+          "synthetic": true,
+          "sourceListingKey": "SYNTHETIC-ORDERED-A",
+          "sourceStatus": "active",
+          "status": "active",
+          "ingestedAt": "2026-10-10T00:01:00Z",
+          "expiresAt": "2026-10-11T00:01:00Z"
+        }
+      }
+    },
+    {
+      "changeId": "SYNTHETIC-CHANGE-B-ACTIVE",
+      "sequence": 25,
+      "observedAt": "2026-10-10T00:02:00Z",
+      "change": {
+        "kind": "upsert",
+        "sourceListingKey": "SYNTHETIC-ORDERED-B",
+        "listing": {
+          "sourceModifiedAt": null,
+          "listPrice": 420000,
+          "bedrooms": 3,
+          "bathrooms": 2.5,
+          "area": {
+            "value": 1800,
+            "unit": "sqft"
+          },
+          "address": "Fictional sample address — synthetic only",
+          "coordinates": [-115.14, 36.16],
+          "publicRemarks": "Synthetic sample property. No real listing or inquiry.",
+          "propertyType": "synthetic residential",
+          "displayAllowed": true,
+          "addressAllowed": true,
+          "attribution": {
+            "brokerage": "Fictional Sample Brokerage",
+            "agent": "Synthetic Listing Participant",
+            "disclaimer": "SYNTHETIC SAMPLE — NOT A REAL PROPERTY",
+            "contact": {
+              "kind": "phone",
+              "value": "+1 702 555 0100"
+            }
+          },
+          "synthetic": true,
+          "sourceListingKey": "SYNTHETIC-ORDERED-B",
+          "sourceStatus": "active",
+          "status": "active",
+          "ingestedAt": "2026-10-10T00:02:00Z",
+          "expiresAt": "2026-10-11T00:02:00Z"
+        }
+      }
+    },
+    {
+      "changeId": "SYNTHETIC-CHANGE-A-PENDING",
+      "sequence": 60,
+      "observedAt": "2026-10-10T00:03:00Z",
+      "change": {
+        "kind": "upsert",
+        "sourceListingKey": "SYNTHETIC-ORDERED-A",
+        "listing": {
+          "sourceModifiedAt": "2026-10-10T00:00:00Z",
+          "listPrice": 420000,
+          "bedrooms": 3,
+          "bathrooms": 2.5,
+          "area": {
+            "value": 1800,
+            "unit": "sqft"
+          },
+          "address": "Fictional sample address — synthetic only",
+          "coordinates": [-115.14, 36.16],
+          "publicRemarks": "Synthetic sample property. No real listing or inquiry.",
+          "propertyType": "synthetic residential",
+          "displayAllowed": true,
+          "addressAllowed": true,
+          "attribution": {
+            "brokerage": "Fictional Sample Brokerage",
+            "agent": "Synthetic Listing Participant",
+            "disclaimer": "SYNTHETIC SAMPLE — NOT A REAL PROPERTY",
+            "contact": {
+              "kind": "email",
+              "value": "listing@fictional-brokerage.example.invalid"
+            }
+          },
+          "synthetic": true,
+          "sourceListingKey": "SYNTHETIC-ORDERED-A",
+          "sourceStatus": "pending",
+          "status": "pending",
+          "ingestedAt": "2026-10-10T00:03:00Z",
+          "expiresAt": "2026-10-11T00:03:00Z"
+        }
+      }
+    },
+    {
+      "changeId": "SYNTHETIC-CHANGE-A-DELETED",
+      "sequence": 90,
+      "observedAt": "2026-10-10T00:04:00Z",
+      "change": {
+        "kind": "delete",
+        "sourceListingKey": "SYNTHETIC-ORDERED-A"
+      }
+    },
+    {
+      "changeId": "SYNTHETIC-CHANGE-UNKNOWN-DELETED",
+      "sequence": 130,
+      "observedAt": "2026-10-10T00:05:00Z",
+      "change": {
+        "kind": "delete",
+        "sourceListingKey": "SYNTHETIC-ORDERED-NEVER-SEEN"
+      }
+    },
+    {
+      "changeId": "SYNTHETIC-CHANGE-B-OFF-MARKET",
+      "sequence": 210,
+      "observedAt": "2026-10-10T00:06:00Z",
+      "change": {
+        "kind": "upsert",
+        "sourceListingKey": "SYNTHETIC-ORDERED-B",
+        "listing": {
+          "sourceModifiedAt": null,
+          "listPrice": 420000,
+          "bedrooms": 3,
+          "bathrooms": 2.5,
+          "area": {
+            "value": 1800,
+            "unit": "sqft"
+          },
+          "address": null,
+          "coordinates": null,
+          "publicRemarks": "Synthetic sample property. No real listing or inquiry.",
+          "propertyType": "synthetic residential",
+          "displayAllowed": false,
+          "addressAllowed": false,
+          "attribution": {
+            "brokerage": "Fictional Sample Brokerage",
+            "agent": "Synthetic Listing Participant",
+            "disclaimer": "SYNTHETIC SAMPLE — NOT A REAL PROPERTY",
+            "contact": null
+          },
+          "synthetic": true,
+          "sourceListingKey": "SYNTHETIC-ORDERED-B",
+          "sourceStatus": "off_market",
+          "status": "off_market",
+          "ingestedAt": "2026-10-10T00:06:00Z",
+          "expiresAt": "2026-10-11T00:06:00Z"
+        }
+      }
+    },
+    {
+      "changeId": "SYNTHETIC-CHANGE-C-CLOSED",
+      "sequence": 300,
+      "observedAt": "2026-10-10T00:07:00Z",
+      "change": {
+        "kind": "upsert",
+        "sourceListingKey": "SYNTHETIC-ORDERED-C",
+        "listing": {
+          "sourceModifiedAt": null,
+          "listPrice": 420000,
+          "bedrooms": 3,
+          "bathrooms": 2.5,
+          "area": {
+            "value": 1800,
+            "unit": "sqft"
+          },
+          "address": "Fictional sample address — synthetic only",
+          "coordinates": [-115.14, 36.16],
+          "publicRemarks": "Synthetic sample property. No real listing or inquiry.",
+          "propertyType": "synthetic residential",
+          "displayAllowed": false,
+          "addressAllowed": true,
+          "attribution": {
+            "brokerage": "Fictional Sample Brokerage",
+            "agent": "Synthetic Listing Participant",
+            "disclaimer": "SYNTHETIC SAMPLE — NOT A REAL PROPERTY",
+            "contact": {
+              "kind": "email",
+              "value": "listing@fictional-brokerage.example.invalid"
+            }
+          },
+          "synthetic": true,
+          "sourceListingKey": "SYNTHETIC-ORDERED-C",
+          "sourceStatus": "closed",
+          "status": "closed",
+          "ingestedAt": "2026-10-10T00:07:00Z",
+          "expiresAt": "2026-10-11T00:07:00Z"
+        }
+      }
+    }
+  ]
+}

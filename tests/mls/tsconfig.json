@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "jsx": "react-jsx" },
+  "include": ["../../packages/mls/**/*.ts", "../../apps/web/next-env.d.ts", "./**/*.ts"],
+  "exclude": ["../../node_modules"]
+}

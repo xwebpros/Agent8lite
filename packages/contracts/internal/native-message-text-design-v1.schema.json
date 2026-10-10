@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/native-message-text-design-v1",
+  "title": "Native static text message design prerequisite v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "blocks"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "blocks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "text"],
+        "properties": {
+          "type": { "const": "text" },
+          "text": { "type": "string", "minLength": 1, "maxLength": 100000 }
+        }
+      }
+    }
+  }
+}

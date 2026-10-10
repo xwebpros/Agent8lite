@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "estate:block-props:v1",
+  "$defs": {
+    "text": {
+      "type": "string",
+      "maxLength": 4000,
+      "pattern": "^[^<>\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]*$"
+    },
+    "label": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[^<>\\u0000-\\u001f]*$" },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": { "$ref": "#/$defs/label" },
+        "href": { "type": "string", "minLength": 1, "maxLength": 500 }
+      },
+      "required": ["label", "href"]
+    },
+    "hero": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heading": { "$ref": "#/$defs/label" },
+        "summary": { "$ref": "#/$defs/text" },
+        "action": { "$ref": "#/$defs/link" }
+      },
+      "required": ["heading"]
+    },
+    "paragraphs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paragraphs": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "#/$defs/text" } }
+      },
+      "required": ["paragraphs"]
+    },
+    "cta": { "$ref": "#/$defs/link" },
+    "footer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": { "$ref": "#/$defs/text" },
+        "links": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/link" } }
+      },
+      "required": ["text"]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "hero": { "$ref": "#/$defs/hero" },
+    "text": { "$ref": "#/$defs/paragraphs" },
+    "cta": { "$ref": "#/$defs/cta" },
+    "footer": { "$ref": "#/$defs/footer" }
+  }
+}

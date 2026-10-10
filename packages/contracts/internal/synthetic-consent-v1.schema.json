@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/synthetic-consent-v1",
+  "$defs": {
+    "EvidenceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contactChannelId": { "type": "string", "format": "uuid" },
+        "purpose": {
+          "$ref": "https://estate.example/schemas/openapi#/components/schemas/ConsentWrite/properties/purpose"
+        }
+      },
+      "required": ["contactChannelId", "purpose"]
+    },
+    "EvidenceResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidenceRef": {
+          "type": "string",
+          "pattern": "^synthetic-evidence:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "maxLength": 80
+        },
+        "policyVersion": { "type": "string", "const": "synthetic-communication-v1" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "synthetic": { "const": true }
+      },
+      "required": ["evidenceRef", "policyVersion", "expiresAt", "synthetic"]
+    },
+    "ChannelsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contactId": { "type": "string", "format": "uuid" },
+        "channels": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "kind": { "type": "string", "enum": ["email", "phone"] },
+              "label": { "type": "string", "maxLength": 80 }
+            },
+            "required": ["id", "kind", "label"]
+          }
+        }
+      },
+      "required": ["contactId", "channels"]
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/native-cms-recovery-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "documentId", "data", "issues", "canSave", "canPublish"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "documentId": { "type": "string", "format": "uuid" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "blocks", "seo"],
+      "properties": {
+        "schemaVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "blocks": { "$ref": "#/$defs/Json" },
+        "seo": { "$ref": "#/$defs/Json" }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "code"],
+        "properties": {
+          "path": { "type": "string", "maxLength": 1024 },
+          "code": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[a-z][a-z0-9_]*$" }
+        }
+      }
+    },
+    "canSave": { "const": false },
+    "canPublish": { "const": false }
+  },
+  "$defs": {
+    "Json": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "array", "items": { "$ref": "#/$defs/Json" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/$defs/Json" } }
+      ]
+    }
+  }
+}

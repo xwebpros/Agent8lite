@@ -1,0 +1,13 @@
+BEGIN;
+GRANT SELECT,INSERT ON app.deal,app.tag,app.lead_tag TO estate_runtime;
+GRANT INSERT ON app.pipeline_stage,app.lead_source TO estate_runtime;
+GRANT UPDATE(name,amount,currency,state,updated_at,row_version) ON app.deal TO estate_runtime;
+GRANT UPDATE(name,position,terminal,updated_at,row_version) ON app.pipeline_stage TO estate_runtime;
+GRANT UPDATE(label,updated_at,row_version) ON app.lead_source TO estate_runtime;
+GRANT UPDATE(name,updated_at,row_version) ON app.tag TO estate_runtime;
+GRANT DELETE ON app.lead_tag TO estate_runtime;
+ALTER TABLE app.deal ADD CONSTRAINT deal_state_allowed CHECK(state IN ('open','won','lost')) NOT VALID;
+ALTER TABLE app.deal VALIDATE CONSTRAINT deal_state_allowed;
+ALTER TABLE app.pipeline_stage ADD CONSTRAINT stage_position_allowed CHECK(position BETWEEN 0 AND 100) NOT VALID;
+ALTER TABLE app.pipeline_stage VALIDATE CONSTRAINT stage_position_allowed;
+COMMIT;

@@ -1,0 +1,346 @@
+.invitation-section > .synthetic-note {
+  margin: 20px 0 25px;
+}
+.invitation-create,
+.invitation-accept,
+.invitation-job {
+  margin: 25px 0;
+}
+.invitation-create h3,
+.invitation-accept h3,
+.workspace-record-editor h3 {
+  font-size: 20px;
+}
+.invitation-section .settings-form > fieldset > label,
+.workspace-record-editor .settings-form > fieldset > label {
+  display: block;
+  margin-top: 22px;
+}
+.invitation-section .muted,
+.workspace-records-section .muted {
+  font-size: 14px;
+  line-height: 1.8;
+}
+.invitation-section .settings-form .button {
+  margin-top: 20px;
+}
+.office-options {
+  margin-top: 25px !important;
+  border: 1px solid #e0e7f1 !important;
+  padding: 17px !important;
+  border-radius: 9px;
+}
+.office-options legend {
+  padding: 0 8px;
+  font-size: 14px;
+  color: var(--color-muted);
+  font-weight: 550;
+}
+.office-options label {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 44px;
+  font-size: 14px;
+  padding: 9px 0;
+  cursor: pointer;
+}
+.office-options input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+.office-options span {
+  overflow-wrap: anywhere;
+}
+.created-invitation {
+  margin-top: 27px;
+  padding: 21px;
+  border: 1px solid #dbe5f2;
+  border-radius: 9px;
+  background: #f6f9fd;
+}
+.created-invitation h4 {
+  font-size: 16px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  margin: 18px 0 12px;
+}
+.created-invitation > label {
+  display: block;
+  font-size: 14px;
+  font-weight: 550;
+  margin: 20px 0;
+}
+.created-invitation > label input {
+  margin-top: 8px;
+  font-size: 14px;
+}
+.created-invitation > .button {
+  margin-top: 20px;
+}
+.invitation-target {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid #dbe5f2;
+  border-radius: 9px;
+  font-size: 14px;
+  color: var(--color-primary);
+  background: #f6f9fd;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.invitation-section .button {
+  white-space: normal;
+}
+.invitation-section .form-actions {
+  flex-wrap: wrap;
+}
+.invitation-job .panel-heading {
+  flex-wrap: wrap;
+}
+.workspace-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 25px;
+  margin-top: 25px;
+  align-items: start;
+}
+.workspace-record-list .panel-heading {
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.workspace-record-list .panel-heading h2 {
+  gap: 10px;
+}
+.workspace-record-rows {
+  padding: 0 24px;
+}
+.workspace-record-rows article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  border-bottom: 1px solid #e4ebf3;
+  padding: 24px 0;
+}
+.workspace-record-rows article:last-child {
+  border-bottom: 0;
+}
+.workspace-record-rows article > div {
+  flex: 1;
+  min-width: 150px;
+}
+.workspace-record-rows h3 {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.workspace-record-rows p {
+  margin-top: 10px;
+  color: var(--color-muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+.workspace-record-rows article > div > span {
+  display: block;
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 9px;
+}
+.workspace-record-list .button {
+  white-space: normal;
+}
+.workspace-record-editor {
+  margin-top: 25px;
+}
+.workspace-record-editor .form-actions {
+  flex-wrap: wrap;
+}
+.workspace-record-editor .button {
+  white-space: normal;
+}
+.brand-color-field {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+.brand-color-field input {
+  margin: 0 !important;
+}
+.brand-swatch {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 7px;
+  border: 1px solid #dae3ef;
+  display: inline-block;
+}
+.profile-brand {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 13px;
+}
+.profile-brand > span:last-child {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.profile-brand .brand-swatch {
+  width: 23px;
+  height: 23px;
+  min-width: 23px;
+  border-radius: 5px;
+}
+.configuration-tabs {
+  margin: 24px 0;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
+}
+.configuration-tabs button {
+  min-height: 44px;
+  white-space: normal;
+}
+.configuration-list,
+.deal-list {
+  margin-top: 25px;
+}
+.configuration-list .panel-heading,
+.deal-list .panel-heading {
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.configuration-list .panel-heading h2,
+.deal-list .panel-heading h2 {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.configuration-list .button,
+.deals-section .button {
+  white-space: normal;
+}
+.crm-configuration .checkbox-row,
+.lead-tags-section .checkbox-row {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 13px;
+  min-height: 44px;
+  padding: 13px 0;
+  font-size: 14px;
+  line-height: 1.8;
+  cursor: pointer;
+}
+.crm-configuration .checkbox-row input,
+.lead-tags-section .checkbox-row input {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  margin: 2px 0 0;
+  accent-color: var(--color-primary);
+}
+.lead-tags-section {
+  border-top: 1px solid #e0e7f1;
+  padding-bottom: 10px;
+}
+.lead-tags-section .panel-heading {
+  flex-wrap: wrap;
+  gap: 15px;
+}
+.lead-tags-section .panel-heading h2 {
+  gap: 10px;
+}
+.lead-tags-body {
+  padding: 0 25px 25px;
+}
+.lead-tags-body > .muted,
+.lead-tags-body form > fieldset > .muted {
+  font-size: 14px;
+  line-height: 1.8;
+  margin: 15px 0;
+}
+.lead-tags-body fieldset {
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.lead-tags-body .office-options {
+  margin-bottom: 24px;
+}
+.lead-tags-body .office-options .button {
+  margin-top: 15px;
+}
+.tag-replacement-review {
+  background: #f6f9fd;
+  border: 1px solid #dbe5f2;
+  border-radius: 9px;
+  padding: 17px;
+  margin-top: 24px;
+}
+.tag-replacement-review > strong {
+  font-size: 14px;
+  line-height: 1.8;
+}
+.lead-tags-section .form-actions {
+  flex-wrap: wrap;
+}
+.lead-tags-section .button {
+  white-space: normal;
+}
+@media (max-width: 1120px) {
+  .workspace-record-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .configuration-tabs {
+    width: 100%;
+  }
+  .configuration-tabs button {
+    flex: 1;
+    min-width: 120px;
+    font-size: 14px;
+  }
+  .configuration-list .heading-actions,
+  .deals-section > .admin-heading .heading-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .configuration-list .heading-actions .button,
+  .deals-section > .admin-heading .heading-actions .button,
+  .lead-tags-section .form-actions .button {
+    flex: 1;
+    min-width: 120px;
+  }
+  .lead-tags-body {
+    padding: 0 20px 20px;
+  }
+  .workspace-record-rows {
+    padding: 0 20px;
+  }
+  .created-invitation {
+    padding: 16px;
+  }
+  .created-invitation input {
+    font-size: 16px !important;
+  }
+  .invitation-section .form-actions .button {
+    flex: 1;
+    min-width: 120px;
+  }
+  .workspace-record-editor .form-actions .button {
+    flex: 1;
+    min-width: 120px;
+  }
+  .workspace-record-list .panel-heading .button {
+    font-size: 14px;
+  }
+}
