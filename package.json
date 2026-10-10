@@ -1,6 +1,7 @@
 {
   "name": "estate-workspace",
   "version": "0.1.0",
+  "main": "scripts/start-app.mjs",
   "private": true,
   "packageManager": "pnpm@11.25.0",
   "engines": {
