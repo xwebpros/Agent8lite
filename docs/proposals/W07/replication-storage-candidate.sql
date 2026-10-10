@@ -4,6 +4,15 @@
 -- No live source, raw provider page, send permission, router or worker registration.
 BEGIN;
 
+DO $proposal_only$
+BEGIN
+  RAISE EXCEPTION 'Review-only MLS storage proposal: coordinator-approved promotion and actual-role verification required'
+    USING ERRCODE='55000';
+END;
+$proposal_only$;
+
+-- Guard removal alone approves neither these grants nor a migration/consumer.
+-- Preserve the independent role-safety preflight in any reviewed promotion.
 DO $candidate$
 BEGIN
   IF (SELECT count(*) FROM pg_catalog.pg_roles
@@ -439,7 +448,7 @@ $fn$;
 CREATE FUNCTION app.mls_replication_assert_claim(t uuid,f uuid,run uuid,fence uuid,attempt integer,
     allow_completed boolean DEFAULT false) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $fn$
-DECLARE r app.mls_sync_run%ROWTYPE; j app.integration_job%ROWTYPE; member uuid;
+DECLARE r app.mls_sync_run%ROWTYPE; j app.integration_job%ROWTYPE; member uuid; bound_job uuid;
 BEGIN
   IF session_user<>'estate_worker' OR t IS NULL OR t IS DISTINCT FROM app.current_tenant()
     OR app.current_actor() IS NULL THEN
@@ -447,14 +456,25 @@ BEGIN
   END IF;
   SELECT m.id INTO member FROM app.membership m WHERE m.tenant_id=t AND m.user_id=app.current_actor();
   PERFORM app.mls_replication_lock_actor(t,member);
+  -- Global mutation order after verified authorization locks: Job -> run -> feed/connection ->
+  -- entitlement -> tenant budget -> checkpoint -> listings. Future ports must prelock DML targets.
+  -- Resolve the immutable binding without a run lock; lock Job first, then recheck the locked run.
+  SELECT sr.job_id INTO bound_job FROM app.mls_sync_run sr
+    WHERE sr.tenant_id=t AND sr.id=run AND sr.feed_id=f
+      AND sr.initiating_actor_id=app.current_actor() AND sr.requesting_member_id=member;
+  IF NOT FOUND OR bound_job IS NULL THEN
+    RAISE EXCEPTION 'Fenced MLS claim required' USING ERRCODE='42501';
+  END IF;
+  SELECT * INTO j FROM app.integration_job WHERE tenant_id=t AND id=bound_job FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Fenced MLS claim required' USING ERRCODE='42501'; END IF;
   SELECT * INTO r FROM app.mls_sync_run WHERE tenant_id=t AND id=run AND feed_id=f FOR UPDATE;
   IF NOT FOUND OR r.initiating_actor_id IS DISTINCT FROM app.current_actor()
-    OR r.requesting_member_id IS DISTINCT FROM member OR r.claim_fence IS DISTINCT FROM fence
+    OR r.job_id IS DISTINCT FROM j.id OR r.requesting_member_id IS DISTINCT FROM member
+    OR r.claim_fence IS DISTINCT FROM fence
     OR r.claim_attempt IS DISTINCT FROM attempt THEN
     RAISE EXCEPTION 'Fenced MLS claim required' USING ERRCODE='42501';
   END IF;
-  SELECT * INTO j FROM app.integration_job WHERE tenant_id=t AND id=r.job_id FOR UPDATE;
-  IF NOT FOUND OR j.kind IS DISTINCT FROM 'native-mock-mls-replication-v1'
+  IF j.kind IS DISTINCT FROM 'native-mock-mls-replication-v1'
     OR j.requesting_member_id IS DISTINCT FROM member OR j.attempt_count IS DISTINCT FROM attempt
     OR j.lease_until IS DISTINCT FROM r.claim_lease_until
     OR (j.state<>'running' AND NOT (allow_completed AND j.state='succeeded' AND EXISTS(
@@ -510,8 +530,13 @@ BEGIN
   IF NEW.job_id IS NULL AND (TG_OP='INSERT' OR OLD.job_id IS NULL)
     AND session_user=(SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid=TG_RELID)
     AND session_user NOT IN ('estate_runtime','estate_worker') THEN RETURN NEW; END IF;
+  -- A managed run UPDATE has already locked its target. Reject direct updates before a Job lookup;
+  -- approved nested claim/progress triggers already hold the Job lock before updating this run.
+  IF TG_OP='UPDATE' AND pg_trigger_depth()<2 THEN
+    RAISE EXCEPTION 'Trigger-owned MLS run update required' USING ERRCODE='55000';
+  END IF;
   PERFORM app.mls_replication_lock_actor(NEW.tenant_id,NEW.requesting_member_id);
-  SELECT * INTO j FROM app.integration_job WHERE tenant_id=NEW.tenant_id AND id=NEW.job_id FOR SHARE;
+  SELECT * INTO j FROM app.integration_job WHERE tenant_id=NEW.tenant_id AND id=NEW.job_id FOR UPDATE;
   IF NOT FOUND OR j.kind IS DISTINCT FROM 'native-mock-mls-replication-v1'
     OR j.requesting_member_id IS DISTINCT FROM NEW.requesting_member_id
     OR NEW.initiating_actor_id IS DISTINCT FROM app.current_actor()
@@ -542,7 +567,11 @@ BEGIN
         OLD.initiating_actor_id,OLD.policy_version,OLD.stream_generation,OLD.started_at) THEN
       RAISE EXCEPTION 'Immutable MLS run binding required' USING ERRCODE='55000';
     END IF;
-    IF coalesce(NEW.claim_attempt,0) IS DISTINCT FROM j.attempt_count OR NEW.claim_lease_until IS DISTINCT FROM j.lease_until THEN
+    -- The BEFORE Job guard minted the lease before this AFTER path could wait on source/rights locks.
+    -- Reject an expired running claim after all those waits; the exception rolls back Job and run.
+    IF coalesce(NEW.claim_attempt,0) IS DISTINCT FROM j.attempt_count
+      OR NEW.claim_lease_until IS DISTINCT FROM j.lease_until
+      OR (j.state='running' AND (j.lease_until IS NULL OR j.lease_until<=clock_timestamp())) THEN
       RAISE EXCEPTION 'Current MLS claim binding required' USING ERRCODE='42501';
     END IF;
     NEW.row_version:=OLD.row_version+1; NEW.updated_at:=clock_timestamp();
@@ -565,6 +594,8 @@ BEGIN
     IF session_user='estate_worker' THEN RAISE EXCEPTION 'MLS worker job required' USING ERRCODE='42501'; END IF;
     RETURN NEW;
   END IF;
+  -- UPDATE has implicitly locked Job before this BEFORE trigger. Trusted ports must already hold
+  -- verified authorization locks; never take a run/feed/checkpoint/listing lock before Job.
   PERFORM app.mls_replication_lock_actor(NEW.tenant_id,NEW.requesting_member_id);
   IF TG_OP='INSERT' THEN
     IF session_user<>'estate_runtime' OR NEW.kind<>'native-mock-mls-replication-v1'
@@ -647,8 +678,8 @@ DECLARE r app.mls_sync_run%ROWTYPE; cp app.mls_checkpoint%ROWTYPE; f app.mls_fee
 BEGIN
   IF NEW.tenant_id IS NULL OR NEW.tenant_id IS DISTINCT FROM app.current_tenant() OR app.current_actor() IS NULL
     OR session_user<>'estate_worker' THEN RAISE EXCEPTION 'Current MLS page required' USING ERRCODE='42501'; END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended('W07 replication budget:'||NEW.tenant_id::text,0));
   PERFORM app.mls_replication_assert_claim(NEW.tenant_id,NEW.feed_id,NEW.run_id,NEW.claim_fence,NEW.claim_attempt);
+  PERFORM pg_advisory_xact_lock(hashtextextended('W07 replication budget:'||NEW.tenant_id::text,0));
   SELECT * INTO r FROM app.mls_sync_run WHERE tenant_id=NEW.tenant_id AND id=NEW.run_id;
   SELECT * INTO cp FROM app.mls_checkpoint WHERE tenant_id=NEW.tenant_id AND id=NEW.checkpoint_id
     AND feed_id=NEW.feed_id FOR UPDATE;
@@ -1269,4 +1300,5 @@ GRANT EXECUTE ON FUNCTION app.mls_replication_actor_ok(uuid,uuid),app.mls_replic
 -- enrollment, CMS, consent, delivery, control or issuer privileges are added.
 -- Source/plan digests still require the trusted Node source/helper validators before a SQL consumer.
 -- Candidate owner must prove hidden-row trigger visibility and every actual-login gate before allocation.
-COMMIT;
+-- Review/probe material only; an approved promotion owns its transaction boundary separately.
+ROLLBACK;
