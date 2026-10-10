@@ -9,8 +9,10 @@ export type BrowserDraft = components["schemas"]["RevisionWrite"];
 export type BrowserRevision = components["schemas"]["Revision"];
 export type BrowserIssue = { path: string; code: string };
 export type BrowserLinkPolicy = { approvedLinkOrigins: ReadonlySet<string> };
-export type FieldBlockKind = "hero" | "text" | "cta" | "footer";
-export const fieldBlockKinds = Object.freeze(Object.keys(propertySchemas.properties) as FieldBlockKind[]);
+// Pin this client adapter to the fields it can preserve/edit/preview completely.
+// A future server schema entry must not silently enable a block without a browser renderer.
+export const fieldBlockKinds = Object.freeze(["hero", "text", "cta", "footer"] as const);
+export type FieldBlockKind = (typeof fieldBlockKinds)[number];
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);

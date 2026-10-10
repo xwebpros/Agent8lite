@@ -1,6 +1,7 @@
 import type { components } from "../../../../packages/contracts/generated/api";
 import {
   browserDocumentVersion,
+  BrowserContentError,
   copyBrowserJson,
   inspectBrowserDraft,
   requireBrowserShape,
@@ -32,6 +33,8 @@ export type CmsDraftState = {
   issues: BrowserIssue[];
   dirty: boolean;
   canWrite: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
   online: boolean;
   phase: "idle" | "editing" | "saving" | "uncertain" | "conflict" | "denied" | "saved";
   message: string;
@@ -56,6 +59,9 @@ function canonical(value: unknown): string {
 function write(revision: BrowserRevision): BrowserDraft {
   return { schemaVersion: revision.schemaVersion, blocks: revision.blocks, seo: revision.seo };
 }
+type LocalEdit = { json: string; bytes: number };
+const historyLimit = 50;
+const historyByteLimit = 2 * 1024 * 1024;
 
 /** In-memory only. Create a new controller for each session/org/document binding and revoke the old one. */
 export class CmsDraftController {
@@ -66,6 +72,8 @@ export class CmsDraftController {
   private inFlight: Promise<void> | null = null;
   private generation = 0;
   private refreshing = false;
+  private readonly past: LocalEdit[] = [];
+  private readonly future: LocalEdit[] = [];
   private readonly policy: BrowserLinkPolicy;
 
   constructor(
@@ -92,6 +100,8 @@ export class CmsDraftController {
       issues: [],
       dirty: false,
       canWrite: options.canWrite,
+      canUndo: false,
+      canRedo: false,
       online: options.online,
       phase: "idle",
       message: "Select a revision or start a new draft.",
@@ -105,20 +115,69 @@ export class CmsDraftController {
     };
   };
   private update(patch: Partial<CmsDraftState>) {
-    this.state = frozen({ ...this.state, ...patch });
+    const next = { ...this.state, ...patch };
+    this.state = frozen({
+      ...next,
+      canUndo: this.past.length > 0 && this.canEditState(next),
+      canRedo: this.future.length > 0 && this.canEditState(next),
+    });
     for (const listener of this.listeners) listener();
   }
   private canReplace() {
     return !this.state.dirty && !this.pending && !this.refreshing && this.state.phase !== "denied";
   }
-  canEdit() {
+  private canEditState(state: CmsDraftState) {
     return (
-      Boolean(this.state.draft) &&
-      this.state.canWrite &&
+      Boolean(state.draft) &&
+      state.canWrite &&
       !this.pending &&
       !this.refreshing &&
-      !["conflict", "denied"].includes(this.state.phase)
+      !["conflict", "denied"].includes(state.phase)
     );
+  }
+  canEdit() {
+    return this.canEditState(this.state);
+  }
+  private clearHistory() {
+    this.past.length = 0;
+    this.future.length = 0;
+  }
+  private captureEdit(): LocalEdit {
+    const json = JSON.stringify(this.state.draft);
+    return { json, bytes: new TextEncoder().encode(json).byteLength };
+  }
+  private boundHistory() {
+    let bytes = [...this.past, ...this.future].reduce((sum, edit) => sum + edit.bytes, 0);
+    while (this.past.length + this.future.length > historyLimit || bytes > historyByteLimit) {
+      // Retain the nearest undo/redo steps and discard only the oldest/farthest local snapshots.
+      const oldest = this.past.length ? this.past.shift()! : this.future.shift()!;
+      bytes -= oldest.bytes;
+    }
+  }
+  private isDirty(draft: BrowserDraft) {
+    return this.baseline === null || canonical(draft) !== canonical(this.baseline);
+  }
+  private restoreEdit(from: LocalEdit[], to: LocalEdit[], message: string): boolean {
+    if (!this.canEdit() || !from.length) return false;
+    const previous = from.pop()!;
+    const inspection = inspectBrowserDraft(JSON.parse(previous.json), this.policy);
+    to.push(this.captureEdit());
+    this.boundHistory();
+    const draft = inspection.data as BrowserDraft;
+    this.update({ draft, issues: inspection.issues, dirty: this.isDirty(draft), phase: "editing", message });
+    return true;
+  }
+  undo(): boolean {
+    return this.restoreEdit(this.past, this.future, "Last local edit undone.");
+  }
+  redo(): boolean {
+    return this.restoreEdit(this.future, this.past, "Local edit restored.");
+  }
+  /** Strict local projection only; invalid/unknown content never gets a partial preview. */
+  previewDraft(): BrowserDraft | null {
+    if (!this.state.draft || this.state.recovery || this.state.phase === "denied") return null;
+    const inspection = inspectBrowserDraft(this.state.draft, this.policy);
+    return inspection.issues.length ? null : (inspection.data as BrowserDraft);
   }
   setOnline(online: boolean) {
     this.update({ online });
@@ -133,6 +192,7 @@ export class CmsDraftController {
     const inspection = inspectBrowserDraft(write(revision), this.policy);
     if (inspection.issues.length) return this.openRecovery(revision.id, revision.documentId, inspection.data);
     this.baseline = copyBrowserJson(inspection.data as BrowserDraft);
+    this.clearHistory();
     this.update({
       selectedRevisionId: revision.id,
       draft: copyBrowserJson(this.baseline),
@@ -152,6 +212,7 @@ export class CmsDraftController {
       throw new Error("A valid revision identity is required.");
     const inspection = inspectBrowserDraft(value, this.policy);
     this.baseline = null;
+    this.clearHistory();
     this.update({
       selectedRevisionId: revisionId,
       draft: null,
@@ -166,6 +227,7 @@ export class CmsDraftController {
   startBlank(): boolean {
     if (!this.canReplace() || this.state.recovery || !this.state.canWrite) return false;
     this.baseline = null;
+    this.clearHistory();
     this.update({
       selectedRevisionId: null,
       draft: { schemaVersion: 1, blocks: [], seo: { title: "", description: "", noindex: true } },
@@ -180,13 +242,28 @@ export class CmsDraftController {
     if (!this.canEdit()) return false;
     const draft = copyBrowserJson(this.state.draft!);
     change(draft);
-    const inspection = inspectBrowserDraft(draft, this.policy);
+    let inspection;
+    try {
+      inspection = inspectBrowserDraft(draft, this.policy);
+    } catch (error) {
+      if (!(error instanceof BrowserContentError)) throw error;
+      this.update({
+        message: "That change exceeds the supported content limits. Your previous draft is retained.",
+      });
+      return false;
+    }
+    const next = inspection.data as BrowserDraft;
+    if (canonical(next) === canonical(this.state.draft)) return false;
+    this.past.push(this.captureEdit());
+    this.future.length = 0;
+    this.boundHistory();
+    const dirty = this.isDirty(next);
     this.update({
-      draft: inspection.data as BrowserDraft,
+      draft: next,
       issues: inspection.issues,
-      dirty: true,
+      dirty,
       phase: "editing",
-      message: "Unsaved changes.",
+      message: dirty ? "Unsaved changes." : "Draft matches the loaded revision.",
     });
     return true;
   }
@@ -213,6 +290,7 @@ export class CmsDraftController {
   }
   discardChanges(): boolean {
     if (this.pending || this.refreshing || this.state.phase === "denied" || this.state.recovery) return false;
+    this.clearHistory();
     this.update({
       draft: copyBrowserJson(this.baseline),
       dirty: false,
@@ -271,6 +349,7 @@ export class CmsDraftController {
         throw new Error("Save receipt is invalid.");
       this.pending = null;
       this.baseline = copyBrowserJson(write(revision));
+      this.clearHistory();
       this.update({
         document: { ...this.state.document, version },
         etag: response.etag,
@@ -347,6 +426,7 @@ export class CmsDraftController {
     ++this.generation;
     this.pending = null;
     this.baseline = null;
+    this.clearHistory();
     this.update({
       selectedRevisionId: null,
       draft: null,

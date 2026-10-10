@@ -7,6 +7,7 @@ import {
   type CmsSaveCommand,
 } from "../../apps/web/features/cms/draft-controller";
 import { CmsDraftEditor } from "../../apps/web/features/cms/draft-editor";
+import { CmsDraftPreview } from "../../apps/web/features/cms/draft-preview";
 import type { components } from "../../packages/contracts/generated/api";
 import type { BrowserRevision } from "../../packages/cms/browser";
 
@@ -348,6 +349,10 @@ describe("CMS field editor semantic markup (no browser acceptance claim)", () =>
     expect(html).toContain("Search description");
     expect(html).toContain("Save draft revision");
     expect(html).toContain("History order does not identify the latest draft");
+    expect(html).toContain("Undo local edit");
+    expect(html).toContain("Redo local edit");
+    expect(html).toContain("Show local preview");
+    expect(html).toContain('aria-expanded="false"');
   });
   it("escapes unknown recovery JSON and exposes no save/content editing controls", () => {
     const { controller } = setup();
@@ -362,5 +367,280 @@ describe("CMS field editor semantic markup (no browser acceptance claim)", () =>
     expect(html).not.toContain("Save draft revision");
     expect(html).not.toContain("Start a blank draft");
     expect(html).toContain('aria-label="Preserved original revision JSON"');
+  });
+});
+
+describe("bounded local CMS edit recovery", () => {
+  it("undoes block removal and reordering without changing revision identity or document version", () => {
+    const { controller } = setup();
+    controller.selectRevision(revision());
+    const initial = controller.getSnapshot();
+    const first = revision().blocks[0].id;
+    controller.moveBlock(first, 1);
+    controller.edit((draft) => {
+      draft.blocks = draft.blocks.filter((block) => block.id !== first);
+    });
+    expect(controller.getSnapshot().canUndo).toBe(true);
+    expect(controller.undo()).toBe(true);
+    expect(controller.getSnapshot().draft?.blocks.map((block) => block.id)).toEqual([
+      revision().blocks[1].id,
+      first,
+    ]);
+    expect(controller.undo()).toBe(true);
+    expect(controller.getSnapshot()).toMatchObject({
+      draft: initial.draft,
+      dirty: false,
+      etag: initial.etag,
+      selectedRevisionId: initial.selectedRevisionId,
+      canUndo: false,
+      canRedo: true,
+    });
+    expect(controller.redo()).toBe(true);
+    expect(controller.getSnapshot().dirty).toBe(true);
+    expect(controller.redo()).toBe(true);
+    expect(controller.getSnapshot().draft?.blocks.map((block) => block.id)).toEqual([
+      revision().blocks[1].id,
+    ]);
+    expect(controller.redo()).toBe(false);
+  });
+  it("invalidates the redo branch after another edit, and no-op changes create no history", () => {
+    const { controller } = setup();
+    controller.selectRevision(revision());
+    expect(controller.edit(() => {})).toBe(false);
+    expect(controller.getSnapshot()).toMatchObject({ dirty: false, canUndo: false });
+    controller.edit((draft) => {
+      draft.seo.title = "First edit";
+    });
+    controller.undo();
+    expect(controller.getSnapshot().canRedo).toBe(true);
+    controller.edit((draft) => {
+      draft.seo.description = "Different branch";
+    });
+    expect(controller.redo()).toBe(false);
+    expect(controller.getSnapshot().draft?.seo).toMatchObject({
+      title: "Private draft",
+      description: "Different branch",
+    });
+  });
+  it("keeps unsaved blank drafts dirty when all field edits are undone", () => {
+    const { controller } = setup();
+    controller.startBlank();
+    controller.addBlock("text", revision().blocks[0].id);
+    controller.undo();
+    expect(controller.getSnapshot()).toMatchObject({
+      draft: { blocks: [] },
+      dirty: true,
+      selectedRevisionId: null,
+    });
+    expect(controller.discardChanges()).toBe(true);
+    expect(controller.getSnapshot()).toMatchObject({
+      draft: null,
+      dirty: false,
+      canUndo: false,
+      canRedo: false,
+    });
+  });
+  it("locks local history during unknown saves and clears it after the original save resolves", async () => {
+    const seen: CmsSaveCommand[] = [];
+    const { controller } = setup({
+      saveDraft: async (command) => {
+        seen.push(structuredClone(command));
+        if (seen.length === 1) throw new TypeError("unknown outcome");
+        return receipt(command);
+      },
+    });
+    edited(controller);
+    expect(controller.getSnapshot().canUndo).toBe(true);
+    const saving = controller.save();
+    expect(controller.undo()).toBe(false);
+    await saving;
+    expect(controller.getSnapshot()).toMatchObject({ phase: "uncertain", canUndo: false, canRedo: false });
+    expect(controller.redo()).toBe(false);
+    await controller.save();
+    expect(seen[1]).toEqual(seen[0]);
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "saved",
+      dirty: false,
+      canUndo: false,
+      canRedo: false,
+    });
+    expect(controller.undo()).toBe(false);
+  });
+  it("preserves local undo through explicit conflict version recovery", async () => {
+    const { controller } = setup({
+      saveDraft: async () => {
+        throw { status: 412 };
+      },
+    });
+    edited(controller);
+    await controller.save();
+    expect(controller.undo()).toBe(false);
+    await controller.refreshVersion();
+    expect(controller.undo()).toBe(true);
+    expect(controller.getSnapshot()).toMatchObject({
+      dirty: false,
+      etag: '"3"',
+      selectedRevisionId: revision().id,
+    });
+    expect(controller.getSnapshot().draft?.blocks[0].props.heading).toBe("Original heading");
+  });
+  it("clears edit history on explicit revision replacement, recovery and binding revocation", () => {
+    const { controller } = setup();
+    edited(controller);
+    controller.undo();
+    expect(controller.getSnapshot().canRedo).toBe(true);
+    controller.selectRevision(revision("a2000000-0000-4000-8000-000000000077"));
+    expect(controller.redo()).toBe(false);
+    controller.edit((draft) => {
+      draft.seo.title = "Change";
+    });
+    controller.undo();
+    controller.openRecovery(revision().id, document.id, { schemaVersion: 3, original: "keep" });
+    expect(controller.getSnapshot()).toMatchObject({ canUndo: false, canRedo: false, draft: null });
+    controller.selectRevision(revision());
+    controller.edit((draft) => {
+      draft.seo.title = "Another edit";
+    });
+    controller.revoke();
+    expect(controller.undo()).toBe(false);
+    expect(controller.redo()).toBe(false);
+    expect(controller.previewDraft()).toBeNull();
+  });
+  it("caps small edit history at 50 steps instead of retaining an unbounded typing session", () => {
+    const { controller } = setup();
+    controller.selectRevision(revision());
+    for (let index = 0; index < 60; index++)
+      controller.edit((draft) => {
+        draft.blocks[0].props.heading = `Edit ${index}`;
+      });
+    let count = 0;
+    while (controller.undo()) count++;
+    expect(count).toBe(50);
+    expect(controller.getSnapshot().draft?.blocks[0].props.heading).toBe("Edit 9");
+    expect(controller.getSnapshot().dirty).toBe(true);
+  });
+  it("also bounds large Unicode snapshots by UTF-8 bytes while retaining the nearest redo steps", () => {
+    const { controller } = setup();
+    const large = revision();
+    large.blocks = [
+      {
+        id: large.blocks[0].id,
+        type: "text",
+        props: { paragraphs: Array.from({ length: 20 }, () => "界".repeat(4000)) },
+      },
+    ];
+    controller.selectRevision(large);
+    for (let index = 0; index < 12; index++)
+      controller.edit((draft) => {
+        draft.seo.title = `Large edit ${index}`;
+      });
+    let count = 0;
+    while (controller.undo()) count++;
+    expect(count).toBeGreaterThan(0);
+    expect(count).toBeLessThan(12);
+    while (controller.redo()) {}
+    expect(controller.getSnapshot().draft?.seo.title).toBe("Large edit 11");
+    expect(controller.getSnapshot().draft?.blocks[0].props.paragraphs).toEqual(
+      large.blocks[0].props.paragraphs,
+    );
+  });
+  it("rejects an oversized edit with visible feedback and preserves the prior fields/history", () => {
+    const { controller } = setup();
+    edited(controller);
+    const previous = controller.getSnapshot().draft;
+    expect(
+      controller.edit((draft) => {
+        draft.blocks[0].props.heading = "界".repeat(90_000);
+      }),
+    ).toBe(false);
+    expect(controller.getSnapshot().draft).toBe(previous);
+    expect(controller.getSnapshot().message).toContain("Your previous draft is retained");
+    expect(controller.undo()).toBe(true);
+    expect(controller.getSnapshot().dirty).toBe(false);
+  });
+});
+
+describe("local validated CMS preview (no public route or browser acceptance)", () => {
+  const preview = (controller: CmsDraftController) =>
+    renderToStaticMarkup(createElement(CmsDraftPreview, { controller }));
+  it("renders all registered fields in order with inactive link targets and escaped search metadata", () => {
+    const { controller, client } = setup();
+    const full = revision();
+    full.blocks[0].props.action = { label: "Hero contact", href: "/contact" };
+    full.blocks.push(
+      {
+        id: "a2000000-0000-4000-8000-000000000003",
+        type: "cta",
+        props: { label: "Call us", href: "/office" },
+      },
+      {
+        id: "a2000000-0000-4000-8000-000000000004",
+        type: "footer",
+        props: { text: "Brokerage attribution", links: [{ label: "Privacy", href: "/privacy" }] },
+      },
+    );
+    full.seo.title = "<script>unsafe()</script>";
+    controller.selectRevision(full);
+    const html = preview(controller);
+    expect(html).toContain("Links are inactive");
+    expect(html).toContain("Hero contact");
+    expect(html).toContain("/office");
+    expect(html).toContain("Brokerage attribution");
+    expect(html.indexOf("Original heading")).toBeLessThan(html.indexOf("Original paragraph"));
+    expect(html.indexOf("Original paragraph")).toBeLessThan(html.indexOf("Call us"));
+    expect(html).toContain("&lt;script&gt;unsafe()&lt;/script&gt;");
+    expect(html).not.toMatch(/<a\b|href=|<script\b|<img\b|<iframe\b|<form\b/);
+    expect(client.saveDraft).not.toHaveBeenCalled();
+    expect(client.readDocument).not.toHaveBeenCalled();
+  });
+  it("withholds the entire preview for invalid links and reflects undo without changing saved history", () => {
+    const { controller } = setup();
+    controller.selectRevision(revision());
+    controller.edit((draft) => {
+      draft.blocks[0].props.action = { label: "Unsafe", href: "https://unapproved.example" };
+    });
+    expect(controller.previewDraft()).toBeNull();
+    const html = preview(controller);
+    expect(html).toContain("Local draft preview unavailable");
+    expect(html).not.toContain("Original heading");
+    expect(html).not.toContain("unapproved.example");
+    controller.undo();
+    expect(preview(controller)).toContain("Original heading");
+    expect(controller.getSnapshot()).toMatchObject({
+      dirty: false,
+      selectedRevisionId: revision().id,
+      etag: '"1"',
+    });
+  });
+  it("never projects unsupported recovery JSON or denied content into a partial preview", () => {
+    const { controller } = setup();
+    const unknown = revision();
+    unknown.blocks[0].props.future = { keep: true };
+    controller.selectRevision(unknown);
+    expect(controller.previewDraft()).toBeNull();
+    expect(preview(controller)).not.toContain("Original heading");
+    controller.selectRevision(revision());
+    controller.revoke();
+    expect(preview(controller)).not.toContain("Original heading");
+  });
+  it("previews a read-only revision offline without creating a command or enabling edits", () => {
+    const client = { saveDraft: vi.fn(), readDocument: vi.fn() };
+    const controller = new CmsDraftController({
+      document,
+      etag: '"1"',
+      client,
+      policy: { approvedLinkOrigins: new Set() },
+      online: false,
+      canWrite: false,
+      createKey: () => {
+        throw new Error("No command allowed");
+      },
+    });
+    controller.selectRevision(revision());
+    expect(preview(controller)).toContain("Original heading");
+    expect(controller.canEdit()).toBe(false);
+    expect(controller.undo()).toBe(false);
+    expect(client.saveDraft).not.toHaveBeenCalled();
+    expect(client.readDocument).not.toHaveBeenCalled();
   });
 });

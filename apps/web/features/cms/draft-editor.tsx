@@ -10,6 +10,7 @@ import {
 } from "../../../../packages/cms/browser";
 import { Button } from "../../../../packages/ui/components";
 import { CmsDraftController } from "./draft-controller";
+import { CmsDraftPreview } from "./draft-preview";
 import styles from "./draft-editor.module.css";
 
 type Block = BrowserDraft["blocks"][number];
@@ -302,8 +303,10 @@ export function CmsDraftEditor({
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [newKind, setNewKind] = useState<FieldBlockKind>("text");
   const [reorderMessage, setReorderMessage] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
   const pickerId = useId();
   const kindId = useId();
+  const previewId = useId();
   const blockList = useRef<HTMLOListElement>(null);
   const editable = controller.canEdit();
   const locked = state.dirty || ["saving", "uncertain", "denied"].includes(state.phase);
@@ -416,6 +419,40 @@ export function CmsDraftEditor({
           ) : (
             state.draft && (
               <>
+                <div className={styles.actions}>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={!state.canUndo}
+                    onClick={() => controller.undo()}
+                  >
+                    Undo local edit
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={!state.canRedo}
+                    onClick={() => controller.redo()}
+                  >
+                    Redo local edit
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    aria-expanded={showPreview}
+                    aria-controls={previewId}
+                    onClick={() => setShowPreview((shown) => !shown)}
+                  >
+                    {showPreview ? "Hide local preview" : "Show local preview"}
+                  </Button>
+                </div>
+                <p className={styles.help}>
+                  Undo and redo cover recent local edits in this tab. Saved revisions remain in the history
+                  picker.
+                </p>
+                <div id={previewId} hidden={!showPreview}>
+                  {showPreview && <CmsDraftPreview controller={controller} />}
+                </div>
                 <fieldset disabled={!editable} className={styles.fields}>
                   <legend>Draft content</legend>
                   <ol ref={blockList} className={styles.blocks}>
