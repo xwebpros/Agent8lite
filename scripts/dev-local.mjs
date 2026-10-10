@@ -1,5 +1,21 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { assertNodeRuntime, NodeRuntimeError, readPinnedNode } from "./node-runtime.mjs";
+
+try {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  assertNodeRuntime(process.version, await readPinnedNode(root), false, "development_node_version_invalid");
+} catch (error) {
+  console.error(
+    JSON.stringify({
+      code: "development_node_version_invalid",
+      ...(error instanceof NodeRuntimeError ? error.diagnostics() : {}),
+    }),
+  );
+  process.exit(1);
+}
 
 const env = {
   ...process.env,
