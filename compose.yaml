@@ -1,0 +1,22 @@
+name: estate-synthetic
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: estate
+      POSTGRES_PASSWORD: local-migration-only
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["estate-pg:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d estate"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7.4.6-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:56379:6379"]
+    volumes: ["estate-redis:/data"]
+volumes:
+  estate-pg:
+  estate-redis:

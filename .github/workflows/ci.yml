@@ -1,0 +1,65 @@
+name: Synthetic application acceptance
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_DB: estate
+          POSTGRES_PASSWORD: local-migration-only
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d estate"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4.6-alpine
+        ports: ["56379:6379"]
+    env:
+      APP_ENV: test
+      DEV_AUTH_ENABLED: 'true'
+      WEB_ORIGIN: http://localhost:3000
+      DATABASE_URL: postgresql://estate_runtime:local-runtime-only@127.0.0.1:55432/estate
+      MIGRATION_DATABASE_URL: postgresql://postgres:local-migration-only@127.0.0.1:55432/estate
+      REDIS_URL: redis://127.0.0.1:56379
+      MLS_PROVIDER: mock
+      DELIVERY_PROVIDER: no-delivery
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/check-contracts.mjs --generated
+      - run: pnpm db:verify-fresh
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm dev > /tmp/estate-dev.log 2>&1 &
+      - name: Await synthetic servers
+        run: node scripts/wait-ready.mjs
+      - run: pnpm test:isolated
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: synthetic-acceptance-failures
+          path: |
+            test-results/
+            playwright-report/
+            /tmp/estate-dev.log

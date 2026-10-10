@@ -1,0 +1,708 @@
+import { createHash, randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
+import { AccessError, requirePermission, type TenantContext } from "../../../packages/db/tenant-transaction";
+import { validateSchema } from "./contract-validation";
+import * as models from "./models";
+import { cursorBinding, decodeCursor, encodeCursor } from "./cursors";
+import { assertDelegation } from "../../../packages/auth/permissions";
+
+type Row = Record<string, any>;
+type Body = Record<string, any>;
+type Scope = "own" | "team" | "organization";
+type Mutation = { body: unknown; status: number; etag?: string };
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export function assertUuid(value: string) {
+  if (!uuid.test(value)) throw new AccessError(422, "uuid_invalid", "Valid UUID required.");
+}
+function notFound(): never {
+  throw new AccessError(404, "resource_unavailable", "Resource unavailable or out of scope.");
+}
+export function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, val]) => `${JSON.stringify(key)}:${stable(val)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
+}
+export function requireVersion(row: Row, supplied: string | undefined) {
+  if (!supplied) throw new AccessError(400, "revision_required", "If-Match revision required.");
+  const matched = /^(?:"(\d+)"|(\d+))$/.exec(supplied);
+  if (!matched || supplied.length > 100)
+    throw new AccessError(400, "revision_invalid", "Invalid If-Match revision.");
+  const value = matched[1] ?? matched[2];
+  if (Number(value) !== Number(row.row_version))
+    throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+}
+function text(value: string) {
+  if (!value.trim()) throw new AccessError(422, "empty_text", "Text cannot be empty.");
+  return value.trim();
+}
+function timezone(value: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+  } catch {
+    throw new AccessError(422, "timezone_invalid", "A valid IANA timezone is required.");
+  }
+  return value;
+}
+
+export class CrmService {
+  constructor(
+    private readonly client: PoolClient,
+    readonly context: TenantContext,
+    readonly traceId: string,
+  ) {}
+
+  private memberScope(column: string, scope: Scope, memberPlaceholder: string) {
+    if (scope === "organization") return "TRUE";
+    if (scope === "own") return `${column}=${memberPlaceholder}`;
+    return `EXISTS(SELECT 1 FROM app.office_member target JOIN app.office_member mine ON mine.tenant_id=target.tenant_id AND mine.office_id=target.office_id WHERE target.member_id=${column} AND mine.member_id=${memberPlaceholder})`;
+  }
+
+  private scopeSql(resource: string, scope: Scope, memberPlaceholder: string) {
+    if (resource === "leads") return this.memberScope("r.owner_member_id", scope, memberPlaceholder);
+    if (resource === "tasks") return this.memberScope("r.assignee_member_id", scope, memberPlaceholder);
+    if (resource === "contacts" && scope !== "organization") {
+      const assigned = this.memberScope("l.owner_member_id", scope, memberPlaceholder);
+      return `((r.created_by_member_id=${memberPlaceholder} AND NOT EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL)) OR EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL AND ${assigned}))`;
+    }
+    return "TRUE";
+  }
+
+  private resource(resource: string) {
+    const resources: Record<
+      string,
+      { table: string; mapper: (row: Row) => unknown; read: string; write: string }
+    > = {
+      contacts: {
+        table: "contact",
+        mapper: models.contact,
+        read: "crm.contacts.read",
+        write: "crm.contacts.write",
+      },
+      leads: { table: "lead", mapper: models.lead, read: "crm.leads.read", write: "crm.leads.write" },
+      tasks: { table: "task", mapper: models.task, read: "crm.tasks.read", write: "crm.tasks.write" },
+      members: { table: "membership", mapper: models.member, read: "members.read", write: "members.manage" },
+      roles: { table: "role_definition", mapper: models.role, read: "roles.read", write: "roles.write" },
+      "pipeline-stages": {
+        table: "pipeline_stage",
+        mapper: models.stage,
+        read: "crm.pipeline.read",
+        write: "crm.pipeline.write",
+      },
+      "lead-sources": {
+        table: "lead_source",
+        mapper: models.source,
+        read: "crm.sources.read",
+        write: "crm.sources.write",
+      },
+    };
+    return resources[resource] ?? notFound();
+  }
+
+  private select(resource: string) {
+    return resource === "contacts"
+      ? `r.*, ARRAY(SELECT c.normalized_value FROM app.contact_channel c WHERE c.contact_id=r.id AND c.kind='email' AND c.active ORDER BY c.created_at,c.id) AS emails, ARRAY(SELECT c.normalized_value FROM app.contact_channel c WHERE c.contact_id=r.id AND c.kind='phone' AND c.active ORDER BY c.created_at,c.id) AS phones`
+      : "r.*";
+  }
+
+  async row(resource: string, id: string, writing = false, lock = false) {
+    assertUuid(id);
+    const configuration = this.resource(resource);
+    const scope = requirePermission(this.context, writing ? configuration.write : configuration.read);
+    const archived = ["contacts", "leads"].includes(resource) ? "AND r.archived_at IS NULL" : "";
+    const result = await this.client.query(
+      `SELECT ${this.select(resource)} FROM app.${configuration.table} r WHERE r.tenant_id=app.current_tenant() AND r.id=$1 AND $2::uuid IS NOT NULL AND ${this.scopeSql(resource, scope, "$2")} ${archived} ${lock ? "FOR UPDATE OF r" : ""}`,
+      [id, this.context.memberId],
+    );
+    return result.rows[0] ?? notFound();
+  }
+
+  async detail(resource: string, id: string) {
+    return this.resource(resource).mapper(await this.row(resource, id));
+  }
+
+  async list(resource: string, query: Record<string, unknown>) {
+    const configuration = this.resource(resource);
+    const scope = requirePermission(this.context, configuration.read);
+    const limit = query.limit === undefined ? 25 : Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new AccessError(422, "limit_invalid", "Limit must be between 1 and 100.");
+    let filter: Body = {};
+    if (query.filter) {
+      try {
+        filter = JSON.parse(String(query.filter));
+      } catch {
+        throw new AccessError(422, "filter_invalid", "Filter must be valid JSON.");
+      }
+      validateSchema("LeadFilter", filter);
+    }
+    const supportedFilters: Record<string, string[]> = {
+      contacts: ["q", "ownerMemberId", "tagIds"],
+      leads: ["q", "ownerMemberId", "stageId", "sourceId", "intent", "tagIds"],
+      tasks: ["q", "ownerMemberId"],
+    };
+    if (
+      Object.keys(filter).some(
+        (key) =>
+          !(supportedFilters[resource] ?? []).includes(key) && !(key === "tagIds" && !filter[key]?.length),
+      )
+    )
+      throw new AccessError(422, "filter_not_available", "This filter is not implemented for this resource.");
+    const binding = cursorBinding(this.context, resource, scope, filter);
+    const cursor = decodeCursor(query.cursor, binding);
+    if (cursor) assertUuid(cursor);
+    const params: unknown[] = [this.context.memberId, cursor, limit + 1];
+    const where = [
+      "r.tenant_id=app.current_tenant()",
+      "$1::uuid IS NOT NULL",
+      this.scopeSql(resource, scope, "$1"),
+      "($2::uuid IS NULL OR r.id>$2::uuid)",
+    ];
+    if (["contacts", "leads"].includes(resource)) where.push("r.archived_at IS NULL");
+    if (filter.q) {
+      params.push(`%${String(filter.q).replace(/[\\%_]/g, "\\$&")}%`);
+      where.push(
+        resource === "leads"
+          ? `EXISTS(SELECT 1 FROM app.contact c WHERE c.id=r.contact_id AND c.display_name ILIKE $${params.length} ESCAPE '\\')`
+          : resource === "contacts"
+            ? `r.display_name ILIKE $${params.length} ESCAPE '\\'`
+            : resource === "tasks"
+              ? `r.title ILIKE $${params.length} ESCAPE '\\'`
+              : "TRUE",
+      );
+    }
+    for (const [field, column] of [
+      ["stageId", "stage_id"],
+      ["ownerMemberId", "owner_member_id"],
+      ["sourceId", "source_id"],
+      ["intent", "intent"],
+    ]) {
+      if (filter[field] && resource === "leads") {
+        params.push(filter[field]);
+        where.push(`r.${column}=$${params.length}`);
+      }
+    }
+    if (filter.ownerMemberId && resource === "tasks") {
+      params.push(filter.ownerMemberId);
+      where.push(`r.assignee_member_id=$${params.length}`);
+    }
+    if (filter.ownerMemberId && resource === "contacts") {
+      params.push(filter.ownerMemberId);
+      where.push(
+        `((r.created_by_member_id=$${params.length} AND NOT EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL)) OR EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL AND l.owner_member_id=$${params.length}))`,
+      );
+    }
+    if (filter.tagIds?.length) {
+      requirePermission(this.context, "crm.tags.read");
+      if (new Set(filter.tagIds).size !== filter.tagIds.length)
+        throw new AccessError(422, "tag_duplicate", "Each tag filter may appear once.");
+      const tags = await this.client.query(
+        "SELECT id FROM app.tag WHERE tenant_id=app.current_tenant() AND id=ANY($1::uuid[])",
+        [filter.tagIds],
+      );
+      if (tags.rowCount !== filter.tagIds.length)
+        throw new AccessError(422, "tag_invalid", "Tag filters must belong to this organization.");
+      params.push(filter.tagIds);
+      const tagsParam = `$${params.length}::uuid[]`;
+      if (resource === "leads")
+        where.push(
+          `(SELECT count(*) FROM app.lead_tag lt WHERE lt.tenant_id=app.current_tenant() AND lt.lead_id=r.id AND lt.tag_id=ANY(${tagsParam}))=cardinality(${tagsParam})`,
+        );
+      else if (resource === "contacts") {
+        const leadScope = requirePermission(this.context, "crm.leads.read");
+        where.push(
+          `EXISTS(SELECT 1 FROM app.lead l WHERE l.tenant_id=app.current_tenant() AND l.contact_id=r.id AND l.archived_at IS NULL AND ${this.scopeSql("leads", leadScope, "$1").replaceAll("r.owner_member_id", "l.owner_member_id")} AND (SELECT count(*) FROM app.lead_tag lt WHERE lt.tenant_id=l.tenant_id AND lt.lead_id=l.id AND lt.tag_id=ANY(${tagsParam}))=cardinality(${tagsParam}))`,
+        );
+      }
+    }
+    const result = await this.client.query(
+      `SELECT ${this.select(resource)} FROM app.${configuration.table} r WHERE ${where.join(" AND ")} ORDER BY r.id LIMIT $3`,
+      params,
+    );
+    const hasMore = result.rows.length > limit;
+    const rows = result.rows.slice(0, limit);
+    if (resource === "pipeline-stages") rows.sort((a, b) => a.position - b.position);
+    return {
+      items: rows.map(configuration.mapper),
+      nextCursor: hasMore ? encodeCursor(rows.at(-1)!.id, binding) : null,
+      hasMore,
+    };
+  }
+
+  async idempotent(
+    key: string | undefined,
+    routeKey: string,
+    body: unknown,
+    expectedVersion: string | undefined,
+    command: () => Promise<Mutation>,
+    reauthorizeReplay?: (body: unknown) => Promise<void>,
+  ): Promise<Mutation> {
+    if (!key || key.length > 100 || !/^[\x21-\x7e]+$/.test(key))
+      throw new AccessError(
+        400,
+        "idempotency_required",
+        "A printable Idempotency-Key of at most 100 characters is required.",
+      );
+    const requestHash = createHash("sha256")
+      .update(stable({ body, expectedVersion: expectedVersion ?? null }))
+      .digest("hex");
+    const lockKey = `${this.context.organizationId}:${this.context.userId}:${routeKey}:${key}`;
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [lockKey]);
+    const existing = await this.client.query(
+      "SELECT request_hash,response_body,status_code FROM app.idempotency_record WHERE actor_ref=$1 AND route_key=$2 AND key=$3 AND expires_at>now()",
+      [this.context.userId, routeKey, key],
+    );
+    if (existing.rowCount) {
+      const row = existing.rows[0];
+      if (row.request_hash !== requestHash)
+        throw new AccessError(
+          409,
+          "idempotency_conflict",
+          "This idempotency key was used with a different request.",
+        );
+      if (reauthorizeReplay) await reauthorizeReplay(row.response_body);
+      const resource = routeKey.split("/")[4];
+      const entity = row.response_body;
+      // Replays must still have current resource scope after reassignment or revocation.
+      const parentId = routeKey.split("/")[5];
+      const action = routeKey.split("/")[6];
+      if (resource === "leads" && action === "notes") await this.row("leads", parentId, true);
+      else if (["contacts", "leads", "tasks"].includes(resource) && entity?.id)
+        await this.row(resource, entity.id, true);
+      return {
+        body: entity,
+        status: row.status_code,
+        etag: entity?.version ? `"${entity.version}"` : undefined,
+      };
+    }
+    const result = await command();
+    await this.client.query(
+      `INSERT INTO app.idempotency_record(tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,now()+interval '1 day')`,
+      [
+        this.context.organizationId,
+        this.context.userId,
+        routeKey,
+        key,
+        requestHash,
+        JSON.stringify(result.body),
+        result.status,
+      ],
+    );
+    return result;
+  }
+
+  async audit(action: string, resource: string, id: string, version: number) {
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        this.context.organizationId,
+        this.context.userId,
+        action,
+        resource,
+        id,
+        this.traceId,
+        JSON.stringify({ resourceVersion: version }),
+      ],
+    );
+  }
+
+  async event(
+    type: string,
+    resource: string,
+    id: string,
+    version: number,
+    relatedIds: string[] = [],
+    producer = "crm",
+  ) {
+    const eventId = randomUUID();
+    const now = new Date().toISOString();
+    const payload = {
+      eventId,
+      type,
+      version: 1,
+      tenantId: this.context.organizationId,
+      occurredAt: now,
+      ingestedAt: now,
+      producer,
+      aggregateType: resource,
+      aggregateId: id,
+      correlationId: this.traceId,
+      payload: { resourceId: id, resourceVersion: version, relatedResourceIds: relatedIds },
+    };
+    await this.client.query(
+      `INSERT INTO app.outbox(tenant_id,id,event_type,aggregate_id,payload,initiating_actor_id) VALUES($1,$2,$3,$4,$5,$6)`,
+      [this.context.organizationId, eventId, type, id, JSON.stringify(payload), this.context.userId],
+    );
+  }
+
+  private async activeMember(id: string, scope: Scope) {
+    assertUuid(id);
+    const result = await this.client.query(
+      `SELECT r.id FROM app.membership r WHERE r.tenant_id=app.current_tenant() AND r.id=$1 AND r.status='active' AND $2::uuid IS NOT NULL AND ${this.memberScope("r.id", scope, "$2")}`,
+      [id, this.context.memberId],
+    );
+    if (!result.rowCount)
+      throw new AccessError(
+        422,
+        "assignee_invalid",
+        "Assignee must be an active eligible member of this organization.",
+      );
+  }
+
+  private async channels(contactId: string, body: Body, patch = false) {
+    for (const [field, kind] of [
+      ["emails", "email"],
+      ["phones", "phone"],
+    ]) {
+      if (!(field in body)) continue;
+      const values = [
+        ...new Set(
+          (body[field] as string[]).map((value) =>
+            kind === "email" ? value.trim().toLowerCase() : value.trim().replace(/[\s().-]/g, ""),
+          ),
+        ),
+      ];
+      if (values.some((value) => !value || (kind === "phone" && !/^\+?[0-9]{7,15}$/.test(value))))
+        throw new AccessError(
+          422,
+          "channel_invalid",
+          "Phone channels require 7–15 digits with an optional leading +.",
+        );
+      if (patch)
+        await this.client.query(
+          "UPDATE app.contact_channel SET active=false WHERE contact_id=$1 AND kind=$2",
+          [contactId, kind],
+        );
+      for (const [index, value] of values.entries())
+        await this.client.query(
+          `INSERT INTO app.contact_channel(tenant_id,contact_id,kind,normalized_value,is_primary) VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,contact_id,kind,normalized_value) DO UPDATE SET active=true,is_primary=EXCLUDED.is_primary`,
+          [this.context.organizationId, contactId, kind, value, index === 0],
+        );
+    }
+  }
+
+  /** Trusted MOD-D capture evidence is never accepted from a published request body. */
+  async createCapturedLead(
+    body: Body,
+    evidence: { attribution: Record<string, unknown>; score: number; scoreVersion: string },
+  ) {
+    return this.create("leads", body, evidence);
+  }
+
+  async create(
+    resource: string,
+    body: Body,
+    captureEvidence?: { attribution: Record<string, unknown>; score: number; scoreVersion: string },
+  ): Promise<Mutation> {
+    const config = this.resource(resource);
+    const scope = requirePermission(this.context, config.write);
+    let row: Row;
+    if (resource === "contacts") {
+      const result = await this.client.query(
+        `INSERT INTO app.contact(tenant_id,display_name,birthday,created_by_member_id) VALUES($1,$2,$3,$4) RETURNING *`,
+        [this.context.organizationId, text(body.displayName), body.birthday ?? null, this.context.memberId],
+      );
+      row = result.rows[0];
+      await this.channels(row.id, body);
+      row = await this.row(resource, row.id);
+    } else if (resource === "leads") {
+      await this.row("contacts", body.contactId, true);
+      const owner = body.ownerMemberId === undefined ? this.context.memberId : body.ownerMemberId;
+      if (owner) await this.activeMember(owner, scope);
+      if (!owner && scope !== "organization")
+        throw new AccessError(422, "owner_required", "Own scope requires an assigned owner.");
+      const source = await this.client.query("SELECT id FROM app.lead_source WHERE id=$1", [body.sourceId]);
+      if (!source.rowCount)
+        throw new AccessError(422, "source_invalid", "Source must belong to this organization.");
+      const stage = await this.client.query("SELECT id FROM app.pipeline_stage ORDER BY position LIMIT 1");
+      if (!stage.rowCount)
+        throw new AccessError(409, "pipeline_unavailable", "Configure a pipeline before capturing leads.");
+      const result = await this.client.query(
+        `INSERT INTO app.lead(tenant_id,contact_id,source_id,stage_id,owner_member_id,intent,timeline,attribution,score,score_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [
+          this.context.organizationId,
+          body.contactId,
+          body.sourceId,
+          stage.rows[0].id,
+          owner,
+          body.intent,
+          body.timeline ?? null,
+          JSON.stringify(
+            captureEvidence?.attribution ?? { source: "manual-synthetic-workspace", sourceId: body.sourceId },
+          ),
+          captureEvidence?.score ?? null,
+          captureEvidence?.scoreVersion ?? null,
+        ],
+      );
+      row = result.rows[0];
+      await this.event("lead.captured", "lead", row.id, Number(row.row_version), [body.contactId]);
+      await this.client.query(
+        `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data) VALUES($1,$2,'lead.captured',$3,now(),$4)`,
+        [
+          this.context.organizationId,
+          row.id,
+          randomUUID(),
+          JSON.stringify({ resourceId: row.id, resourceVersion: 1 }),
+        ],
+      );
+    } else if (resource === "tasks") {
+      await this.activeMember(body.assigneeMemberId, scope);
+      if (body.leadId) await this.row("leads", body.leadId, true);
+      const result = await this.client.query(
+        `INSERT INTO app.task(tenant_id,lead_id,assignee_member_id,title,description,due_at,due_timezone,priority,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [
+          this.context.organizationId,
+          body.leadId ?? null,
+          body.assigneeMemberId,
+          text(body.title),
+          body.description ?? null,
+          body.dueAt,
+          timezone(body.timezone),
+          body.priority ?? "normal",
+          body.state ?? "open",
+        ],
+      );
+      row = result.rows[0];
+    } else notFound();
+    await this.audit(`${config.table}.created`, config.table, row.id, Number(row.row_version));
+    return { body: config.mapper(row), status: 201, etag: '"1"' };
+  }
+
+  async update(
+    resource: string,
+    id: string,
+    body: Body,
+    expectedVersion: string | undefined,
+  ): Promise<Mutation> {
+    const config = this.resource(resource);
+    const scope = requirePermission(this.context, config.write);
+    const current = await this.row(resource, id, true, true);
+    requireVersion(current, expectedVersion);
+    let row: Row;
+    if (resource === "contacts") {
+      await this.client.query(
+        `UPDATE app.contact SET display_name=$1,birthday=$2,updated_at=now(),row_version=row_version+1 WHERE id=$3`,
+        [text(body.displayName), body.birthday === undefined ? current.birthday : body.birthday, id],
+      );
+      await this.channels(id, body, true);
+      row = await this.row(resource, id);
+    } else if (resource === "leads") {
+      const owner = "ownerMemberId" in body ? body.ownerMemberId : current.owner_member_id;
+      if (owner) await this.activeMember(owner, scope);
+      if (!owner && scope !== "organization")
+        throw new AccessError(422, "owner_required", "Own scope requires an assigned owner.");
+      const result = await this.client.query(
+        `UPDATE app.lead SET owner_member_id=$1,intent=$2,timeline=$3,updated_at=now(),row_version=row_version+1 WHERE id=$4 RETURNING *`,
+        [owner, body.intent ?? current.intent, "timeline" in body ? body.timeline : current.timeline, id],
+      );
+      row = result.rows[0];
+      if (owner !== current.owner_member_id)
+        await this.event("lead.assigned", "lead", id, Number(row.row_version), owner ? [owner] : []);
+    } else if (resource === "tasks") {
+      await this.activeMember(body.assigneeMemberId, scope);
+      if (body.leadId) await this.row("leads", body.leadId, true);
+      const result = await this.client.query(
+        `UPDATE app.task SET lead_id=$1,assignee_member_id=$2,title=$3,description=$4,due_at=$5,due_timezone=$6,priority=$7,state=$8,updated_at=now(),row_version=row_version+1 WHERE id=$9 RETURNING *`,
+        [
+          body.leadId === undefined ? current.lead_id : body.leadId,
+          body.assigneeMemberId,
+          text(body.title),
+          body.description ?? current.description,
+          body.dueAt,
+          timezone(body.timezone),
+          body.priority ?? current.priority,
+          body.state ?? current.state,
+          id,
+        ],
+      );
+      row = result.rows[0];
+      if (row.state === "done" && current.state !== "done")
+        await this.client.query(
+          `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data) VALUES($1,$2,'task.completed',$3,now(),$4)`,
+          [
+            this.context.organizationId,
+            row.lead_id,
+            randomUUID(),
+            JSON.stringify({ resourceId: id, resourceVersion: Number(row.row_version) }),
+          ],
+        );
+    } else if (resource === "members") {
+      // Serialize final-owner changes at the organization boundary.
+      await this.client.query("SELECT id FROM app.organization WHERE id=$1 FOR UPDATE", [
+        this.context.organizationId,
+      ]);
+      const newRole = body.roleId ?? current.role_id;
+      const newStatus = body.status ?? current.status;
+      const roles = await this.client.query(
+        "SELECT id,name,permission_grants FROM app.role_definition WHERE id=ANY($1::uuid[])",
+        [[current.role_id, newRole]],
+      );
+      const targetRole = roles.rows.find((r) => r.id === newRole);
+      if (!targetRole) throw new AccessError(422, "role_invalid", "Role must belong to this organization.");
+      const oldRole = roles.rows.find((r) => r.id === current.role_id);
+      if ((oldRole?.name === "Owner" || targetRole.name === "Owner") && this.context.roleName !== "Owner")
+        throw new AccessError(403, "owner_change_denied", "Only an owner can change owner membership.");
+      if (newRole !== current.role_id || (newStatus === "active" && current.status !== "active"))
+        assertDelegation(this.context, targetRole.permission_grants);
+      if (
+        oldRole?.name === "Owner" &&
+        current.status === "active" &&
+        (targetRole.name !== "Owner" || newStatus !== "active")
+      ) {
+        const count = await this.client.query(
+          `SELECT count(*) FROM app.membership m JOIN app.role_definition r ON r.id=m.role_id AND r.tenant_id=m.tenant_id WHERE m.tenant_id=app.current_tenant() AND m.status='active' AND r.name='Owner'`,
+        );
+        if (Number(count.rows[0].count) <= 1)
+          throw new AccessError(409, "last_owner", "An organization must retain an active owner.");
+      }
+      if (body.officeIds) {
+        if (new Set(body.officeIds).size !== body.officeIds.length)
+          throw new AccessError(422, "office_duplicate", "Offices cannot be duplicated.");
+        for (const office of body.officeIds) {
+          const result = await this.client.query("SELECT id FROM app.office WHERE id=$1", [office]);
+          if (!result.rowCount)
+            throw new AccessError(422, "office_invalid", "Office must belong to this organization.");
+        }
+        await this.client.query("DELETE FROM app.office_member WHERE member_id=$1", [id]);
+        for (const office of body.officeIds)
+          await this.client.query(
+            "INSERT INTO app.office_member(tenant_id,office_id,member_id)VALUES($1,$2,$3)",
+            [this.context.organizationId, office, id],
+          );
+      }
+      const result = await this.client.query(
+        `UPDATE app.membership SET role_id=$1,status=$2,row_version=row_version+1,updated_at=now() WHERE id=$3 RETURNING *`,
+        [newRole, newStatus, id],
+      );
+      row = result.rows[0];
+    } else notFound();
+    await this.audit(`${config.table}.updated`, config.table, id, Number(row.row_version));
+    return { body: config.mapper(row), status: 200, etag: `"${row.row_version}"` };
+  }
+
+  async transition(id: string, body: Body, expectedVersion: string | undefined): Promise<Mutation> {
+    const row = await this.row("leads", id, true, true);
+    requireVersion(row, expectedVersion);
+    const stage = await this.client.query("SELECT id FROM app.pipeline_stage WHERE id=$1", [body.toStageId]);
+    if (!stage.rowCount)
+      throw new AccessError(422, "stage_invalid", "Stage must belong to this organization.");
+    if (row.stage_id === body.toStageId)
+      throw new AccessError(409, "stage_unchanged", "Lead is already in this stage.");
+    await this.client.query(
+      `INSERT INTO app.stage_transition(tenant_id,lead_id,from_stage_id,to_stage_id,actor_member_id,reason) VALUES($1,$2,$3,$4,$5,$6)`,
+      [
+        this.context.organizationId,
+        id,
+        row.stage_id,
+        body.toStageId,
+        this.context.memberId,
+        body.reason ?? null,
+      ],
+    );
+    const result = await this.client.query(
+      "UPDATE app.lead SET stage_id=$1,row_version=row_version+1,updated_at=now() WHERE id=$2 RETURNING *",
+      [body.toStageId, id],
+    );
+    const updated = result.rows[0];
+    await this.audit("lead.stage_changed", "lead", id, Number(updated.row_version));
+    await this.event("lead.stage_changed", "lead", id, Number(updated.row_version), [body.toStageId]);
+    await this.client.query(
+      `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data) VALUES($1,$2,'lead.stage_changed',$3,now(),$4)`,
+      [
+        this.context.organizationId,
+        id,
+        randomUUID(),
+        JSON.stringify({ resourceId: id, resourceVersion: Number(updated.row_version) }),
+      ],
+    );
+    return { body: models.lead(updated), status: 201, etag: `"${updated.row_version}"` };
+  }
+
+  async notes(id: string, body?: Body, expectedVersion?: string): Promise<unknown> {
+    const lead = await this.row("leads", id, !!body, !!body);
+    if (body) {
+      requireVersion(lead, expectedVersion);
+      const result = await this.client.query(
+        `INSERT INTO app.note(tenant_id,lead_id,author_member_id,body) VALUES($1,$2,$3,$4) RETURNING *`,
+        [this.context.organizationId, id, this.context.memberId, text(body.body)],
+      );
+      await this.client.query("UPDATE app.lead SET row_version=row_version+1,updated_at=now() WHERE id=$1", [
+        id,
+      ]);
+      await this.audit("lead.note_added", "note", result.rows[0].id, 1);
+      return { body: models.note(result.rows[0]), status: 201 };
+    }
+    const result = await this.client.query(
+      "SELECT * FROM app.note WHERE lead_id=$1 ORDER BY created_at,id LIMIT 100",
+      [id],
+    );
+    return { items: result.rows.map(models.note), nextCursor: null, hasMore: false };
+  }
+
+  async activity(id: string) {
+    await this.row("leads", id);
+    const result = await this.client.query(
+      "SELECT * FROM app.activity_event WHERE lead_id=$1 ORDER BY occurred_at DESC,id LIMIT 100",
+      [id],
+    );
+    return {
+      items: result.rows.map((r) => ({
+        id: r.id,
+        type: r.event_type,
+        occurredAt: new Date(r.occurred_at).toISOString(),
+        description: r.event_type.split(".").join(" "),
+        resourceId: r.safe_data.resourceId ?? null,
+      })),
+      nextCursor: null,
+      hasMore: false,
+    };
+  }
+
+  async dashboard(query: Record<string, unknown>) {
+    requirePermission(this.context, "dashboard.read");
+    const now = new Date();
+    const from = query.from ? new Date(String(query.from)) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = query.to ? new Date(String(query.to)) : now;
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to)
+      throw new AccessError(422, "period_invalid", "Valid date interval required.");
+    const leadScope = requirePermission(this.context, "crm.leads.read");
+    const taskScope = requirePermission(this.context, "crm.tasks.read");
+    const counts = await this.client.query(
+      `SELECT count(*) FROM app.lead r WHERE r.archived_at IS NULL AND $1::uuid IS NOT NULL AND ${this.scopeSql("leads", leadScope, "$1")} AND r.created_at BETWEEN $2 AND $3`,
+      [this.context.memberId, from.toISOString(), to.toISOString()],
+    );
+    const tasks = await this.client.query(
+      `SELECT r.* FROM app.task r WHERE r.state='open' AND $1::uuid IS NOT NULL AND ${this.scopeSql("tasks", taskScope, "$1")} ORDER BY r.due_at LIMIT 20`,
+      [this.context.memberId],
+    );
+    return {
+      period: { from: from.toISOString(), to: to.toISOString(), timezone: this.context.timezone },
+      metrics: [
+        {
+          key: "leads.created",
+          definitionVersion: 1,
+          value: Number(counts.rows[0].count),
+          unit: "leads",
+          source: "crm-scoped-query",
+          state: "available",
+          refreshedAt: now.toISOString(),
+        },
+        {
+          key: "revenue",
+          definitionVersion: 1,
+          value: null,
+          unit: "USD",
+          source: "billing-unconfigured",
+          state: "unavailable",
+          refreshedAt: null,
+        },
+      ],
+      tasks: tasks.rows.map(models.task),
+      notifications: [],
+      integrationHealth: [],
+    };
+  }
+}

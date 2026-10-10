@@ -1,0 +1,202 @@
+{
+  "status": "Collected IDs for coordinator review; no deletion performed",
+  "evidence": "Exact failed Vitest interval, matching synthetic transfer role creation, and published data-transfer routes; initial hook threw before tracked sets cleared",
+  "roleId": "1b415831-a06c-4d36-afd3-648e9c11cfd3",
+  "responses": [
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/roles",
+      "id": "1b415831-a06c-4d36-afd3-648e9c11cfd3",
+      "created_at": "2026-10-10T00:36:43.429Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "ea9a47a4-8cee-4de6-84b8-564e5b4f92ff",
+      "created_at": "2026-10-10T00:36:43.489Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "71516d1f-555b-4258-9f50-9cd02a1f76b4",
+      "created_at": "2026-10-10T00:36:43.651Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/contacts",
+      "id": "57ea18ee-7b57-4a05-8ab1-6b27a0d6f953",
+      "created_at": "2026-10-10T00:36:43.790Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "9b400a93-67f0-41ef-8312-3609761f1bd4",
+      "created_at": "2026-10-10T00:36:43.816Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-previews",
+      "id": "7cce8c02-5423-4640-8a89-362635fcc168",
+      "created_at": "2026-10-10T00:36:43.862Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-commits",
+      "id": "f9dbf779-2459-44f2-87ed-071ccef09914",
+      "created_at": "2026-10-10T00:36:43.905Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "6ef22477-945b-4283-bd60-ee6aece57488",
+      "created_at": "2026-10-10T00:36:44.234Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "75808af3-1122-4d9e-976a-16698601bf0b",
+      "created_at": "2026-10-10T00:36:44.329Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-previews",
+      "id": "b8ed0453-ce62-4d70-bbe7-540ac65c0941",
+      "created_at": "2026-10-10T00:36:44.371Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "31e6bdb1-bb02-481c-8554-5bf774906409",
+      "created_at": "2026-10-10T00:36:44.672Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-previews",
+      "id": "0a4034bf-4753-457f-b029-53dfdb3bafcd",
+      "created_at": "2026-10-10T00:36:44.713Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "a51f68c1-d041-4d5d-aa2a-d2a0931c4089",
+      "created_at": "2026-10-10T00:36:44.775Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-previews",
+      "id": "0a1d3910-f6e9-4098-85a8-facf9147412b",
+      "created_at": "2026-10-10T00:36:44.805Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/contacts",
+      "id": "4ae0e381-edbc-40d9-8b8c-7ff2cacab911",
+      "created_at": "2026-10-10T00:36:44.984Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "48196d53-eebd-409b-8187-bcce4b7d0b5c",
+      "created_at": "2026-10-10T00:36:45.005Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-previews",
+      "id": "b7f76742-2988-49b8-a55b-41df97537c1a",
+      "created_at": "2026-10-10T00:36:45.046Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "c2cdec04-387a-4d5a-920b-ea354fb2409b",
+      "created_at": "2026-10-10T00:36:45.201Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-previews",
+      "id": "733cdfc2-47a5-466e-8853-d29dc88d1dfa",
+      "created_at": "2026-10-10T00:36:45.239Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/uploads",
+      "id": "dea59cbf-a765-415b-ad6e-e3e344452bef",
+      "created_at": "2026-10-10T00:36:45.271Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-previews",
+      "id": "e7acc50d-5b5f-443a-9dfe-ea2eff47dbf0",
+      "created_at": "2026-10-10T00:36:45.318Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/imports/contact-commits",
+      "id": "3447502b-f850-443b-a941-5c161369fc0b",
+      "created_at": "2026-10-10T00:36:45.339Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/contacts",
+      "id": "41d99bec-577f-4d72-8265-bad65e7c8c7c",
+      "created_at": "2026-10-10T00:36:45.466Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/contacts",
+      "id": "3d429269-0e0b-484e-a83d-7bcd30a90bde",
+      "created_at": "2026-10-10T00:36:45.488Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/exports",
+      "id": "6fc9ffe0-a534-4f50-ae8d-6653867e281c",
+      "created_at": "2026-10-10T00:36:45.506Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/exports",
+      "id": "0ab9f8cc-1008-4d41-9872-752322030aaa",
+      "created_at": "2026-10-10T00:36:45.564Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/contacts",
+      "id": "4c07d8cf-519f-46ba-9508-5cc585e2a13a",
+      "created_at": "2026-10-10T00:36:45.754Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/exports",
+      "id": "7c8e9b2a-4f6c-491b-a288-a0ed752394bd",
+      "created_at": "2026-10-10T00:36:45.771Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/exports",
+      "id": "89611140-dc1b-4387-9de9-67ff0a71ec3c",
+      "created_at": "2026-10-10T00:36:45.823Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/contacts",
+      "id": "bdc6da90-520c-4eaf-8d1c-1aa96ee3f733",
+      "created_at": "2026-10-10T00:36:45.934Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/leads",
+      "id": "cc30086d-23f5-4505-aa2c-f5bb0cf4181b",
+      "created_at": "2026-10-10T00:36:45.955Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/exports",
+      "id": "1c10a97e-fb63-485d-80f4-74fb86448a69",
+      "created_at": "2026-10-10T00:36:45.982Z"
+    },
+    {
+      "route_key": "POST /v1/orgs/10000000-0000-4000-8000-000000000001/exports",
+      "id": "f0e7ff37-cfb2-4646-88d8-bc115fc3792b",
+      "created_at": "2026-10-10T00:36:46.039Z"
+    }
+  ],
+  "additionalSyntheticContacts": [
+    {
+      "id": "57ea18ee-7b57-4a05-8ab1-6b27a0d6f953",
+      "created_at": "2026-10-10T00:36:43.790Z"
+    },
+    {
+      "id": "fdbafc6a-f9ba-447e-bd50-67058328b5f4",
+      "created_at": "2026-10-10T00:36:43.905Z"
+    },
+    {
+      "id": "4ae0e381-edbc-40d9-8b8c-7ff2cacab911",
+      "created_at": "2026-10-10T00:36:44.984Z"
+    },
+    {
+      "id": "ac0c0824-4381-48a9-a2ed-55e479a7dcbd",
+      "created_at": "2026-10-10T00:36:45.339Z"
+    },
+    {
+      "id": "3d429269-0e0b-484e-a83d-7bcd30a90bde",
+      "created_at": "2026-10-10T00:36:45.488Z"
+    },
+    {
+      "id": "4c07d8cf-519f-46ba-9508-5cc585e2a13a",
+      "created_at": "2026-10-10T00:36:45.754Z"
+    },
+    {
+      "id": "bdc6da90-520c-4eaf-8d1c-1aa96ee3f733",
+      "created_at": "2026-10-10T00:36:45.934Z"
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://platform.example/schemas/event-envelope-v1.json",
+  "title": "Internal event envelope v1 — proposed design",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "type",
+    "version",
+    "tenantId",
+    "occurredAt",
+    "ingestedAt",
+    "producer",
+    "aggregateType",
+    "aggregateId",
+    "correlationId",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "type": {
+      "enum": [
+        "lead.captured",
+        "lead.assigned",
+        "lead.stage_changed",
+        "contact.archived",
+        "task.due",
+        "site.published",
+        "form.submitted",
+        "campaign.enrolled",
+        "campaign.cancelled",
+        "delivery.receipt",
+        "consent.changed",
+        "listing.changed",
+        "listing.withdrawn",
+        "subscription.reconciled",
+        "integration.state_changed",
+        "ai.draft_ready"
+      ]
+    },
+    "version": {
+      "const": 1
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ingestedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "aggregateType": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "aggregateId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "correlationId": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "payload": {
+      "$ref": "#/$defs/Payload"
+    }
+  },
+  "$defs": {
+    "Payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resourceId",
+        "resourceVersion"
+      ],
+      "properties": {
+        "resourceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "resourceVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "relatedResourceIds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "safeCode": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "sourceEventId": {
+          "type": "string",
+          "maxLength": 255
+        }
+      }
+    }
+  },
+  "description": "Events carry references and safe codes, not raw CRM messages, secrets or unrestricted provider data. Consumers reload scoped authorized data. Event-type-specific rules and producer/consumer ownership are specified in TDD."
+}
