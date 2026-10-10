@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/campaign-draft-event-v1",
+  "title": "Native campaign draft metadata changed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "type",
+    "version",
+    "tenantId",
+    "occurredAt",
+    "ingestedAt",
+    "producer",
+    "aggregateType",
+    "aggregateId",
+    "correlationId",
+    "payload"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "type": { "const": "campaign.draft_metadata_changed" },
+    "version": { "const": 1 },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "ingestedAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "marketing" },
+    "aggregateType": { "const": "campaign" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["campaignId", "metadataRevision", "operation"],
+      "properties": {
+        "campaignId": { "type": "string", "format": "uuid" },
+        "metadataRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "operation": { "enum": ["create", "update"] }
+      }
+    }
+  }
+}
