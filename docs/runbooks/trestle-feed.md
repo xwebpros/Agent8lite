@@ -35,6 +35,27 @@ Both gates are required. A successful run obtains one token and reads only `$met
 
 ## Listing integration gate
 
+### Isolated one-listing inspection
+
+The owner separately authorized an operator-only one-listing diagnostic after metadata access succeeded. This is a local inspection command, not the public adapter or approval of downstream use. It requests one active, entirely displayable, address-displayable record from explicitly named approved source systems. It requests all Property fields and metadata-described related resources, with at most 1,000 records per related collection. It follows no continuation or media URL and does not activate the application feed.
+
+Copy `docs/proposals/W07-trestle/listing-test-config.example.json` to the ignored `.local/trestle-listing-test.json`. Populate the same verified product/feed approval values used by the metadata test, the exact approved `originatingSystemNames`, `operatorPurpose=single-listing-local-inspection`, and `localInspectionApproved=true` only for an owner-authorized local inspection. Optionally add `listingKey` to inspect a specific source key; an ordinary MLS `ListingId` is not necessarily that key. Configuration is re-read before and after network operations; changed or revoked approval discards the result. This manual configuration must never be accepted as application authorization.
+
+The default listing command is offline. For an authorized test, enable the separate flag in the command process, keeping the saved credential file unchanged:
+
+```powershell
+node --import tsx packages/providers/mls/trestle/listing-test.ts
+$env:TRESTLE_LISTING_TEST_ENABLED='true'
+node --env-file=.env.trestle.local --import tsx packages/providers/mls/trestle/listing-test.ts --listing-test
+Remove-Item Env:TRESTLE_LISTING_TEST_ENABLED
+```
+
+Git must be available to verify that the actual output files are ignored. If it is not on PATH, set `TRESTLE_GIT_EXECUTABLE` in the process to the trusted local Git executable. The command writes JSON and escaped, script-free HTML to a new `.local/trestle-listing-<timestamp>/` directory, without overwriting existing reports. The HTML requests no remote assets and displays media URLs as text. Console output is limited to counts, completeness, field names and local paths. Do not paste the raw report into chat, publish it, commit it or use it as an AI input. Delete the local reports when the inspection is finished; this diagnostic does not establish licensed retention or production storage rights.
+
+The JSON contains the schema inventory, the complete returned Property object and its expanded related records. Null/empty values differ from fields not returned. Any omitted field, omitted related resource, related continuation or collection reaching its bound marks the report incomplete. Completeness is relative to this authenticated schema and query response; it does not imply that all MLS-held information is licensed or accessible. Unknown public display/retention/media/cache/alert/AI rights still deny those uses.
+
+On 10 October 2026, the owner-authorized GLVAR diagnostic returned one record, all 758 described Property fields (95 populated), and 14 related resources. Media, ListAgent, ListOffice and CustomProperty each contained one related record; the other collections were empty. No related continuation or bound was encountered. No raw feed artifacts were committed. See the handoff for verification evidence.
+
 After metadata access succeeds, use the actual authorized Property schema and the MLS agreement to record allowed originating-system IDs, field permissions, current display/address/location policy, attribution/disclaimer requirements and a bounded freshness interval. Verify required control fields, enum values and actual next-link shape. Public catalog fields do not prove licensed access. The runtime resolver must derive verified tenant context from server identity and read current approval/policy on every operation. Never accept this authorization record from an API request or job body.
 
 The adapter implements bounded active/pending search and fresh detail reads. It selects only allowed observed fields, escapes literals, rechecks projected criteria, filters source systems and rejects synthetic/foreign records. Display and address flags must be boolean true. Unknown numeric values remain null. Unsupported statuses are excluded. Credentials and tokens stay server-private; authorization is rechecked before authentication/data requests and after responses. Cursors are opaque, tenant/query/policy-bound and expire after four minutes in one process. They are not durable replication checkpoints.

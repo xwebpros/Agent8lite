@@ -16,7 +16,7 @@ export interface TrestleAccessConfig {
 }
 
 /** Operator-only approval record for an isolated probe; never an application policy resolver. */
-function accessConfig(value: unknown): TrestleAccessConfig {
+export function accessConfig(value: unknown): TrestleAccessConfig {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new TrestleError("TRESTLE_ACCESS_CONFIG_INVALID");
   const config = value as TrestleAccessConfig;

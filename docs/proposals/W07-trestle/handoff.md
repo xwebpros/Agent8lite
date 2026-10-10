@@ -18,4 +18,18 @@ Tests cover disabled/pending approval, broker contingency, forged tenant/feed/po
 
 Next operator step: review the authorized Property schema and MLS agreement to confirm licensed source identifiers, fields, display/address/location rules, attribution, freshness and permitted downstream uses. Authentication and metadata endpoints are verified; actual Property query/continuation behavior and licensed display rights remain unverified. Keep secrets out of chat and live listing requests disabled until those gates are satisfied.
 
-Next coordinator step: review this additive server seam before integration. Supply a trusted, current database-backed authorization resolver and server secret manager binding. Complete M6 field/display/attribution/freshness acceptance before any Property request or application registration. Storage, durable replication, deletion reconciliation, media, alerts, AI and production readiness are not implemented or claimed. Do not use the native mock repository for live data or cache MLS responses in the PWA.
+Next coordinator step: review this additive server seam before integration. Supply a trusted, current database-backed authorization resolver and server secret manager binding. Complete M6 field/display/attribution/freshness acceptance before application Property requests or provider registration. Storage, durable replication, deletion reconciliation, media delivery/storage, alerts, AI and production readiness are not implemented or claimed. Do not use the native mock repository for live data or cache MLS responses in the PWA.
+
+## Owner-authorized single-listing diagnostic
+
+The owner subsequently requested an isolated test retrieving all information from one listing. Proposal `single-listing-test.md` was committed before implementation. The new doubly gated `listing-test.ts` command uses the existing transport and an explicit ignored local-inspection record. It discovers the authenticated Property schema, applies an approved source-system name filter, requests one active and entirely/address displayable listing, and expands related resources with a 1,000-record bound. It rechecks local authorization across requests, rejects multiple/foreign/synthetic/unsafe records, and follows neither continuations nor image URLs. Raw-record output is confined to ignored local JSON and an escaped, script-free HTML report, separate from the public adapter. It does not establish production policy or grant public display/retention rights.
+
+Verification on 10 October 2026:
+
+- 69/69 injected-response tests across three files passed without network access; this includes the original 42 tests and 27 diagnostic cases.
+- Strict scoped TypeScript and Biome checks passed for all sixteen provider TypeScript files. The default listing command returned `TRESTLE_LISTING_TEST_NOT_ENABLED` offline.
+- The catalogue extractor read the actual authenticated metadata: 758 Property fields and 14 navigation resources.
+- One owner-authorized live GLVAR Property request succeeded. All 758 Property fields were returned; 95 had non-null/non-empty values. Media, ListAgent, ListOffice and CustomProperty each returned one related record, and the other ten collections were empty. No related continuation or collection bound was encountered. No image downloads, database writes or application activation occurred.
+- Local output files and credentials remain ignored. No raw listing values, agent/office records, metadata XML, credentials or tokens are published in this branch.
+
+The signed MLS agreement and feed-specific field/display/address/location/attribution/freshness/retention rules have not been extracted into this checkout. Their review and the coordinator's trusted runtime integration remain M6 gates. The earlier no-Property-request gate remains applicable to application integration; this explicit owner authorization covers only the separate local diagnostic.

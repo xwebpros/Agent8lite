@@ -1,0 +1,18 @@
+{
+  "organizationId": "REPLACE_INTERNAL_ORGANIZATION_ID",
+  "feedId": "REPLACE_APPROVED_FEED_ID",
+  "productId": "REPLACE_REGISTERED_PRODUCT_ID",
+  "mlsName": "REPLACE_MLS_NAME",
+  "feedType": "REPLACE_APPROVED_FEED_TYPE",
+  "connectionState": "pending",
+  "brokerAuthorization": "unknown",
+  "operatorPurpose": "single-listing-local-inspection",
+  "localInspectionApproved": false,
+  "originatingSystemNames": ["REPLACE_APPROVED_MLS_SOURCE_NAME"],
+  "endpoints": {
+    "tokenUrl": "https://api.cotality.com/trestle/oidc/connect/token",
+    "odataBaseUrl": "https://api.cotality.com/trestle/odata/",
+    "timeoutMs": 10000,
+    "pageSize": 1
+  }
+}
