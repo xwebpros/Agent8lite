@@ -1,0 +1,23 @@
+# ADR-023 — Native immutable campaign workflow drafts
+
+Accepted bounded MOD-E-002/003 preparation on 2026-10-10. The existing generated CampaignVersionWrite, CampaignVersion and PageCampaignVersion define the three native create/list/detail operations. Original OpenAPI, blueprint and public events stay unchanged. This slice saves immutable draft definitions; it introduces no publish, enrollment, schedule, sender, message-design editor or delivery authority.
+
+## Definition and preview
+
+A definition has 1–100 uniquely keyed nodes, at most 200 unique edges, one entry, no cycle, and no unreachable node. Non-condition nodes have at most one outgoing `always` edge. Conditions have exactly one `true` and one `false` edge to distinct targets. Branches may reconverge. Each kind admits only its relevant property: wait requires bounded integer delaySeconds, email/SMS require messageDesignId, task requires a nonblank taskTitle, and condition requires a meaningful frozen LeadFilter. Empty filters, duplicate tag IDs and executable expressions are rejected. Errors use bounded node/edge field paths and platform-owned messages.
+
+Timezone must resolve through Intl to an IANA zone or UTC; offset/abbreviation-only values are unavailable. Optional quiet hours require valid HH:mm values and distinct start/end. These values are preserved, not executed by this slice. Deterministic preview takes an explicit ISO start instant and explicit boolean choices for reached condition nodes, follows one path and advances waits by elapsed seconds. It reports prerequisite code labels; it does not calculate quiet-hour/DST/calendar scheduling, contact eligibility or delivery and never calls a provider.
+
+## Current source authority
+
+The service runs in the caller-owned verified tenant transaction. Campaign read/write must have current organization scope and a current enabled marketing capability, rechecked with database time after waits. Parent campaign SHARE/UPDATE locks preserve draft availability and serialize allocating a positive integer version. A new command appends a new immutable version without editing previous definitions or changing campaign metadata.
+
+Conditions additionally require current organization-scoped CRM lead read access and CRM entitlement. Referenced stages, sources, tags and active owners must belong to the current tenant, under current source locks and matching source-read permissions. Message nodes require a currently readable tenant design matching the channel, a recognized editor, valid version/hash/content and allowlisted merge fields. Missing or inaccessible references deny creation. Reads and historical receipt replay recheck current referenced-source authority, so an old definition is never evidence of current eligibility. Wait/task-only definitions remain usable without message designs.
+
+The reviewed SQL candidate grants runtime draft-only SELECT and narrow INSERT on campaign_version. No UPDATE/DELETE privilege is granted; a trigger rejects mutation/deletion of saved versions. The restrictive policies compose with existing FORCE RLS and require a current draft parent, null publication time and initial row_version. Message-design SELECT and UPDATE(row_version) exist solely to permit current row locks; business columns, inserts and deletion remain unavailable. The service does not write another module's tables. Worker, control and issuer privileges do not change. A later publication design must explicitly review the immutable trigger and lifecycle boundary before replacing it.
+
+## Native command and event
+
+Durable receipts bind tenant, actor, operation, campaign and original canonical body, with expires_at=infinity. Same-key replay reauthorizes and returns the historical frozen response and strong numeric workflow-version ETag without creating a version or restoring old input. New keys append independently under the parent lock. Version, audit, closed campaign.workflow_draft_created v1 outbox reference and receipt commit together; success is returned only after commit. The internal event includes opaque IDs and workflow sequence only, excluding graph, design/message content and personal information. The lead-only dispatcher leaves this unknown family deferred.
+
+Accept using actual non-owner/NOBYPASSRLS logins and disposable databases: source scope/revocation, missing context and pool reuse, draft-only grants and immutability, concurrent same/different keys, hash conflicts, historical replay, database-clock expiry after real waits, caller rollback, malformed graph/source references, signed pagination and registered HTTP guards/private responses. Source preview and static UI tests do not establish browser/device acceptance or full M4 completion.
