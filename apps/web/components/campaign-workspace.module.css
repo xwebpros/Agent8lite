@@ -5,6 +5,20 @@
   color: var(--color-ink);
   font-size: 16px;
 }
+.subview {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.subview > button {
+  min-height: 44px;
+  font-size: 14px;
+  justify-self: start;
+}
+.subview > button:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
 .header,
 .heading {
   display: flex;

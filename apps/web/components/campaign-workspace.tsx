@@ -1,7 +1,16 @@
 "use client";
 
-import { FilePenLine, FlaskConical, FolderOpen, Megaphone, RefreshCw, WifiOff } from "lucide-react";
+import {
+  FilePenLine,
+  FlaskConical,
+  FolderOpen,
+  Megaphone,
+  MessageSquareText,
+  RefreshCw,
+  WifiOff,
+} from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { ReactNode } from "react";
 import { Badge, Button, Empty } from "../../../packages/ui/components";
 import type { Schema } from "../lib/api";
 import {
@@ -14,6 +23,53 @@ import {
 import styles from "./campaign-workspace.module.css";
 import { workflowContextBinding } from "./campaign-workflow-protocol";
 import CampaignWorkflowWorkspace from "./campaign-workflow-workspace";
+import MessageDesignWorkspace from "./message-design-workspace";
+
+export function campaignDraftsProtected(metadata: boolean, workflow: boolean, designs: boolean): boolean {
+  return metadata || workflow || designs;
+}
+/** Used with a live snapshot by entry handlers; organization designs need no selected campaign. */
+export function canOpenCampaignSubview(
+  state: CampaignDraftState,
+  active: boolean,
+  online: boolean,
+  childProtected = false,
+): boolean {
+  return (
+    active &&
+    online &&
+    state.online &&
+    state.canRead &&
+    !state.reading &&
+    !campaignDraftsProtected(
+      state.dirty || Boolean(state.pending) || state.phase === "sending",
+      childProtected,
+      false,
+    ) &&
+    !["unavailable", "denied"].includes(state.phase)
+  );
+}
+/** Actual Back control is shared by both child workspaces and can be checked without a browser. */
+export function CampaignSubviewFrame({
+  label,
+  protectedDraft,
+  onBack,
+  children,
+}: {
+  label: string;
+  protectedDraft: boolean;
+  onBack(): void;
+  children: ReactNode;
+}) {
+  return (
+    <section className={styles.subview} aria-label={label}>
+      <Button variant="secondary" disabled={protectedDraft} onClick={onBack}>
+        Back to campaign library
+      </Button>
+      {children}
+    </section>
+  );
+}
 
 export type CampaignWorkspaceProps = {
   session: Schema<"Session">;
@@ -39,6 +95,7 @@ type CampaignWorkspaceViewProps = {
   onReadConflict(): void;
   onResolveConflict(keep: boolean): void;
   onOpenWorkflow?(): void;
+  onOpenMessageDesigns?(): void;
 };
 
 /** Pure presentation is exported for source/static checks; it never serializes private command keys. */
@@ -57,6 +114,7 @@ export function CampaignWorkspaceView({
   onReadConflict,
   onResolveConflict,
   onOpenWorkflow,
+  onOpenMessageDesigns,
 }: CampaignWorkspaceViewProps) {
   const nameId = useId();
   const categoryId = useId();
@@ -114,6 +172,15 @@ export function CampaignWorkspaceView({
         </div>
         <Badge tone="warning">Synthetic · draft metadata</Badge>
       </header>
+      {onOpenMessageDesigns && (
+        <Button
+          variant="secondary"
+          disabled={!canOpenCampaignSubview(state, active, online)}
+          onClick={onOpenMessageDesigns}
+        >
+          <MessageSquareText size={18} aria-hidden="true" /> Open message design library
+        </Button>
+      )}
       <div className={styles.notice}>
         <FlaskConical size={22} aria-hidden="true" />
         <p>
@@ -401,7 +468,7 @@ export function CampaignWorkspaceView({
   );
 }
 
-/** Private metadata and immutable workflow drafts share navigation/update protection. */
+/** Private metadata, immutable workflows and organization message designs share navigation/update protection. */
 export default function CampaignWorkspace({
   session,
   csrf,
@@ -428,12 +495,21 @@ export default function CampaignWorkspace({
   const [workflowCampaignId, setWorkflowCampaignId] = useState<string | null>(null);
   const [workflowDirty, setWorkflowDirty] = useState(false);
   const workflowProtected = useRef(false);
-  const live = useRef({ binding, online, active });
-  live.current = { binding, online, active };
+  const [designLibraryOpen, setDesignLibraryOpen] = useState(false);
+  const [designDirty, setDesignDirty] = useState(false);
+  const designProtected = useRef(false);
+  const subview = designLibraryOpen ? "designs" : workflowCampaignId ? "workflow" : "metadata";
+  const live = useRef({ binding, online, active, subview });
+  live.current = { binding, online, active, subview };
   const controller = useMemo(() => {
     const base = `/api/v1/orgs/${session.activeOrgId}/campaigns`;
     const request = async (path: string, expected: number, options: RequestInit = {}) => {
-      if (live.current.binding !== binding || !live.current.online || !live.current.active)
+      if (
+        live.current.binding !== binding ||
+        !live.current.online ||
+        !live.current.active ||
+        live.current.subview !== "metadata"
+      )
         throw new Error("The original campaign context is unavailable.");
       const response = await fetch(path, {
         ...options,
@@ -479,7 +555,10 @@ export default function CampaignWorkspace({
       canWrite,
       createKey: () => crypto.randomUUID(),
       onProtectedChange: (value) => {
-        if (live.current.binding === binding) callbacks.current.onDirty(value || workflowProtected.current);
+        if (live.current.binding === binding)
+          callbacks.current.onDirty(
+            campaignDraftsProtected(value, workflowProtected.current, designProtected.current),
+          );
       },
       onAccessRevoked: () => {
         if (live.current.binding === binding) callbacks.current.onAccessRevoked?.();
@@ -489,38 +568,78 @@ export default function CampaignWorkspace({
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => {
     controller.attach();
-    callbacks.current.onDirty(controller.isProtected() || workflowProtected.current);
+    callbacks.current.onDirty(
+      campaignDraftsProtected(controller.isProtected(), workflowProtected.current, designProtected.current),
+    );
     return () => controller.detach();
   }, [controller]);
   useEffect(() => {
-    controller.setOnline(online && !workflowCampaignId);
-  }, [controller, online, workflowCampaignId]);
+    controller.setOnline(online && subview === "metadata");
+  }, [controller, online, subview]);
   useEffect(() => {
-    if (active && online && canRead && !workflowCampaignId && !controller.isProtected())
+    if (active && online && canRead && subview === "metadata" && !controller.isProtected())
       void controller.loadPage();
-  }, [controller, active, online, canRead, workflowCampaignId]);
+  }, [controller, active, online, canRead, subview]);
   useEffect(() => {
     const preventExit = (event: BeforeUnloadEvent) => {
-      if (!controller.isProtected() && !workflowProtected.current) return;
+      if (
+        !campaignDraftsProtected(controller.isProtected(), workflowProtected.current, designProtected.current)
+      )
+        return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", preventExit);
     return () => window.removeEventListener("beforeunload", preventExit);
   }, [controller]);
+  const childProtection = campaignDraftsProtected(controller.isProtected(), workflowDirty, designDirty);
+  const returnToLibrary = () => {
+    if (
+      live.current.binding !== binding ||
+      campaignDraftsProtected(controller.isProtected(), workflowProtected.current, designProtected.current)
+    )
+      return;
+    live.current.subview = "metadata";
+    setDesignLibraryOpen(false);
+    setWorkflowCampaignId(null);
+    controller.setOnline(live.current.online);
+  };
+  if (designLibraryOpen)
+    return (
+      <CampaignSubviewFrame
+        label="Organization message design library"
+        protectedDraft={childProtection}
+        onBack={returnToLibrary}
+      >
+        <MessageDesignWorkspace
+          key={`${binding}:message-designs`}
+          session={session}
+          csrf={csrf}
+          online={online}
+          syntheticFeaturesEnabled={syntheticFeaturesEnabled}
+          accessRevision={accessRevision}
+          onProtectedChange={(value) => {
+            if (live.current.binding !== binding || live.current.subview !== "designs") return;
+            designProtected.current = value;
+            setDesignDirty(value);
+            callbacks.current.onDirty(
+              campaignDraftsProtected(controller.isProtected(), workflowProtected.current, value),
+            );
+          }}
+          onAccessRevoked={() => {
+            if (live.current.binding === binding && live.current.subview === "designs")
+              callbacks.current.onAccessRevoked?.();
+          }}
+        />
+      </CampaignSubviewFrame>
+    );
   if (workflowCampaignId)
     return (
-      <section aria-label="Campaign workflow drafts">
-        <Button
-          variant="secondary"
-          disabled={workflowDirty}
-          onClick={() => {
-            if (workflowProtected.current) return;
-            setWorkflowCampaignId(null);
-          }}
-        >
-          Back to campaign library
-        </Button>
+      <CampaignSubviewFrame
+        label="Campaign workflow drafts"
+        protectedDraft={childProtection}
+        onBack={returnToLibrary}
+      >
         <CampaignWorkflowWorkspace
           key={`${binding}:${workflowCampaignId}`}
           session={session}
@@ -530,30 +649,67 @@ export default function CampaignWorkspace({
           accessRevision={accessRevision}
           campaignId={workflowCampaignId}
           onProtectedChange={(value) => {
+            if (live.current.binding !== binding || live.current.subview !== "workflow") return;
             workflowProtected.current = value;
             setWorkflowDirty(value);
-            callbacks.current.onDirty(value || controller.isProtected());
+            callbacks.current.onDirty(
+              campaignDraftsProtected(controller.isProtected(), value, designProtected.current),
+            );
           }}
-          onAccessRevoked={() => callbacks.current.onAccessRevoked?.()}
+          onAccessRevoked={() => {
+            if (live.current.binding === binding && live.current.subview === "workflow")
+              callbacks.current.onAccessRevoked?.();
+          }}
         />
-      </section>
+      </CampaignSubviewFrame>
     );
   return (
     <CampaignWorkspaceView
       state={state}
       active={active}
       online={online}
+      onOpenMessageDesigns={() => {
+        const current = controller.getSnapshot();
+        if (
+          live.current.binding !== binding ||
+          live.current.subview !== "metadata" ||
+          !canOpenCampaignSubview(
+            current,
+            live.current.active,
+            live.current.online,
+            campaignDraftsProtected(
+              controller.isProtected(),
+              workflowProtected.current,
+              designProtected.current,
+            ),
+          )
+        )
+          return;
+        live.current.subview = "designs";
+        setDesignLibraryOpen(true);
+        controller.setOnline(false);
+      }}
       onOpenWorkflow={() => {
         const current = controller.getSnapshot();
         if (
-          !live.current.online ||
-          !live.current.active ||
-          controller.isProtected() ||
+          live.current.binding !== binding ||
+          live.current.subview !== "metadata" ||
           !current.selected ||
-          current.reading
+          !canOpenCampaignSubview(
+            current,
+            live.current.active,
+            live.current.online,
+            campaignDraftsProtected(
+              controller.isProtected(),
+              workflowProtected.current,
+              designProtected.current,
+            ),
+          )
         )
           return;
+        live.current.subview = "workflow";
         setWorkflowCampaignId(current.selected.data.id);
+        controller.setOnline(false);
       }}
       onCreate={() => controller.beginCreate()}
       onRefresh={() => {
