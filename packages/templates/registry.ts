@@ -32,7 +32,13 @@ export class ContentValidationError extends Error {
 }
 function copyJson(value: unknown): unknown {
   try {
-    return JSON.parse(serializeTemplateJson(value));
+    return JSON.parse(serializeTemplateJson(value), (_key, child: unknown) => {
+      // Optional/required field reads and validators must observe only saved data.
+      // Keep ordinary arrays for the registered renderer; objects inherit no fields.
+      if (child !== null && typeof child === "object" && !Array.isArray(child))
+        Object.setPrototypeOf(child, null);
+      return child;
+    });
   } catch {
     throw new ContentValidationError([{ path: "", code: "document_invalid_or_too_large" }]);
   }
