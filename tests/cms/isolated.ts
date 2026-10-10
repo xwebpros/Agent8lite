@@ -82,8 +82,14 @@ export async function createIsolatedCms() {
     process.env.MIGRATION_DATABASE_URL = migrationUrl.href;
     await migrate();
     await seed();
-    // Explicit review permits this candidate only in this uniquely named owned test database.
-    await admin.query(await readFile(resolve("docs/proposals/W05/native-draft-grants.proposed.sql"), "utf8"));
+    // Older checkpoints use the candidate here; the coordinator's standard runner now owns 0013.
+    const schema = await admin.query(
+      "SELECT 1 FROM information_schema.columns WHERE table_schema='app' AND table_name='idempotency_record' AND column_name='response_etag'",
+    );
+    if (!schema.rowCount)
+      await admin.query(
+        await readFile(resolve("docs/proposals/W05/native-draft-grants.proposed.sql"), "utf8"),
+      );
     const adapter = new CmsHttpAdapter(runtime, {
       profiles: (client, context) => testProfilePort(client, context, deniedProfiles),
       trustedLinkPolicy: cmsTestPolicy,

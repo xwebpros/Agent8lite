@@ -101,7 +101,7 @@ beforeAll(async () => {
   environment = await createIsolatedCms();
   for (const org of [fixtures.orgA, fixtures.orgB])
     await environment.admin.query(
-      "INSERT INTO app.entitlement(tenant_id,feature,state) VALUES($1,'websites','enabled')",
+      "INSERT INTO app.entitlement(tenant_id,feature,state) VALUES($1,'websites','enabled') ON CONFLICT(tenant_id,feature) DO NOTHING",
       [org],
     );
   await environment.admin.query(
