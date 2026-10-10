@@ -1,0 +1,39 @@
+# Owned native CMS draft service handoff
+
+Implemented after the reviewed boundary checkpoint 44ecc86. Production app routing/migrations remain unregistered/unapplied by W05. M3 is incomplete.
+
+## Stable server exports
+
+`apps/api/src/cms/index.ts` exports CmsService, CmsRepository and the unregistered synthetic CmsHttpAdapter. CmsService takes `(PoolClient, TenantContext, traceId, { profiles, trustedLinkPolicy })`, all bound to an existing verified tenant transaction. `packages/cms/ports.ts` (also type-re-exported by the CMS index) defines the proposed administration-owned CmsProfileReferencePort. A supplied port must hold a current profile SHARE lock and reject missing/foreign/ineligible references. No permissive production resolver is included. Existing administration schema lacks an archive field; the administration owner still defines archive eligibility.
+
+Implemented operations: create/list/detail sites; create/list/detail/update documents; save/list/detail immutable revisions; template catalog pagination; an authorized service-only recovery reader. Create has no implicit template starter/document/revision/publication. Site template metadata is pinned to `<code>@<version>`. Site update/archive and document archive are outside this slice because reviewed grants do not permit them. New draft saves use current `content.write` organization scope plus `websites` capability. Public/production publish/rollback, preview hosts, domains/TLS, media, forms and MLS remain gated.
+
+Reads and commands lock current site/profile and document eligibility. Drafts may be appended to an eligible draft or published synthetic fixture site without modifying site state, timestamp or the published revision pointer. Suspended/publishing sites and archived documents deny access/replay. Missing/ineligible profile resolver results deny. Own/team CMS grants fail closed, matching the permission catalog. Caller withTenantTransaction locks/revalidates active membership and role; the service independently locks/rechecks websites capability through the existing foundation resolver.
+
+## Optimistic versions and replay
+
+Private draft save uses the approved local development path `/dev/orgs/{orgId}/cms/documents/{documentId}/drafts` with unchanged RevisionWrite→Revision envelopes and mandatory If-Match/Idempotency-Key/CSRF. Frozen `/v1/.../revisions` POST, publish and rollback remain unavailable. Metadata updates use the frozen DocumentWrite body and the same document version. Conditional native version update, revision insertion, safe audit and durable response body/status/response_etag commit in the caller's transaction. No nested transaction exists.
+
+Idempotency binds verified tenant/actor, operation/resource, exact input and original precondition. Current permission/capability/site/document/profile checks occur before returning replay. Historical lookup occurs before applying its now-stale If-Match; replay returns the original body and original document ETag, never a newer current ETag. A different key with identical content is a new revision; content hashes do not deduplicate commands. Expired historical keys with stale versions fail rather than append. Do not replace the original key/body/precondition for a command with uncertain outcome.
+
+## HTTP and frontend wiring
+
+CmsHttpAdapter is a test/review adapter with no Nest registration/listener. It resolves server-held sessions, enforces synthetic enabled loopback, mutation origin and CSRF, selected organization, verified tenant transaction, generated request/response shapes and safe no-store Problems/ETags. Root must preserve its own hardened HTTP parser, body limits, rate controls, session mode/origin policy and BFF protections when wiring actual routes; passing this adapter suite is not full app-router acceptance. It deliberately has no production activation path.
+
+Revision UUID pagination order is deterministic, not chronological/latest. Frontend must select an explicit revision and keep the selected ID independently from document metadata version. Read-only recovery uses CmsService.getRevisionRecovery. It retains bounded original JSON and warnings but cannot save/publish. Stored future kinds cannot fit frozen Revision; get/list returns defined 409 revision_recovery_required rather than dropping or widening data. A reviewed local recovery HTTP envelope/wiring is still needed if the UI must fetch future-kind JSON. Do not import node:crypto/Buffer/server index into browser components. Puck and browser-only adapter remain coordinator/frontend work.
+
+## Executed verification
+
+`pnpm exec vitest run --config tests/cms/vitest.config.mts`: 22/22 API/direct-port cases pass against a fresh uniquely named `estate_cms_<16 hex>` PostgreSQL/PostGIS database. The harness applies existing 0001–0011 plus only the reviewed candidate SQL, seeds synthetic websites capability in that disposable database, starts the unregistered adapter on an owned kernel-allocated loopback port (never 3000/3001), and closes/drops its own server/database after the suite. No interactive estate data or root seed/migration/dependency/router was changed.
+
+Cases prove nonowner NOBYPASSRLS/FORCE RLS, verified author/storage/hash, no implicit publication, two-editor conflict, concurrent exact retry, historical ETag before stale precondition, metadata/draft shared version, foreign ID/profile denial, context-free denial/pool reuse, permission/member/capability/replay revocation, malicious grant scopes, suspended/archive/profile denial, slug uniqueness race, whole caller rollback, actual PostgreSQL audit-trigger failure rollback, runtime publication/history grant denial, migration-role history trigger enforcement, recovery without widening v1, signed resource/member cursor binding, expired replay and supplied profile tenant binding. An actual concurrent entitlement UPDATE waits in PostgreSQL Lock state until the authorized caller commits; subsequent replay denies after revocation.
+
+CMS integration and root source TypeScript plus formatting checks pass. Earlier 56/56 helper/registry/template tests also passed; coordinator's 256-test baseline was not rerun here. First integration run exposed two fixture-only mistakes (text/UUID audit count comparison and invalid membership status); corrected fixtures produced 18/18, then added database-failure/lock/recovery cases produced 22/22. These tests are distinct from browser, full root API registration and M3 acceptance.
+
+## Exact remaining shared integration
+
+1. Administration owner supplies the reviewed transaction-bound profile resolver and archive eligibility semantics; coordinator fixes its shared internal port location.
+2. Coordinator assigns/applies the reviewed candidate after reserved 0012; retain nullable response_etag, site row-version-only UPDATE locking grant and immutable-history trigger. Add bounded synthetic websites capability to the approved fixture path without enabling public sites.
+3. Coordinator discovers `tests/cms/**/*.integration.test.ts` in separate isolated batches (shared Vitest include/runner edits remain root-owned). Current standalone command above is executable without that shared change. The suite self-owns its disposable database/listener.
+4. Root integrates read/create/update/local draft-save routes under its existing parser/rate/BFF policies, then reruns registered-router acceptance. Decide the narrow recovery route/envelope before frontend future-kind recovery integration.
+5. Frontend integrates explicit revision selection, stable uncertain-command retry and browser-only registered schema adapter. Puck dependency selection, accessibility/device/browser QA and all public CMS prerequisites remain gated. No new dependency is required by this service slice.

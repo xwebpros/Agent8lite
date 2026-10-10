@@ -1,4 +1,5 @@
--- REVIEW ONLY: outside packages/db/migrations; not run by W05.
+-- REVIEWED CANDIDATE: outside packages/db/migrations.
+-- W05 applies it only in uniquely named owned disposable tests per review 221af81.
 -- Coordinator assigns a forward migration sequence after review and disposable DB acceptance.
 BEGIN;
 
