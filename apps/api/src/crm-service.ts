@@ -1,11 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
+import { types } from "node:util";
 import type { PoolClient } from "pg";
+import type { components } from "../../../packages/contracts/generated/api";
 import { AccessError, requirePermission, type TenantContext } from "../../../packages/db/tenant-transaction";
 import { validateSchema } from "./contract-validation";
 import * as models from "./models";
 import { cursorBinding, decodeCursor, encodeCursor } from "./cursors";
 import { assertDelegation } from "../../../packages/auth/permissions";
 import { requireEntitlement } from "../../../packages/auth/entitlements";
+import { dashboardClockInstant, dashboardUtcPeriod } from "./dashboard-time";
 
 type Row = Record<string, any>;
 type Body = Record<string, any>;
@@ -54,6 +57,88 @@ function timezone(value: string) {
     throw new AccessError(422, "timezone_invalid", "A valid named IANA timezone is required.");
   }
   return value;
+}
+
+function dashboardContext(value: TenantContext): TenantContext {
+  const invalid = (): never => {
+    throw new AccessError(403, "permission_denied", "Current reporting authority is required.");
+  };
+  const ownObject = (input: unknown): input is Record<string, unknown> => {
+    if (!input || typeof input !== "object" || types.isProxy(input)) return false;
+    const prototype = Object.getPrototypeOf(input);
+    return prototype === null || prototype === Object.prototype;
+  };
+  const data = (input: Record<string, unknown>, names: string[], exact = true) => {
+    const result: Record<string, unknown> = Object.create(null);
+    if (exact) {
+      const keys = Reflect.ownKeys(input);
+      if (keys.length !== names.length || keys.some((key) => typeof key !== "string" || !names.includes(key)))
+        return invalid();
+    }
+    for (const name of names) {
+      const descriptor = Object.getOwnPropertyDescriptor(input, name);
+      if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value")) return invalid();
+      result[name] = descriptor.value;
+    }
+    return result;
+  };
+  if (!ownObject(value)) return invalid();
+  // Verified request contexts can also contain session metadata; copy only the tenant authority fields.
+  const context = data(
+    value,
+    ["userId", "organizationId", "memberId", "roleId", "roleName", "permissions", "timezone"],
+    false,
+  );
+  for (const key of ["userId", "organizationId", "memberId", "roleId"])
+    if (typeof context[key] !== "string" || !uuid.test(context[key])) return invalid();
+  if (
+    typeof context.roleName !== "string" ||
+    !context.roleName ||
+    context.roleName.length > 255 ||
+    typeof context.timezone !== "string" ||
+    !context.timezone ||
+    context.timezone.length > 80
+  )
+    return invalid();
+  const raw = context.permissions;
+  if (types.isProxy(raw) || !Array.isArray(raw) || Object.getPrototypeOf(raw) !== Array.prototype)
+    return invalid();
+  const length = Object.getOwnPropertyDescriptor(raw, "length")?.value;
+  if (!Number.isInteger(length) || length < 0 || length > 100 || Reflect.ownKeys(raw).length !== length + 1)
+    return invalid();
+  const permissions: TenantContext["permissions"] = [];
+  const codes = new Set<string>();
+  for (let index = 0; index < length; index++) {
+    const descriptor = Object.getOwnPropertyDescriptor(raw, String(index));
+    if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value") || !ownObject(descriptor.value))
+      return invalid();
+    const grant = data(descriptor.value, ["code", "scope"]);
+    if (
+      typeof grant.code !== "string" ||
+      !grant.code ||
+      grant.code.length > 120 ||
+      codes.has(grant.code) ||
+      (grant.scope !== "own" && grant.scope !== "team" && grant.scope !== "organization")
+    )
+      return invalid();
+    codes.add(grant.code);
+    permissions.push({ code: grant.code, scope: grant.scope });
+  }
+  // Freeze the private detached context so source helpers cannot observe caller mutations after waits.
+  for (const grant of permissions) Object.freeze(grant);
+  Object.freeze(permissions);
+  return Object.freeze({ ...context, permissions }) as TenantContext;
+}
+
+function permissionGrantJson(permissions: TenantContext["permissions"]): string {
+  // Only validated primitive fields enter JSON encoding; inherited object/array hooks are never read.
+  let result = "[";
+  for (let index = 0; index < permissions.length; index++) {
+    const grant = permissions[index];
+    if (index) result += ",";
+    result += `{"code":${JSON.stringify(grant.code)},"scope":${JSON.stringify(grant.scope)}}`;
+  }
+  return `${result}]`;
 }
 
 export class CrmService {
@@ -128,7 +213,7 @@ export class CrmService {
         this.context.userId,
         this.context.memberId,
         this.context.roleId,
-        JSON.stringify([{ code: permission, scope }]),
+        permissionGrantJson([{ code: permission, scope }]),
       ],
     );
     if (!current.rowCount)
@@ -779,35 +864,105 @@ export class CrmService {
     };
   }
 
-  async dashboard(query: Record<string, unknown>) {
-    requirePermission(this.context, "dashboard.read");
-    const now = new Date();
-    const from = query.from ? new Date(String(query.from)) : new Date(now.getFullYear(), now.getMonth(), 1);
-    const to = query.to ? new Date(String(query.to)) : now;
-    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to)
-      throw new AccessError(422, "period_invalid", "Valid date interval required.");
-    const leadScope = requirePermission(this.context, "crm.leads.read");
-    const taskScope = await this.taskAuthority();
+  async dashboard(query: Record<string, unknown>): Promise<components["schemas"]["Dashboard"]> {
+    if (
+      !query ||
+      typeof query !== "object" ||
+      types.isProxy(query) ||
+      (Object.getPrototypeOf(query) !== null && Object.getPrototypeOf(query) !== Object.prototype) ||
+      Reflect.ownKeys(query).length
+    )
+      throw new AccessError(422, "query_invalid", "Dashboard reporting has no query parameters.");
+    const context = dashboardContext(this.context);
+    const current = new CrmService(this.client, context, this.traceId);
+    const dashboardScope = requirePermission(context, "dashboard.read");
+    const leadScope = requirePermission(context, "crm.leads.read");
+    if (dashboardScope !== "organization" || !["own", "team", "organization"].includes(leadScope))
+      throw new AccessError(403, "permission_denied", "Current reporting source permission is required.");
+    const authority = `SELECT 1 FROM app.membership m
+      JOIN app.role_definition r ON(r.tenant_id,r.id)=(m.tenant_id,m.role_id)
+      JOIN app.organization o ON o.id=m.tenant_id
+      WHERE session_user='estate_runtime' AND current_user='estate_runtime'
+        AND app.current_tenant()=$1::uuid AND app.current_actor()=$2::uuid
+        AND m.tenant_id=$1 AND m.user_id=$2 AND m.id=$3 AND m.role_id=$4
+        AND m.status='active' AND o.status='active' AND r.permission_grants=$5::jsonb
+        AND r.name=$6 AND o.timezone=$7`;
+    const parameters = [
+      context.organizationId,
+      context.userId,
+      context.memberId,
+      context.roleId,
+      permissionGrantJson(context.permissions),
+      context.roleName,
+      context.timezone,
+    ];
+    const assertAuthority = async (lock = false) => {
+      if (!(await this.client.query(`${authority}${lock ? " FOR SHARE OF m,r,o" : ""}`, parameters)).rowCount)
+        throw new AccessError(403, "permission_denied", "Current reporting authority is unavailable.");
+    };
+    await assertAuthority(true);
+    await requireEntitlement(this.client, "dashboard.read");
+    const taskScope = context.permissions.some((grant) => grant.code === "crm.tasks.read")
+      ? await current.taskAuthority()
+      : null;
+    if (leadScope === "team" || taskScope === "team")
+      await this.client.query(
+        `SELECT office_id,member_id FROM app.office_member WHERE tenant_id=app.current_tenant()
+         AND member_id=$1 ORDER BY office_id,member_id FOR SHARE`,
+        [context.memberId],
+      );
+    await assertAuthority();
+    await requireEntitlement(this.client, "dashboard.read", { lock: false });
+    const captured = await this.client.query(
+      "SELECT date_trunc('milliseconds',clock_timestamp()) AS captured_at",
+    );
+    const period = dashboardUtcPeriod(captured.rows[0]?.captured_at);
     const counts = await this.client.query(
-      `SELECT count(*) FROM app.lead r WHERE r.archived_at IS NULL AND $1::uuid IS NOT NULL AND ${this.scopeSql("leads", leadScope, "$1")} AND r.created_at BETWEEN $2 AND $3`,
-      [this.context.memberId, from.toISOString(), to.toISOString()],
+      `SELECT count(*) FROM app.lead r WHERE r.tenant_id=app.current_tenant() AND r.archived_at IS NULL
+       AND r.owner_member_id=$1 AND ${current.scopeSql("leads", leadScope, "$1")}
+       AND r.created_at BETWEEN $2::timestamptz AND $3::timestamptz`,
+      [context.memberId, period.from, period.to],
     );
-    const tasks = await this.client.query(
-      `SELECT r.* FROM app.task r WHERE r.tenant_id=app.current_tenant() AND r.state='open' AND $1::uuid IS NOT NULL AND ${this.scopeSql("tasks", taskScope, "$1")} AND ${this.taskSourceSql("$1")} ORDER BY r.due_at LIMIT 20`,
-      [this.context.memberId],
+    const measuredCount = counts.rows[0]?.count;
+    const count =
+      typeof measuredCount === "number"
+        ? measuredCount
+        : typeof measuredCount === "string" && /^[0-9]+$/.test(measuredCount)
+          ? Number(measuredCount)
+          : NaN;
+    if (!Number.isSafeInteger(count) || count < 0)
+      throw new AccessError(
+        503,
+        "dashboard_measurement_unavailable",
+        "The reporting measurement is unavailable.",
+      );
+    const tasks = taskScope
+      ? await this.client.query(
+          `SELECT r.* FROM app.task r WHERE r.tenant_id=app.current_tenant() AND r.state='open'
+       AND r.assignee_member_id=$1 AND ${current.scopeSql("tasks", taskScope, "$1")}
+       AND ${current.taskSourceSql("$1")} ORDER BY r.due_at,r.id LIMIT 20`,
+          [context.memberId],
+        )
+      : { rows: [] };
+    const measured = await this.client.query(
+      "SELECT date_trunc('milliseconds',clock_timestamp()) AS refreshed_at",
     );
-    await requireEntitlement(this.client, "crm.tasks.read", { lock: false });
+    const refreshedAt = dashboardClockInstant(measured.rows[0]?.refreshed_at);
+    if (refreshedAt < period.to)
+      throw new AccessError(503, "dashboard_clock_unavailable", "The reporting clock is unavailable.");
+    await assertAuthority();
+    await requireEntitlement(this.client, "dashboard.read", { lock: false });
     return {
-      period: { from: from.toISOString(), to: to.toISOString(), timezone: this.context.timezone },
+      period,
       metrics: [
         {
           key: "leads.created",
-          definitionVersion: 1,
-          value: Number(counts.rows[0].count),
+          definitionVersion: 2,
+          value: count,
           unit: "leads",
-          source: "crm-scoped-query",
+          source: "crm-own-utc-month-query-v2",
           state: "available",
-          refreshedAt: now.toISOString(),
+          refreshedAt,
         },
         {
           key: "revenue",

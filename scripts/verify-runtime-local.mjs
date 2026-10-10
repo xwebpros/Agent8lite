@@ -299,6 +299,32 @@ try {
     invalidTasks.status === 422 && (await invalidTasks.json()).code === "limit_invalid",
     "runtime_local_task_query_failed",
   );
+  const dashboardSchema = ajv.compile({ $ref: "contract#/components/schemas/Dashboard" });
+  const dashboardPath = `/v1/orgs/${identity.activeOrgId}/dashboard`;
+  const dashboard = await request(synthetic, dashboardPath, { headers: { cookie } });
+  const measured = await dashboard.json();
+  const leadMetric = measured?.metrics?.find((metric) => metric.key === "leads.created");
+  check(
+    dashboard.status === 200 &&
+      dashboardSchema(measured) &&
+      dashboard.headers.get("cache-control")?.includes("private") &&
+      !dashboard.headers.has("etag") &&
+      measured.period.timezone === "UTC" &&
+      leadMetric?.definitionVersion === 2 &&
+      leadMetric.source === "crm-own-utc-month-query-v2" &&
+      leadMetric.state === "available" &&
+      Number.isSafeInteger(leadMetric.value) &&
+      leadMetric.value >= 0 &&
+      typeof leadMetric.refreshedAt === "string",
+    "runtime_local_dashboard_read_failed",
+  );
+  const invalidDashboard = await request(synthetic, `${dashboardPath}?scope=organization`, {
+    headers: { cookie },
+  });
+  check(
+    invalidDashboard.status === 422 && (await invalidDashboard.json()).code === "query_invalid",
+    "runtime_local_dashboard_query_failed",
+  );
   for (const forwarding of [
     { forwarded: "for=203.0.113.42" },
     { "x-real-ip": "203.0.113.42" },
@@ -390,6 +416,7 @@ if (failure) {
       syntheticSession: "created-read-revoked",
       storedAppointments: "contract-valid-private-read-and-query-denial",
       loadedTasks: "contract-valid-private-read-and-query-denial",
+      dashboardReport: "contract-valid-member-utc-measurement-and-query-denial",
       forwardedRequestsDenied: 4,
       productionModesDenied: 2,
       cliListenFailure: "closed",

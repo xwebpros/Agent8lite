@@ -708,8 +708,17 @@ class ApiController {
               if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
               return response;
             }
-            if (resource === "dashboard" && !id) body = await crm.dashboard(req.query);
-            else if (resource === "billing" && !id) body = await billing.overview();
+            if (resource === "dashboard" && !id && !action) {
+              if (
+                req.body !== undefined ||
+                req.headers["transfer-encoding"] !== undefined ||
+                Number(req.headers["content-length"] || 0) > 0
+              )
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              if (Object.keys(req.query).length)
+                throw new AccessError(422, "query_invalid", "This read accepts no query parameters.");
+              body = await crm.dashboard(req.query);
+            } else if (resource === "billing" && !id) body = await billing.overview();
             else if (resource === "deals" && !action)
               body = id ? await deals.detail(id) : await deals.list(req.query);
             else if (["pipeline-stages", "lead-sources", "tags"].includes(resource) && !action)

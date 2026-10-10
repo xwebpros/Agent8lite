@@ -1761,10 +1761,18 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             <>
               {permission("dashboard.read") && session.activeOrgId && (
                 <VerifiedMetrics
-                  key={session.activeOrgId}
-                  organizationId={session.activeOrgId}
+                  key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                  session={session}
+                  memberId={member}
+                  accessRevision={accessRevision}
                   refreshMarker={refreshed}
                   online={online}
+                  changingOrganization={changingOrganization}
+                  onAccessRevoked={() =>
+                    setError(
+                      "Reporting access changed. Refresh workspace access before reopening the report.",
+                    )
+                  }
                 />
               )}
               <div className="metrics">
