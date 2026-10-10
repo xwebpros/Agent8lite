@@ -51,6 +51,7 @@ import { createStaffPools } from "../../../packages/db/staff-pools";
 import { createStaffHttpAdapter } from "./control/http-adapter";
 import { withStaffTransaction } from "../../../packages/auth/staff-sessions";
 import { CampaignDraftService, campaignEtag } from "./marketing";
+import { CampaignWorkflowService, WorkflowCommandError } from "./marketing/workflow-service";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -127,6 +128,7 @@ function problem(error: unknown, traceId: string, path: string) {
     code: failure.code,
     traceId,
     instance: path,
+    ...(failure instanceof WorkflowCommandError ? { errors: failure.errors } : {}),
   };
 }
 
@@ -551,6 +553,7 @@ class ApiController {
         "pipeline-stages": "pipelineStageId",
         "lead-sources": "leadSourceId",
         campaigns: "campaignId",
+        "campaign-versions": "campaignVersionId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
@@ -574,6 +577,23 @@ class ApiController {
             return { body, status: 202 };
           }
           await requireEntitlement(client, spec["x-permission"]);
+          if ((resource === "campaigns" && action === "versions" && id) || resource === "campaign-versions") {
+            localAccess(req);
+            const workflows = new CampaignWorkflowService(client, context, traceId);
+            let response: ApiCommandResponse;
+            if (resource === "campaigns" && req.method === "GET") {
+              response = { body: await workflows.list(id!, req.query), status: 200 };
+            } else if (resource === "campaigns" && req.method === "POST") {
+              response = await workflows.create(id!, req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+            } else if (resource === "campaign-versions" && id && !action && req.method === "GET") {
+              const body = await workflows.get(id);
+              response = { body, status: 200, etag: campaignEtag(body.version) };
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
           if (resource === "campaigns") {
             localAccess(req);
             if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");

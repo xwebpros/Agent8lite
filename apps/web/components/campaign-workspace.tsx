@@ -1,7 +1,7 @@
 "use client";
 
 import { FilePenLine, FlaskConical, FolderOpen, Megaphone, RefreshCw, WifiOff } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useSyncExternalStore } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Badge, Button, Empty } from "../../../packages/ui/components";
 import type { Schema } from "../lib/api";
 import {
@@ -12,6 +12,8 @@ import {
   type CampaignDraftState,
 } from "./campaign-draft-protocol";
 import styles from "./campaign-workspace.module.css";
+import { workflowContextBinding } from "./campaign-workflow-protocol";
+import CampaignWorkflowWorkspace from "./campaign-workflow-workspace";
 
 export type CampaignWorkspaceProps = {
   session: Schema<"Session">;
@@ -36,6 +38,7 @@ type CampaignWorkspaceViewProps = {
   onEditRejected(): void;
   onReadConflict(): void;
   onResolveConflict(keep: boolean): void;
+  onOpenWorkflow?(): void;
 };
 
 /** Pure presentation is exported for source/static checks; it never serializes private command keys. */
@@ -53,6 +56,7 @@ export function CampaignWorkspaceView({
   onEditRejected,
   onReadConflict,
   onResolveConflict,
+  onOpenWorkflow,
 }: CampaignWorkspaceViewProps) {
   const nameId = useId();
   const categoryId = useId();
@@ -113,7 +117,7 @@ export function CampaignWorkspaceView({
       <div className={styles.notice}>
         <FlaskConical size={22} aria-hidden="true" />
         <p>
-          This workspace saves draft metadata only. Workflow editing, publication, enrollment, schedules and
+          Save campaign metadata, then open its workflow drafts. Publication, enrollment, schedules and
           delivery are unavailable.
         </p>
       </div>
@@ -327,6 +331,15 @@ export function CampaignWorkspaceView({
               replaced or discarded while the result is unknown.
             </p>
           )}
+          {onOpenWorkflow && state.selected && (
+            <Button
+              variant="secondary"
+              disabled={!online || reading || protectedDraft}
+              onClick={onOpenWorkflow}
+            >
+              Edit workflow drafts
+            </Button>
+          )}
           {state.phase === "conflict" && (
             <section className={styles.conflict} aria-label="Explicit campaign revision conflict review">
               <h4>Review the current revision</h4>
@@ -388,7 +401,7 @@ export function CampaignWorkspaceView({
   );
 }
 
-/** Unregistered until root integration; only the four frozen metadata routes are called here. */
+/** Private metadata and immutable workflow drafts share navigation/update protection. */
 export default function CampaignWorkspace({
   session,
   csrf,
@@ -401,7 +414,7 @@ export default function CampaignWorkspace({
   const canRead = session.permissions.includes("campaigns.read");
   const canWrite = session.permissions.includes("campaigns.write");
   const active = syntheticFeaturesEnabled && Boolean(session.activeOrgId);
-  const binding = JSON.stringify([
+  const binding = workflowContextBinding([
     session.userId,
     session.activeOrgId,
     accessRevision,
@@ -412,6 +425,9 @@ export default function CampaignWorkspace({
   ]);
   const callbacks = useRef({ onDirty, onAccessRevoked });
   callbacks.current = { onDirty, onAccessRevoked };
+  const [workflowCampaignId, setWorkflowCampaignId] = useState<string | null>(null);
+  const [workflowDirty, setWorkflowDirty] = useState(false);
+  const workflowProtected = useRef(false);
   const live = useRef({ binding, online, active });
   live.current = { binding, online, active };
   const controller = useMemo(() => {
@@ -463,7 +479,7 @@ export default function CampaignWorkspace({
       canWrite,
       createKey: () => crypto.randomUUID(),
       onProtectedChange: (value) => {
-        if (live.current.binding === binding) callbacks.current.onDirty(value);
+        if (live.current.binding === binding) callbacks.current.onDirty(value || workflowProtected.current);
       },
       onAccessRevoked: () => {
         if (live.current.binding === binding) callbacks.current.onAccessRevoked?.();
@@ -473,29 +489,72 @@ export default function CampaignWorkspace({
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => {
     controller.attach();
-    callbacks.current.onDirty(controller.isProtected());
+    callbacks.current.onDirty(controller.isProtected() || workflowProtected.current);
     return () => controller.detach();
   }, [controller]);
   useEffect(() => {
-    controller.setOnline(online);
-  }, [controller, online]);
+    controller.setOnline(online && !workflowCampaignId);
+  }, [controller, online, workflowCampaignId]);
   useEffect(() => {
-    if (active && online && canRead && !controller.isProtected()) void controller.loadPage();
-  }, [controller, active, online, canRead]);
+    if (active && online && canRead && !workflowCampaignId && !controller.isProtected())
+      void controller.loadPage();
+  }, [controller, active, online, canRead, workflowCampaignId]);
   useEffect(() => {
     const preventExit = (event: BeforeUnloadEvent) => {
-      if (!controller.isProtected()) return;
+      if (!controller.isProtected() && !workflowProtected.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", preventExit);
     return () => window.removeEventListener("beforeunload", preventExit);
   }, [controller]);
+  if (workflowCampaignId)
+    return (
+      <section aria-label="Campaign workflow drafts">
+        <Button
+          variant="secondary"
+          disabled={workflowDirty}
+          onClick={() => {
+            if (workflowProtected.current) return;
+            setWorkflowCampaignId(null);
+          }}
+        >
+          Back to campaign library
+        </Button>
+        <CampaignWorkflowWorkspace
+          key={`${binding}:${workflowCampaignId}`}
+          session={session}
+          csrf={csrf}
+          online={online}
+          syntheticFeaturesEnabled={syntheticFeaturesEnabled}
+          accessRevision={accessRevision}
+          campaignId={workflowCampaignId}
+          onProtectedChange={(value) => {
+            workflowProtected.current = value;
+            setWorkflowDirty(value);
+            callbacks.current.onDirty(value || controller.isProtected());
+          }}
+          onAccessRevoked={() => callbacks.current.onAccessRevoked?.()}
+        />
+      </section>
+    );
   return (
     <CampaignWorkspaceView
       state={state}
       active={active}
       online={online}
+      onOpenWorkflow={() => {
+        const current = controller.getSnapshot();
+        if (
+          !live.current.online ||
+          !live.current.active ||
+          controller.isProtected() ||
+          !current.selected ||
+          current.reading
+        )
+          return;
+        setWorkflowCampaignId(current.selected.data.id);
+      }}
       onCreate={() => controller.beginCreate()}
       onRefresh={() => {
         if (live.current.online) void controller.loadPage();

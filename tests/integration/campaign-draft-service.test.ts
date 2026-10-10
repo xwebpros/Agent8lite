@@ -506,11 +506,10 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
     });
   });
 
-  it("keeps publication versions enrollments broadcast and archive commands unavailable with no lifecycle or delivery effects", async () => {
+  it("keeps publication enrollments broadcast and archive commands unavailable with no lifecycle or delivery effects", async () => {
     const fixture = await create(),
       id = fixture.response.body.id;
     const paths: { path: string; method: string; body?: unknown }[] = [
-      { path: `${campaignPath()}/${id}/versions`, method: "GET" },
       { path: `${campaignPath()}/${id}/publish`, method: "POST", body: {} },
       { path: `${campaignPath()}/${id}/archive`, method: "POST", body: {} },
       {
@@ -545,6 +544,11 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
       },
       { path: `/public/campaigns/${id}`, method: "GET" },
     ];
+    const versionIndex = await ownerHttp.request(`${campaignPath()}/${id}/versions`);
+    expect(versionIndex.status).toBe(200);
+    const versionPage = await versionIndex.json();
+    assertContract("PageCampaignVersion", versionPage);
+    expect(versionPage).toEqual({ items: [], hasMore: false, nextCursor: null });
     for (const command of paths) {
       const response =
         command.method === "GET"
