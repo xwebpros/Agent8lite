@@ -1,0 +1,15 @@
+{
+  "operationId": "transitionLead",
+  "path": "/v1/orgs/{orgId}/leads/{leadId}/stage-transitions",
+  "method": "post",
+  "parameter": {
+    "name": "If-Match",
+    "in": "header",
+    "required": true,
+    "schema": {
+      "type": "string",
+      "maxLength": 100
+    }
+  },
+  "decision": "ADR-043 records the optimistic revision header already required by MOD-D-007 and the stage-transition implementation."
+}

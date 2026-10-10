@@ -10,6 +10,17 @@ const attributionAmendment = JSON.parse(
 );
 if (attributionAmendment.schema !== "Attribution" || attributionAmendment.property !== "contact")
   throw new Error("Unsupported approved attribution amendment target.");
+const stageTransitionAmendment = JSON.parse(
+  await fs.readFile("packages/contracts/amendments/ADR-043-stage-transition-if-match.json", "utf8"),
+);
+if (
+  stageTransitionAmendment.operationId !== "transitionLead" ||
+  stageTransitionAmendment.path !== "/v1/orgs/{orgId}/leads/{leadId}/stage-transitions" ||
+  stageTransitionAmendment.method !== "post" ||
+  stageTransitionAmendment.parameter?.name !== "If-Match" ||
+  stageTransitionAmendment.parameter?.in !== "header"
+)
+  throw new Error("Unsupported approved stage-transition amendment target.");
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 addFormats(ajv);
 ajv.addSchema({ $id: "api", components: api.components });
@@ -79,8 +90,14 @@ for (const file of [
     if (Object.hasOwn(expected.components.schemas.Attribution.properties, "contact"))
       throw new Error("Original attribution contract unexpectedly changed.");
     expected.components.schemas.Attribution.properties.contact = attributionAmendment.definition;
+    const amendedOperation = expected.paths[stageTransitionAmendment.path]?.[stageTransitionAmendment.method];
+    if (!amendedOperation || amendedOperation.operationId !== stageTransitionAmendment.operationId)
+      throw new Error("Original stage-transition operation unexpectedly changed.");
+    if (amendedOperation.parameters.some((parameter) => parameter.name === "If-Match"))
+      throw new Error("Original stage-transition contract unexpectedly contains If-Match.");
+    amendedOperation.parameters.push(stageTransitionAmendment.parameter);
     if (JSON.stringify(expected) !== JSON.stringify(api))
-      throw new Error("Unreviewed OpenAPI drift beyond ADR-022 attribution contact.");
+      throw new Error("Unreviewed OpenAPI drift beyond ADR-022 and ADR-043 amendments.");
   } else if (!source.equals(copied)) throw new Error(`Unreviewed contract drift: ${file}`);
 }
 if (process.argv.includes("--generated")) {
@@ -101,5 +118,5 @@ if (process.argv.includes("--generated")) {
   if (before !== after) throw new Error("Generated API types drifted. Run pnpm contracts:generate.");
 }
 console.log(
-  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022 amendment${process.argv.includes("--generated") ? ", generated types" : ""}.`,
+  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022/043 amendments${process.argv.includes("--generated") ? ", generated types" : ""}.`,
 );

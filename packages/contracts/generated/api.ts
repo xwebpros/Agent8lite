@@ -8305,6 +8305,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token": string;
+                "If-Match": string;
             };
             path: {
                 orgId: string;
