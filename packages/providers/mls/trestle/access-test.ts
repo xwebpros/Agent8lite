@@ -19,7 +19,7 @@ async function main(): Promise<void> {
       const text = await readFile(path, "utf8");
       if (Buffer.byteLength(text, "utf8") > 65536) throw new TrestleError("TRESTLE_ACCESS_CONFIG_INVALID");
       try {
-        return JSON.parse(text);
+        return JSON.parse(text.replace(/^\uFEFF/, ""));
       } catch {
         throw new TrestleError("TRESTLE_ACCESS_CONFIG_INVALID");
       }
