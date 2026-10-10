@@ -1,0 +1,12 @@
+BEGIN;
+GRANT UPDATE(name,timezone,locale,updated_at,row_version) ON app.organization TO estate_runtime;
+GRANT INSERT,UPDATE ON app.role_definition,app.office,app.business_profile TO estate_runtime;
+GRANT INSERT,DELETE ON app.office_member TO estate_runtime;
+ALTER TABLE app.member_invitation ADD COLUMN office_ids uuid[] NOT NULL DEFAULT '{}';
+CREATE POLICY invitation_token_lookup ON app.member_invitation FOR SELECT USING(token_hash=current_setting('app.invitation_hash',true));
+GRANT UPDATE(accepted_at,updated_at,row_version) ON app.member_invitation TO estate_runtime;
+ALTER TABLE app.integration_job ADD COLUMN requesting_member_id uuid;
+ALTER TABLE app.integration_job ADD FOREIGN KEY(tenant_id,requesting_member_id) REFERENCES app.membership(tenant_id,id);
+ALTER TABLE app.integration_job ADD COLUMN safe_result jsonb NOT NULL DEFAULT '{}';
+GRANT SELECT,INSERT ON app.integration_job TO estate_runtime;
+COMMIT;

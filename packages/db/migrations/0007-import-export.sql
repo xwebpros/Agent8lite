@@ -1,0 +1,12 @@
+BEGIN;
+ALTER TABLE app.media_asset ADD COLUMN requesting_member_id uuid;
+ALTER TABLE app.media_asset ADD FOREIGN KEY(tenant_id,requesting_member_id) REFERENCES app.membership(tenant_id,id);
+ALTER TABLE app.media_asset ADD COLUMN purpose text, ADD COLUMN upload_expires_at timestamptz, ADD COLUMN content_sha256 text;
+ALTER TABLE app.import_job ADD COLUMN asset_id uuid;
+ALTER TABLE app.import_job ADD FOREIGN KEY(tenant_id,asset_id) REFERENCES app.media_asset(tenant_id,id);
+ALTER TABLE app.import_job ADD COLUMN content_sha256 text, ADD COLUMN column_map jsonb NOT NULL DEFAULT '{}', ADD COLUMN accepted_job_id uuid;
+ALTER TABLE app.import_job ADD FOREIGN KEY(tenant_id,accepted_job_id) REFERENCES app.integration_job(tenant_id,id);
+GRANT SELECT,INSERT ON app.media_asset TO estate_runtime;
+GRANT UPDATE(scan_state,content_sha256,updated_at,row_version) ON app.media_asset TO estate_runtime;
+GRANT SELECT,INSERT,UPDATE ON app.import_job TO estate_runtime;
+COMMIT;

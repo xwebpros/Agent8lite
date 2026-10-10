@@ -1,0 +1,19 @@
+# ADR-011 — Local synthetic development and integration ownership
+
+Accepted for local implementation on 2026-10-10; production identities/providers are not approved by this decision.
+
+The user authorized local dependencies, routine implementation, synthetic listings and mock services, then explicitly requested three concurrent agents. The coordinator owns shared dependencies/contracts/CI/provider ports; agents have disjoint directory ownership in one Git checkout. This session overrides the proposed per-workstream worktree rule while retaining review and integration responsibility.
+
+Next.js 16, NestJS, Node 24, TypeScript and PostgreSQL 17/PostGIS remain the selected stack. API types are generated from the unchanged v1 OpenAPI. Development-only `/dev/session`, `/dev/session/organization`, and `/dev/logout` routes establish and switch fixed synthetic identities. They must be unavailable outside explicit local development/test mode and cannot be an alternative production sign-in method. `/v1/session` remains its exact contract shape; CSRF and member IDs use response headers.
+
+The local Windows workstation lacks Docker/PostgreSQL. A pinned portable PostgreSQL binary and official OSGeo PostGIS bundle can run in ignored `.local/` directories, bound to loopback. A separate migration login creates tables and grants runtime/worker identities. CI uses isolated disposable PostGIS and Redis services; no production secrets or external deliveries.
+
+Local sign-in now exercises an internal mock authorization-code exchange with PKCE S256, one-use codes and RS256 ID-token verification (issuer, audience, nonce and expiry). The verified issuer/subject maps to seeded identities; this is not evidence that an external provider redirect/callback works. Invitations return a synthetic token only in `X-Synthetic-Invitation-Token` for authorized local tests, keep only a token hash in PostgreSQL, and never send email. The development BFF and API both reject synthetic identity outside explicitly enabled loopback development/test mode.
+
+Billing uses a no-charge simulator with explicit synthetic tax/proration terms. Provider acceptance, authoritative provider state, application entitlements and provisioning completion remain separate states. Unknown acceptance requires a current-state read; the mock keeps provider state in memory and returns unknown after restart. It cannot supply a real hosted customer portal or charge a payment method.
+
+Local `/dev/billing/reconcile` and `/dev/billing/webhook` commands require the same loopback, synthetic-mode, active-session, CSRF, billing permission and entitlement checks. They exercise authoritative mock current-state reads and an append-only signed-event inbox. Duplicate or reordered events cannot overwrite independent entitlement revocations, reuse an event identity for another command, or reapply a completed change. They are local test seams, not live Stripe callback routes. A production provider command must be durably recorded before any financial request and dispatched/reconciled outside the HTTP transaction.
+
+Synthetic import/export objects use a private store in ignored `.local/private-objects`, never a public/static directory. Upload grants bind actor/member, tenant, asset, object key, MIME type, byte count and expiry; current API authorization/CSRF is still required. Immutable atomic storage allows identical retries and rejects changed bytes. Authorized result downloads must recheck current source scope. Production object storage, malware scanning, encryption and retention remain later acceptance gates.
+
+Actual external OIDC callback verification, licensed Trestle activation, hosted payments, sender registration, real DNS/TLS and physical-device installation remain their explicit acceptance gates. Mocked success must never be described as acceptance of those integrations.
