@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { components } from "../../../../packages/contracts/generated/api";
 import { api, ApiError } from "../../lib/api";
+import { PropertyDetailFocus } from "./detail-focus";
 import { PropertyCard, PropertyDetail, type PropertyListing } from "./property-view";
 import { propertiesAreCurrent, propertyExpiryDelay, PropertyReads } from "./read-lifecycle";
 import { refreshPropertyPages } from "./refresh-pages";
@@ -53,13 +54,13 @@ export default function PropertiesFeature({
   const revoked = useRef(onAccessRevoked);
   revoked.current = onAccessRevoked;
   const [reads] = useState(() => new PropertyReads());
+  const [detailFocus] = useState(() => new PropertyDetailFocus());
   const currentSelection = useRef<string | null>(null);
   const applied = useRef(propertySearchParams(emptyPropertyFilters, "updated_desc"));
   const paging = useRef(new URLSearchParams(applied.current));
   const visibleCount = useRef(20);
   const detailHeading = useRef<HTMLHeadingElement>(null);
-  const focusDetailOnce = useRef(false);
-  const returnFocus = useRef<HTMLButtonElement | null>(null);
+  const propertiesHeading = useRef<HTMLHeadingElement>(null);
   const permitted =
     syntheticFeaturesEnabled && Boolean(session.activeOrgId) && session.permissions.includes("mls.read");
   const enabled = permitted && online && !denied;
@@ -180,6 +181,7 @@ export default function PropertiesFeature({
 
   useEffect(() => {
     clearPrivate();
+    detailFocus.reset();
     setError("");
     setDetailError("");
     setNotice("");
@@ -190,8 +192,11 @@ export default function PropertiesFeature({
     applied.current = propertySearchParams(emptyPropertyFilters, "updated_desc");
     paging.current = new URLSearchParams(applied.current);
     if (permitted && online) void loadPage(applied.current);
-    return () => reads.clear();
-  }, [context, online, permitted, clearPrivate, loadPage, reads]);
+    return () => {
+      reads.clear();
+      detailFocus.reset();
+    };
+  }, [context, online, permitted, clearPrivate, loadPage, reads, detailFocus]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -228,11 +233,8 @@ export default function PropertiesFeature({
   }, [scopedPage, scopedDetail, clearPrivate]);
 
   useEffect(() => {
-    if (currentDetail && focusDetailOnce.current) {
-      focusDetailOnce.current = false;
-      detailHeading.current?.focus();
-    }
-  }, [currentDetail?.id]);
+    detailFocus.show(context, enabled, detailHeading.current);
+  }, [context, enabled, selectedId, detailFocus]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -240,6 +242,7 @@ export default function PropertiesFeature({
       const params = propertySearchParams(filters, sort);
       applied.current = params;
       currentSelection.current = null;
+      detailFocus.dismiss();
       setSelectedId(null);
       setDetail(null);
       reads.cancel("detail");
@@ -252,14 +255,20 @@ export default function PropertiesFeature({
   }
   const field = (key: keyof PropertyFilters, value: string) =>
     setFilters((previous) => ({ ...previous, [key]: value }));
-  function closeDetail() {
+  function closeDetail(restoreFocus = true) {
     reads.cancel("detail");
     currentSelection.current = null;
     setSelectedId(null);
     setDetail(null);
     setDetailError("");
     setDetailLoading(false);
-    returnFocus.current?.focus();
+    if (restoreFocus)
+      detailFocus.close(
+        context,
+        live.current.enabled && live.current.scope === context,
+        propertiesHeading.current,
+      );
+    else detailFocus.dismiss();
   }
 
   return (
@@ -267,7 +276,9 @@ export default function PropertiesFeature({
       <header className={styles.header}>
         <div>
           <p className={styles.synthetic}>SYNTHETIC DEMO DATA</p>
-          <h2 id="properties-title">Properties</h2>
+          <h2 ref={propertiesHeading} tabIndex={-1} id="properties-title">
+            Properties
+          </h2>
           <p>
             Fictional sample records. Current field permissions and availability are checked on every read.
           </p>
@@ -417,7 +428,7 @@ export default function PropertiesFeature({
                   setFilters({ ...emptyPropertyFilters });
                   setSort("updated_desc");
                   applied.current = propertySearchParams(emptyPropertyFilters, "updated_desc");
-                  closeDetail();
+                  closeDetail(false);
                   void loadPage(applied.current);
                 }}
               >
@@ -443,12 +454,23 @@ export default function PropertiesFeature({
               : "")}
       </p>
       {enabled && selectedId && (
-        <section className={styles.detail} aria-labelledby="property-detail-title" aria-busy={detailLoading}>
+        <section
+          id="property-detail-panel"
+          className={styles.detail}
+          aria-labelledby="property-detail-title"
+          aria-busy={detailLoading}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            event.stopPropagation();
+            closeDetail();
+          }}
+        >
           <div className={styles.header}>
             <h2 ref={detailHeading} tabIndex={-1} id="property-detail-title">
               Synthetic property details
             </h2>
-            <button className={styles.secondary} type="button" onClick={closeDetail}>
+            <button className={styles.secondary} type="button" onClick={() => closeDetail()}>
               Close details
             </button>
           </div>
@@ -469,12 +491,20 @@ export default function PropertiesFeature({
             <PropertyCard
               item={item}
               timezone={session.profile.timezone}
-              onOpen={(id, button) => {
-                returnFocus.current = button;
-                focusDetailOnce.current = true;
+              registerControl={(id, button) => detailFocus.register(context, id, button)}
+              expanded={selectedId === item.id}
+              controlsId={selectedId === item.id ? "property-detail-panel" : undefined}
+              onOpen={(id) => {
+                detailFocus.open(context, id);
                 currentSelection.current = id;
                 setSelectedId(id);
                 void loadDetail(id);
+                // An already open panel has a mounted heading even when selectedId stays the same.
+                detailFocus.show(
+                  context,
+                  live.current.enabled && live.current.scope === context,
+                  detailHeading.current,
+                );
               }}
             />
           </li>

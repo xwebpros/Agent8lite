@@ -64,6 +64,8 @@ describe("W07 responsive feature request/presentation seams (no browser acceptan
     );
     expect(card).toContain("SYNTHETIC DEMO DATA");
     expect(card).toContain("View synthetic property details");
+    expect(card).toContain('aria-expanded="false"');
+    expect(card).not.toContain("aria-controls");
     expect(card).toContain("Valid until");
     expect(card).toContain("Fictional Sample Brokerage");
     expect(card).not.toMatch(/<img|provider_url|logoUrl|sourceListingKey/);
@@ -104,5 +106,28 @@ describe("W07 responsive feature request/presentation seams (no browser acceptan
     expect(markup).toContain("&lt;script&gt;");
     expect(markup).toContain("&lt;img");
     expect(markup).not.toMatch(/<script|<img/);
+  });
+
+  it("links an expanded card to the existing detail panel without serializing native refs", async () => {
+    const snapshot = await mockSnapshot();
+    const item = projectNativeMockListing(snapshot.listings[0], snapshot.feeds[0], options.now)!;
+    let registered = false;
+    const markup = renderToStaticMarkup(
+      createElement(PropertyCard, {
+        item,
+        timezone: "America/Los_Angeles",
+        onOpen: () => {},
+        expanded: true,
+        controlsId: "property-detail-panel",
+        registerControl: () => {
+          registered = true;
+          return () => {};
+        },
+      }),
+    );
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain('aria-controls="property-detail-panel"');
+    expect(registered).toBe(false);
+    expect(markup).not.toMatch(/registerControl|isConnected|onOpen|ref=/);
   });
 });

@@ -63,10 +63,16 @@ export function PropertyCard({
   item,
   timezone,
   onOpen,
+  registerControl,
+  expanded = false,
+  controlsId,
 }: {
   item: PropertyListing;
   timezone: string;
   onOpen: (id: string, button: HTMLButtonElement) => void;
+  registerControl?: (id: string, button: HTMLButtonElement) => () => void;
+  expanded?: boolean;
+  controlsId?: string;
 }) {
   return (
     <article className={styles.card}>
@@ -77,10 +83,13 @@ export function PropertyCard({
       </p>
       <PropertyFacts item={item} />
       <button
+        ref={(button) => (button ? registerControl?.(item.id, button) : undefined)}
         className={styles.open}
         type="button"
         onClick={(event) => onOpen(item.id, event.currentTarget)}
         aria-label={`View synthetic property details: ${item.displayAddress ?? `record ${item.id.slice(0, 8)}`}`}
+        aria-expanded={expanded}
+        aria-controls={controlsId}
       >
         View details
       </button>
