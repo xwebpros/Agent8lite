@@ -8,6 +8,8 @@ ALTER TABLE app.idempotency_record ADD COLUMN response_etag text
   CHECK (response_etag IS NULL OR (length(response_etag)<=100 AND response_etag ~ '^"[1-9][0-9]*"$'));
 
 GRANT SELECT ON app.site,app.content_document,app.content_revision TO estate_runtime;
+-- PostgreSQL row locks need an UPDATE privilege; business/publication columns stay unavailable.
+GRANT UPDATE (row_version) ON app.site TO estate_runtime;
 GRANT INSERT (tenant_id,id,business_profile_id,name,theme_version)
   ON app.site TO estate_runtime;
 GRANT INSERT (tenant_id,id,site_id,slug,kind,title)
