@@ -2,7 +2,41 @@
 
 The repository root now supports `npm run build` and `npm start`. Build compiles the API/worker artifact and Next with local pinned executables; no global pnpm is required for these commands. Next listens on `0.0.0.0` at the hosting-assigned `PORT`. Do not replace PORT with the local development ports. Node24.19.0 is the required engine; verify the selected hosting runtime supports it before import.
 
-Use the GitHub application's `main` branch and configure secrets through GoDaddy's environment-variable UI. Do not commit `.env`, credentials, node_modules or build artifacts. The platform's dependency-only install is supported: build-time TypeScript and required type packages are production dependencies with the existing exact version pins. pnpm11.25.0 plus the frozen pnpm lockfile remains the reproducible repository/CI install. GoDaddy's npm install does not consume that lockfile; a clean npm production-only install is separately smoke-tested, but transitive npm resolution is not promised to be byte-identical to pnpm.
+Use the GitHub application's `main` branch and configure secrets through GoDaddy's environment-variable UI. Do not commit `.env`, credentials, node_modules or build artifacts. The platform's dependency-only install is supported: build-time TypeScript and required type packages are production dependencies with the existing exact version pins. GoDaddy selects the package manager from the lockfile/packageManager: this repository supplies pnpm11.25.0 and pnpm-lock.yaml. Use `pnpm install --prod --frozen-lockfile`, then `pnpm run build` and `pnpm start` when the host exposes those settings. The root scripts also run through npm after dependencies are installed; npm install does not consume the pnpm lockfile. Root package.json declares the existing launcher as main, and .npmrc explicitly selects the public npm registry.
+
+The official [GoDaddy hosting contract](https://github.com/godaddy/nodejs-hosting-agent-skill/blob/main/skills/godaddy-nodejs-hosting/contract.md) permits outbound HTTP/HTTPS and GoDaddy-managed MySQL, not external PostgreSQL or Redis. Deploy the isolated demo on this Node.js PaaS. Host the PostgreSQL/PostGIS SaaS on suitable infrastructure such as the separately specified XWeb Pros VPS; its runtime and database prerequisites remain required. A single root start boots the demo's only Next server, consistent with the repository's [single-entry exception](https://github.com/godaddy/nodejs-hosting-agent-skill/blob/main/AGENTS.md).
+
+## Official hosting audit — 2026-10-10
+
+Reviewed [GoDaddy's published skill](https://github.com/godaddy/nodejs-hosting-agent-skill/blob/main/skills/godaddy-nodejs-hosting/SKILL.md) and contract version3 at repository commit37fb2ea7d1d7b54fa716a60134e915e3e24bd98c. Its validator found missing package.json main (E008); manual review also found the missing explicit npm registry (C14). Both are corrected without changing dependency versions, API contracts or application behavior.
+
+| Requirement | Verification |
+| --- | --- |
+| Root name/version/main/build/start | Existing launcher declared as main; real TypeScript/Next build and root start |
+| Production dependency installation | Fresh pnpm11.25.0 `install --prod --frozen-lockfile` succeeds; dev dependencies omitted |
+| Lockfile/public registry | Frozen lockfile accepted; no non-public URL; explicit .npmrc public registry |
+| Assigned port/public listener | Root launcher passes assigned PORT and0.0.0.0 to Next; owned non-default port smoke succeeds |
+| Single app | Demo boots one Next child; no API, worker, PostgreSQL, Redis or provider needed |
+| Source hygiene | Git-tracked source export:906 files/66,046,116 bytes before this documentation update; no secret env files, node_modules or build/cache files |
+| Official validator | Completed source-only export passes `validate-paas.mjs . --strict`, exit0/no warnings |
+| Build/start | Production-only compile/build succeeds; root start and hosted-dev demo probes pass28 assertions, clean owned-process shutdown |
+| Session/API/PWA server boundaries | Password/origin/cookie/no-store/logout/API isolation, manifest and service-worker responses pass; browser/device acceptance remains open |
+| Network/email | Demo requires no outbound DB, Redis, SMTP, email gateway or live service |
+| Actual GoDaddy acceptance | Pending current deployed commit, hosting commands, Node24.19.0, env settings, exact HTTPS URL and current build/start logs |
+
+The validator only checks source heuristics; it does not establish network, hosting runtime, environment, HTTPS or browser acceptance. Its local node_modules warning is expected for an installed checkout; Git never uploads that ignored directory. Run it on completed source-only deployment input, not an installed directory or an unfinished export. Windows callers can use `.` as the target while running from the project directory.
+
+For the connected GitHub application, sync/redeploy the latest main. Confirm repository root as the app folder, production installation, root build and root start; keep the platform's PORT. Set the demo settings below through the hosting UI. Successful launch logs contain `status:ready`, `mode:demo` and the assigned port. If still failing, capture the first error in install/build/start and the deployed commit; do not include secret values.
+
+| Fixed error code/log | Required check |
+| --- | --- |
+| `Synthetic workspace` / EACCES port3000 | Old source or local dev command: latest main, root start and assigned PORT |
+| `application_build_configuration_invalid` / `launch_node_version_invalid` | Actual Node must match the approved24.19.0 runtime; no unsolicited runtime-pin change |
+| `launch_port_required` | Keep GoDaddy's supplied PORT; do not configure local development ports |
+| `launch_web_origin_required` | WEB_ORIGIN must equal the site's HTTPS origin with no trailing slash/path |
+| `launch_demo_secrets_required` | Demo flag and both independent secret values must meet the documented lengths |
+| `launch_database_url_required` | Demo flag absent/false; enable the database-free demo on this PaaS |
+| `application_launch_failed` | Confirm successful build and use the same default .next directory at build/start; check first host error and resource/runtime limits |
 
 ## If the host runs dev and reports EACCES on port3000
 
@@ -29,6 +63,8 @@ Password-manager/paste support is enabled. Sign-in is same-origin, rate-limited 
 Ordinary `/api/*` requests fail closed in demo mode. Turning the mode off restores normal launch prerequisites; preview changes cannot be promoted into real records. Add to Home Screen/Install works through the existing manifest/service worker on HTTPS, but physical iPhone/Android acceptance is still required. Reopening the installed app routes through the same preview access. Offline mutations are unavailable.
 
 ## Full application launch
+
+This mode is not compatible with the GoDaddy Node.js PaaS network contract. These instructions apply to a host with supported PostgreSQL/PostGIS connectivity.
 
 Leave HOSTED_DEMO_ENABLED unset or false. Configure `WEB_ORIGIN` and an explicit private PostgreSQL `DATABASE_URL` for a non-owner, NOSUPERUSER/NOBYPASSRLS runtime identity. The launcher starts API on127.0.0.1 at an ephemeral port and passes its verified IPC-reported origin to Next's existing BFF. Migration/control/issuer/provider credentials are not passed to the web child. It never migrates, seeds or starts the worker. Provision/migrate PostgreSQL/PostGIS separately under the reviewed migration identity.
 
