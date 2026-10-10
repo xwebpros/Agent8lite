@@ -57,6 +57,7 @@ import CmsWorkspace from "./cms-workspace";
 import CampaignWorkspace from "./campaign-workspace";
 import NotificationCenter from "./notification-center";
 import { safeNotificationHref } from "./notification-controller";
+import AppointmentAgenda from "./appointment-agenda";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -948,6 +949,25 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
     router.push(safe);
   }
+  function openAppointmentLead(id: string) {
+    if (
+      !online ||
+      busy ||
+      changingOrganization ||
+      !permission("crm.leads.read") ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)
+    )
+      return;
+    if (reloadProtected.current) {
+      setError(
+        notificationProtected.current
+          ? "Reconcile the unconfirmed read command in Notifications before opening appointment lead details."
+          : "Resolve the current draft or unconfirmed command before opening appointment lead details.",
+      );
+      return;
+    }
+    router.push("/pipeline?lead=" + encodeURIComponent(id));
+  }
   const nameFor = (lead: Lead) =>
     data.contacts.find((contact) => contact.id === lead.contactId)?.displayName || "Authorized lead";
   const openTasks = data.tasks.filter((task) => task.state === "open");
@@ -1586,6 +1606,19 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   </div>
                 </section>
               </div>
+              <AppointmentAgenda
+                key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                session={session}
+                memberId={member}
+                online={online && !changingOrganization}
+                accessRevision={accessRevision}
+                onOpenLead={openAppointmentLead}
+                onAccessRevoked={() => {
+                  setError(
+                    "Stored appointment access changed. Refresh workspace access before reopening this agenda.",
+                  );
+                }}
+              />
               <div className="dashboard-grid lower">
                 <section className="panel">
                   <PanelHeading

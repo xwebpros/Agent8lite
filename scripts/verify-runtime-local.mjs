@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import { readPinnedNode } from "./node-runtime.mjs";
 
 // Explicitly local verification: no secret-file reads, migration identity, seed/reset or worker dispatch.
@@ -261,6 +263,27 @@ try {
       retained.activeOrgId === identity.activeOrgId,
     "runtime_local_session_failed",
   );
+  const contract = JSON.parse(await fs.readFile(path.join(root, "packages/contracts/openapi.json"), "utf8"));
+  const ajv = new Ajv({ strict: false });
+  addFormats(ajv);
+  ajv.addSchema({ $id: "contract", components: contract.components });
+  const appointmentPage = ajv.compile({ $ref: "contract#/components/schemas/PageAppointment" });
+  const appointmentPath = `/v1/orgs/${identity.activeOrgId}/appointments`;
+  const appointments = await request(synthetic, `${appointmentPath}?limit=25`, { headers: { cookie } });
+  const stored = await appointments.json();
+  check(
+    appointments.status === 200 &&
+      appointmentPage(stored) &&
+      appointments.headers.get("cache-control")?.includes("private") &&
+      appointments.headers.get("cache-control")?.includes("no-store") &&
+      !appointments.headers.has("etag"),
+    "runtime_local_appointment_read_failed",
+  );
+  const invalidPage = await request(synthetic, `${appointmentPath}?limit=0`, { headers: { cookie } });
+  check(
+    invalidPage.status === 422 && (await invalidPage.json()).code === "limit_invalid",
+    "runtime_local_appointment_query_failed",
+  );
   for (const forwarding of [
     { forwarded: "for=203.0.113.42" },
     { "x-real-ip": "203.0.113.42" },
@@ -350,6 +373,7 @@ if (failure) {
       compiledApi: "healthy",
       compiledCli: "healthy-owned-instance",
       syntheticSession: "created-read-revoked",
+      storedAppointments: "contract-valid-private-read-and-query-denial",
       forwardedRequestsDenied: 4,
       productionModesDenied: 2,
       cliListenFailure: "closed",

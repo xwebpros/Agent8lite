@@ -35,6 +35,7 @@ import { MockOidcProvider } from "../../../packages/providers/identity/mock";
 import { acceptInvitation, AdminService } from "./admin-service";
 import { SupportService } from "./support-service";
 import { NotificationService } from "./notification-service";
+import { AppointmentService } from "./appointment-service";
 import { BillingService } from "./billing-service";
 import { ImportExportService, UploadService } from "./import-export-service";
 import { DealService } from "./deal-service";
@@ -588,6 +589,15 @@ class ApiController {
             return { body, status: 202 };
           }
           await requireEntitlement(client, spec["x-permission"]);
+          if (resource === "appointments") {
+            if (req.method !== "GET" || id || action)
+              throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (req.body !== undefined)
+              throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+            const body = await new AppointmentService(client, context).list(req.query);
+            if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+            return { body, status: 200 };
+          }
           if (resource === "notifications") {
             const notifications = new NotificationService(client, context, traceId);
             let response: ApiCommandResponse;
