@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { MockOidcProvider } from "../../packages/providers/identity/mock";
+import { MockOidcProvider, type SyntheticOidcSubject } from "../../packages/providers/identity/mock";
 import type { OidcAuthorization } from "../../packages/providers/identity/port";
 
 const clientId = "synthetic-workspace";
@@ -44,6 +44,65 @@ function tokenFixture() {
 }
 
 describe("M1 — synthetic OIDC protocol verification", () => {
+  it("keeps member and staff subjects in separate server-configured protocol clients", () => {
+    const member = new MockOidcProvider({ clientId, redirectUris: [redirectUri], mode: "test" });
+    const staffClientId = "synthetic-staff-workspace";
+    const staffRedirect = "http://localhost:3000/api/auth/staff-callback";
+    const subjects: SyntheticOidcSubject[] = ["staff-administrator", "staff-support"];
+    const staff = new MockOidcProvider({
+      clientId: staffClientId,
+      redirectUris: [staffRedirect],
+      allowedSubjects: subjects,
+      mode: "test",
+    });
+    subjects.splice(0, subjects.length, "owner");
+    for (const subject of ["staff-administrator", "staff-support"] as const) {
+      expect(() => member.authorize(authorization(verifier()), subject)).toThrow(
+        "OIDC_AUTHORIZATION_INVALID",
+      );
+      const codeVerifier = verifier();
+      const input = { ...authorization(codeVerifier), clientId: staffClientId, redirectUri: staffRedirect };
+      const code = new URL(staff.authorize(input, subject)).searchParams.get("code")!;
+      const token = staff.exchange({
+        code,
+        clientId: staffClientId,
+        redirectUri: staffRedirect,
+        codeVerifier,
+      }).idToken;
+      expect(staff.verifyIdentityToken(token, { clientId: staffClientId, nonce: input.nonce }).subject).toBe(
+        subject,
+      );
+      expect(() => member.verifyIdentityToken(token, { clientId, nonce: input.nonce })).toThrow(
+        "OIDC_TOKEN_INVALID",
+      );
+      expect(() => staff.verifyIdentityToken(token, { clientId, nonce: input.nonce })).toThrow(
+        "OIDC_TOKEN_INVALID",
+      );
+    }
+    const input = { ...authorization(verifier()), clientId: staffClientId, redirectUri: staffRedirect };
+    for (const subject of ["owner", "agent"] as const)
+      expect(() => staff.authorize(input, subject)).toThrow("OIDC_AUTHORIZATION_INVALID");
+  });
+
+  it("rejects invented, empty, duplicated or mixed-family server subject configurations", () => {
+    for (const allowedSubjects of [
+      [],
+      ["staff-support", "owner"],
+      ["staff-support", "staff-support"],
+      ["invented"],
+      ["owner", "agent", "staff-support"],
+    ])
+      expect(
+        () =>
+          new MockOidcProvider({
+            clientId,
+            redirectUris: [redirectUri],
+            mode: "test",
+            allowedSubjects: allowedSubjects as SyntheticOidcSubject[],
+          }),
+      ).toThrow("SYNTHETIC_IDENTITY_SUBJECTS_INVALID");
+  });
+
   it("requires a development/test mode and loopback HTTP redirect allowlist", () => {
     expect(
       () => new MockOidcProvider({ clientId, redirectUris: [redirectUri], mode: "production" as "test" }),

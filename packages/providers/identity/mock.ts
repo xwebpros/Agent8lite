@@ -10,22 +10,41 @@ const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("
 const hash = (value: string) => createHash("sha256").update(value).digest("base64url");
 const equal = (left: string, right: string) =>
   left.length === right.length && timingSafeEqual(Buffer.from(left), Buffer.from(right));
-type PendingCode = OidcAuthorization & { subject: "owner" | "agent"; expiresAt: number };
+export type SyntheticOidcSubject = "owner" | "agent" | "staff-administrator" | "staff-support";
+type PendingCode = OidcAuthorization & { subject: SyntheticOidcSubject; expiresAt: number };
+const memberSubjects: readonly SyntheticOidcSubject[] = ["owner", "agent"];
+const staffSubjects: readonly SyntheticOidcSubject[] = ["staff-administrator", "staff-support"];
 
 /** Test-only OIDC issuer. It cannot authenticate a real person or contact an IdP. */
 export class MockOidcProvider implements IdentityTokenVerifier {
   readonly issuer = "urn:estate:synthetic";
   private readonly keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
   private readonly codes = new Map<string, PendingCode>();
+  private readonly subjects: readonly SyntheticOidcSubject[];
   constructor(
     private readonly config: {
       clientId: string;
       redirectUris: readonly string[];
       now?: () => number;
       mode: "development" | "test";
+      /** Trusted server configuration. A client cannot authenticate both staff and members. */
+      allowedSubjects?: readonly SyntheticOidcSubject[];
     },
   ) {
     if (!["development", "test"].includes(config.mode)) throw new Error("SYNTHETIC_IDENTITY_DISABLED");
+    const subjects = config.allowedSubjects ?? memberSubjects;
+    if (
+      !Array.isArray(subjects) ||
+      subjects.length === 0 ||
+      subjects.length > 2 ||
+      new Set(subjects).size !== subjects.length ||
+      !(
+        subjects.every((subject) => memberSubjects.includes(subject)) ||
+        subjects.every((subject) => staffSubjects.includes(subject))
+      )
+    )
+      throw new Error("SYNTHETIC_IDENTITY_SUBJECTS_INVALID");
+    this.subjects = Object.freeze([...subjects]);
     if (
       !config.clientId ||
       config.redirectUris.some((value) => {
@@ -38,9 +57,9 @@ export class MockOidcProvider implements IdentityTokenVerifier {
   private now(): number {
     return Math.floor((this.config.now?.() ?? Date.now()) / 1000);
   }
-  authorize(input: OidcAuthorization, subject: "owner" | "agent"): string {
+  authorize(input: OidcAuthorization, subject: SyntheticOidcSubject): string {
     if (
-      !["owner", "agent"].includes(subject) ||
+      !this.subjects.includes(subject) ||
       input.clientId !== this.config.clientId ||
       !this.config.redirectUris.includes(input.redirectUri) ||
       input.codeChallengeMethod !== "S256" ||
@@ -122,7 +141,7 @@ export class MockOidcProvider implements IdentityTokenVerifier {
       claims.iat > this.now() + 30 ||
       typeof claims.auth_time !== "number" ||
       claims.email_verified !== true ||
-      !["owner", "agent"].includes(String(claims.sub)) ||
+      !this.subjects.includes(claims.sub as SyntheticOidcSubject) ||
       claims.email !== `${claims.sub}@example.test`
     )
       throw new Error("OIDC_TOKEN_INVALID");
