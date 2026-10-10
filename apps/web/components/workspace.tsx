@@ -6,6 +6,7 @@ import {
   Activity,
   ArrowDownToLine,
   ArrowRight,
+  Bell,
   Check,
   ChevronDown,
   ChevronRight,
@@ -54,6 +55,8 @@ import ConsentPanel from "./consent-panel";
 import { PropertiesFeature } from "../features/properties";
 import CmsWorkspace from "./cms-workspace";
 import CampaignWorkspace from "./campaign-workspace";
+import NotificationCenter from "./notification-center";
+import { safeNotificationHref } from "./notification-controller";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -69,6 +72,7 @@ type View =
   | "properties"
   | "websites"
   | "campaigns"
+  | "notifications"
   | "settings";
 type InstallEvent = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> };
 const navigation = [
@@ -79,6 +83,7 @@ const navigation = [
   { id: "properties", name: "Properties", icon: House },
   { id: "websites", name: "Websites", icon: Layers3 },
   { id: "campaigns", name: "Campaigns", icon: Mail },
+  { id: "notifications", name: "Notifications", icon: Bell },
   { id: "settings", name: "Settings", icon: Settings2 },
 ] as const;
 const emptyData = {
@@ -145,8 +150,17 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const cmsProtected = useRef(false);
   const [campaignDirty, setCampaignDirty] = useState(false);
   const campaignProtected = useRef(false);
+  const [notificationPending, setNotificationPending] = useState(false);
+  const notificationProtected = useRef(false);
   const [invitationTransfer, setInvitationTransfer] = useState<InvitationTransfer | null>(null);
-  const unsaved = dirty || noteDirty || tagDirty || cmsDirty || campaignDirty || Boolean(invitationTransfer);
+  const unsaved =
+    dirty ||
+    noteDirty ||
+    tagDirty ||
+    cmsDirty ||
+    campaignDirty ||
+    notificationPending ||
+    Boolean(invitationTransfer);
   const [search, setSearch] = useState("");
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
@@ -175,7 +189,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const capturedContact = useRef<Contact | null>(null);
   const updateAccepted = useRef(false);
   const reloadProtected = useRef(false);
-  reloadProtected.current = unsaved || busy || cmsProtected.current || campaignProtected.current;
+  reloadProtected.current =
+    unsaved || busy || cmsProtected.current || campaignProtected.current || notificationProtected.current;
   const protectCms = useCallback((value: boolean) => {
     cmsProtected.current = value;
     if (value) reloadProtected.current = true;
@@ -185,6 +200,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     campaignProtected.current = value;
     if (value) reloadProtected.current = true;
     setCampaignDirty(value);
+  }, []);
+  const protectNotification = useCallback((value: boolean) => {
+    notificationProtected.current = value;
+    if (value) reloadProtected.current = true;
+    setNotificationPending(value);
   }, []);
   const dialog = useRef<HTMLDialogElement>(null);
   const detailDialog = useRef<HTMLDialogElement>(null);
@@ -204,6 +224,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (item.id === "websites")
       return syntheticEnabled && permission("sites.read") && permission("content.read");
     if (item.id === "campaigns") return syntheticEnabled && permission("campaigns.read");
+    if (item.id === "notifications") return permission("self.notifications.read");
     return true;
   });
   const settingsPanel = [
@@ -236,7 +257,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     async (active: Session) => {
       if (!active.activeOrgId) return;
       const epoch = ++refreshEpoch.current;
-      if (cmsProtected.current || campaignProtected.current) {
+      if (cmsProtected.current || campaignProtected.current || notificationProtected.current) {
         setLoading(false);
         return;
       }
@@ -296,7 +317,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         setRefreshed(null);
         setError(err instanceof Error ? err.message : "Workspace could not refresh.");
         const unrelatedCrmDenial =
-          (cmsProtected.current || campaignProtected.current) &&
+          (cmsProtected.current || campaignProtected.current || notificationProtected.current) &&
           err instanceof ApiError &&
           err.status === 403 &&
           ["permission_denied", "entitlement_disabled"].includes(err.code ?? "");
@@ -472,7 +493,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       if (!updateAccepted.current) return;
       if (reloadProtected.current) {
         setActivatedUpdate(true);
-        setNotice("The app update activated. Finish or discard your current draft before reloading.");
+        setNotice(
+          notificationProtected.current
+            ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
+            : "The app update activated. Finish or discard your current draft before reloading.",
+        );
         return;
       }
       window.location.reload();
@@ -811,8 +836,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function switchOrganization(id: string) {
-    if (cmsProtected.current || campaignProtected.current) {
-      setError("Resolve or discard the current draft in its editor before switching organizations.");
+    if (cmsProtected.current || campaignProtected.current || notificationProtected.current) {
+      setError(
+        notificationProtected.current
+          ? "Reconcile the unconfirmed read command in Notifications before switching organizations."
+          : "Resolve or discard the current draft in its editor before switching organizations.",
+      );
       return;
     }
     if (unsaved && !window.confirm("Discard your draft and switch organizations?")) return;
@@ -863,8 +892,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function logout() {
-    if (cmsProtected.current || campaignProtected.current) {
-      setError("Resolve or discard the current draft in its editor before signing out.");
+    if (cmsProtected.current || campaignProtected.current || notificationProtected.current) {
+      setError(
+        notificationProtected.current
+          ? "Reconcile the unconfirmed read command in Notifications before signing out."
+          : "Resolve or discard the current draft in its editor before signing out.",
+      );
       return;
     }
     if (unsaved && !window.confirm("Discard your draft and sign out?")) return;
@@ -896,6 +929,24 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     } finally {
       setBusy(false);
     }
+  }
+  function openNotification(href: string) {
+    const safe = safeNotificationHref(href);
+    if (!safe || !online || busy) return;
+    if (reloadProtected.current) {
+      setError(
+        notificationProtected.current
+          ? "Reconcile the unconfirmed read command in Notifications before opening a notification link."
+          : "Resolve the current draft or unconfirmed command before opening a notification link.",
+      );
+      return;
+    }
+    const destination = safe.split(/[?#]/)[0].slice(1) || "dashboard";
+    if (!visibleNavigation.some((item) => item.id === destination)) {
+      setError("This notification’s destination is unavailable with your current workspace access.");
+      return;
+    }
+    router.push(safe);
   }
   const nameFor = (lead: Lead) =>
     data.contacts.find((contact) => contact.id === lead.contactId)?.displayName || "Authorized lead";
@@ -1036,7 +1087,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           onClick={(event) => {
             if (reloadProtected.current) {
               event.preventDefault();
-              setError("Resolve or discard the current draft before leaving this view.");
+              setError(
+                notificationProtected.current
+                  ? "Reconcile the unconfirmed read command in Notifications before leaving this view."
+                  : "Resolve or discard the current draft before leaving this view.",
+              );
             }
           }}
         >
@@ -1072,9 +1127,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               aria-current={view === id ? "page" : undefined}
               className={`nav-link ${view === id ? "active" : ""}`}
               onClick={(event) => {
-                if (cmsProtected.current || campaignProtected.current) {
+                if (cmsProtected.current || campaignProtected.current || notificationProtected.current) {
                   event.preventDefault();
-                  setError("Resolve or discard the current draft in its editor before leaving this view.");
+                  setError(
+                    notificationProtected.current
+                      ? "Reconcile the unconfirmed read command in Notifications before leaving this view."
+                      : "Resolve or discard the current draft in its editor before leaving this view.",
+                  );
                   return;
                 }
                 if (busy) {
@@ -1111,7 +1170,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               onClick={(event) => {
                 if (reloadProtected.current) {
                   event.preventDefault();
-                  setError("Resolve or discard the current draft before opening installation settings.");
+                  setError(
+                    notificationProtected.current
+                      ? "Reconcile the unconfirmed read command in Notifications before opening installation settings."
+                      : "Resolve or discard the current draft before opening installation settings.",
+                  );
                 }
               }}
             >
@@ -1176,9 +1239,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <Download size={19} />
               <span>
                 An app update is ready.
-                {unsaved || busy
-                  ? " Finish or discard your draft before updating."
-                  : " Reload when you’re ready."}
+                {notificationPending
+                  ? " Reconcile the unconfirmed read command in Notifications before updating or reloading."
+                  : unsaved || busy
+                    ? " Finish or discard your draft before updating."
+                    : " Reload when you’re ready."}
               </span>
               <Button
                 variant="secondary"
@@ -1219,7 +1284,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       ? "Move opportunities forward, one next step at a time."
                       : view === "tasks"
                         ? "Make room for the follow-ups that matter."
-                        : "A workspace that travels with you."}
+                        : view === "notifications"
+                          ? "Notices for your current membership, with clear read receipts."
+                          : "A workspace that travels with you."}
               </p>
             </div>
             <div className="heading-actions">
@@ -1242,7 +1309,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               >
                 <RefreshCw size={18} className={loading ? "spinning" : ""} />
               </button>
-              {!["settings", "properties", "websites", "campaigns"].includes(view) &&
+              {!["settings", "properties", "websites", "campaigns", "notifications"].includes(view) &&
                 !dealsTab &&
                 !captureTab && (
                   <Button
@@ -1266,35 +1333,80 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               {notice}
             </div>
           )}
-          {view !== "properties" && view !== "websites" && view !== "campaigns" && (
-            <div className="scope-line">
-              <span>
-                <ShieldCheck size={14} /> {organization?.name}
-                <select
-                  aria-label="Workspace scope"
-                  value={scope}
-                  disabled={busy || loading || !online || unsaved}
-                  onChange={(event) => {
-                    ++refreshEpoch.current;
-                    setData(emptyData);
-                    setRefreshed(null);
-                    setScope(event.target.value as "own" | "authorized");
-                  }}
-                >
-                  <option value="own">My workspace</option>
-                  <option value="authorized">All permitted records</option>
-                </select>
-              </span>
-              <span>
-                {loading
-                  ? "Refreshing…"
-                  : refreshed
-                    ? `Refreshed ${readableDate(refreshed, timezone)} · ${timezone}`
-                    : "Data unavailable"}
-              </span>
+          {view !== "properties" &&
+            view !== "websites" &&
+            view !== "campaigns" &&
+            view !== "notifications" && (
+              <div className="scope-line">
+                <span>
+                  <ShieldCheck size={14} /> {organization?.name}
+                  <select
+                    aria-label="Workspace scope"
+                    value={scope}
+                    disabled={busy || loading || !online || unsaved}
+                    onChange={(event) => {
+                      ++refreshEpoch.current;
+                      setData(emptyData);
+                      setRefreshed(null);
+                      setScope(event.target.value as "own" | "authorized");
+                    }}
+                  >
+                    <option value="own">My workspace</option>
+                    <option value="authorized">All permitted records</option>
+                  </select>
+                </span>
+                <span>
+                  {loading
+                    ? "Refreshing…"
+                    : refreshed
+                      ? `Refreshed ${readableDate(refreshed, timezone)} · ${timezone}`
+                      : "Data unavailable"}
+                </span>
+              </div>
+            )}
+
+          {notificationPending && view !== "notifications" && (
+            <div className="connection-banner" role="status">
+              <Bell size={18} aria-hidden="true" />
+              <span>A notification read command is still unconfirmed in this tab.</span>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={
+                  busy ||
+                  dirty ||
+                  noteDirty ||
+                  tagDirty ||
+                  cmsDirty ||
+                  campaignDirty ||
+                  Boolean(invitationTransfer)
+                }
+                onClick={() => router.push("/notifications")}
+              >
+                Return to notifications
+              </Button>
             </div>
           )}
-
+          {(view === "notifications" || notificationPending) && (
+            <div hidden={view !== "notifications"}>
+              <NotificationCenter
+                key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                session={session}
+                memberId={member}
+                csrf={csrf}
+                online={online && !changingOrganization && view === "notifications"}
+                accessRevision={accessRevision}
+                onProtectedChange={protectNotification}
+                onNavigate={openNotification}
+                onAccessRevoked={() => {
+                  router.replace("/dashboard");
+                  setError(
+                    "Notification access changed. Refresh workspace access before reopening Notifications.",
+                  );
+                }}
+              />
+            </div>
+          )}
           {view === "properties" && (
             <PropertiesFeature
               key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
@@ -2150,9 +2262,19 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             href={`/${id}`}
             aria-current={view === id ? "page" : undefined}
             onClick={(event) => {
-              if (cmsProtected.current || campaignProtected.current || unsaved || busy) {
+              if (
+                cmsProtected.current ||
+                campaignProtected.current ||
+                notificationProtected.current ||
+                unsaved ||
+                busy
+              ) {
                 event.preventDefault();
-                setError("Resolve or discard the current draft before leaving this view.");
+                setError(
+                  notificationProtected.current
+                    ? "Reconcile the unconfirmed read command in Notifications before leaving this view."
+                    : "Resolve or discard the current draft before leaving this view.",
+                );
                 return;
               }
             }}

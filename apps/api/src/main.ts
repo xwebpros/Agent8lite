@@ -34,6 +34,7 @@ import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { MockOidcProvider } from "../../../packages/providers/identity/mock";
 import { acceptInvitation, AdminService } from "./admin-service";
 import { SupportService } from "./support-service";
+import { NotificationService } from "./notification-service";
 import { BillingService } from "./billing-service";
 import { ImportExportService, UploadService } from "./import-export-service";
 import { DealService } from "./deal-service";
@@ -558,6 +559,7 @@ class ApiController {
         "business-profiles": "businessProfileId",
         jobs: "jobId",
         tickets: "ticketId",
+        notifications: "notificationId",
         "pipeline-stages": "pipelineStageId",
         "lead-sources": "leadSourceId",
         campaigns: "campaignId",
@@ -586,6 +588,32 @@ class ApiController {
             return { body, status: 202 };
           }
           await requireEntitlement(client, spec["x-permission"]);
+          if (resource === "notifications") {
+            const notifications = new NotificationService(client, context, traceId);
+            let response: ApiCommandResponse;
+            if (req.method === "GET" && !id && !action) {
+              if (Object.keys(req.query).some((key) => !["cursor", "limit"].includes(key)))
+                throw new AccessError(422, "query_invalid", "Only notification pagination is supported.");
+              response = { body: await notifications.list(req.query), status: 200 };
+            } else if (req.method === "POST" && id && action === "read") {
+              if (Object.keys(req.query).length)
+                throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+              if (
+                req.body !== undefined &&
+                (req.body === null ||
+                  typeof req.body !== "object" ||
+                  Array.isArray(req.body) ||
+                  Object.keys(req.body).length > 0)
+              )
+                throw new AccessError(422, "body_not_allowed", "This command accepts no content fields.");
+              response = await notifications.markRead(
+                id,
+                req.headers["idempotency-key"] as string | undefined,
+              );
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
           if (resource === "message-designs") {
             localAccess(req);
             if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
