@@ -9,6 +9,7 @@ import {
   templateThemeVersion,
 } from "../../../../packages/cms";
 import type { CmsProfileReferencePort } from "../../../../packages/cms/ports";
+import { revisionRecovery } from "../../../../packages/cms/recovery";
 import type { components } from "../../../../packages/contracts/generated/api";
 import { requireEntitlement } from "../../../../packages/auth/entitlements";
 import {
@@ -401,21 +402,20 @@ export class CmsService {
   }
 
   /** Explicit authorized recovery helper; future block kinds cannot fit the frozen Revision envelope. */
-  async getRevisionRecovery(id: string) {
+  async getRevisionRecovery(documentId: string, id: string) {
     await this.authorize("content.read");
     assertUuid(id);
+    await this.document(documentId, false);
     const row = await this.repository.revision(id);
-    if (!row) unavailable();
-    await this.document(row.document_id, false);
+    if (!row || row.document_id !== documentId) unavailable();
     await this.authorize("content.read");
-    return {
-      id: row.id,
-      documentId: row.document_id,
-      ...recoverDraft(
-        { schemaVersion: row.schema_version, blocks: row.block_data, seo: row.seo },
-        this.dependencies.trustedLinkPolicy,
-      ),
-    };
+    const inspected = recoverDraft(
+      { schemaVersion: row.schema_version, blocks: row.block_data, seo: row.seo },
+      this.dependencies.trustedLinkPolicy,
+    );
+    const body = revisionRecovery(row.id, documentId, inspected.data, inspected.issues);
+    await this.authorize("content.read");
+    return body;
   }
 
   async listTemplates(query: Query = {}): Promise<Schemas["PageTemplate"]> {

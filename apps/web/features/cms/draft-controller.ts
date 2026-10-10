@@ -1,4 +1,5 @@
 import type { components } from "../../../../packages/contracts/generated/api";
+import { requireRevisionRecovery } from "../../../../packages/cms/recovery";
 import {
   browserDocumentVersion,
   BrowserContentError,
@@ -180,6 +181,17 @@ export class CmsDraftController {
     return inspection.issues.length ? null : (inspection.data as BrowserDraft);
   }
   setOnline(online: boolean) {
+    if (!online && this.state.recovery) {
+      this.update({
+        online,
+        recovery: null,
+        selectedRevisionId: null,
+        issues: [],
+        phase: "idle",
+        message: "Recovery cleared while offline. Reconnect and read the original revision again.",
+      });
+      return;
+    }
     this.update({ online });
   }
 
@@ -206,7 +218,7 @@ export class CmsDraftController {
   }
   /** Already-authorized original JSON is injected here; no proposed recovery HTTP fetch exists. */
   openRecovery(revisionId: string, documentId: string, value: unknown): boolean {
-    if (!this.canReplace()) return false;
+    if (!this.canReplace() || !this.state.online) return false;
     if (documentId !== this.state.document.id) throw new Error("Recovery belongs to another document.");
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(revisionId))
       throw new Error("A valid revision identity is required.");
@@ -222,6 +234,16 @@ export class CmsDraftController {
       phase: "idle",
       message: "Read-only recovery. Original JSON is preserved.",
     });
+    return true;
+  }
+  /** Root injects the response of an authorized explicit-ID read; discovery/transport are separate. */
+  openRecoveryResponse(revisionId: string, value: unknown): boolean {
+    if (!this.canReplace() || !this.state.online) return false;
+    const response = requireRevisionRecovery(value);
+    if (response.id !== revisionId)
+      throw new Error("Recovery response does not match the requested revision.");
+    if (!this.openRecovery(response.id, response.documentId, response.data)) return false;
+    this.update({ issues: [...response.issues, ...this.state.issues] });
     return true;
   }
   startBlank(): boolean {

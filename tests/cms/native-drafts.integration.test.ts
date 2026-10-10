@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CmsService } from "../../apps/api/src/cms";
 import { createSyntheticSession } from "../../packages/auth/sessions";
 import { prepareTemplateDraft } from "../../packages/cms";
+import { requireRevisionRecovery } from "../../packages/cms/recovery";
 import { fixtures } from "../../packages/db/fixtures";
 import { withTenantTransaction } from "../../packages/db/tenant-transaction";
 import { assertContract, assertProblem, type Schemas } from "../helpers/api";
@@ -23,6 +24,8 @@ const grants = ["sites.read", "sites.write", "content.read", "content.write"].ma
 }));
 const base = (session = owner) => `/v1/orgs/${session.org}`;
 const draftPath = (id: string, session = owner) => `/dev/orgs/${session.org}/cms/documents/${id}/drafts`;
+const recoveryPath = (documentId: string, revisionId: string, session = owner) =>
+  `/dev/orgs/${session.org}/cms/documents/${documentId}/revisions/${revisionId}/recovery`;
 const draft = () => prepareTemplateDraft("agent-introduction", "1.0.0", cmsTestPolicy).document;
 function request(
   session: Session,
@@ -95,6 +98,47 @@ async function counts(documentId: string) {
     [documentId],
   );
   return result.rows[0];
+}
+async function insertRecovery(
+  documentId: string,
+  data = { schemaVersion: 7, blocks: [] as unknown, seo: {} as unknown },
+) {
+  const id = randomUUID();
+  await environment.admin.query(
+    "INSERT INTO app.content_revision(tenant_id,id,document_id,author_member_id,schema_version,block_data,seo,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,'synthetic-recovery')",
+    [
+      fixtures.orgA,
+      id,
+      documentId,
+      fixtures.ownerMemberA,
+      data.schemaVersion,
+      JSON.stringify(data.blocks),
+      JSON.stringify(data.seo),
+    ],
+  );
+  return id;
+}
+async function recovered(response: Response) {
+  const body = requireRevisionRecovery(await response.json());
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(response.headers.get("x-trace-id")).toBeTruthy();
+  expect(response.headers.get("etag")).toBeNull();
+  expect(Object.keys(body).sort()).toEqual(["canPublish", "canSave", "data", "documentId", "id", "issues"]);
+  return body;
+}
+async function waitForLock(table: string) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const state = await environment.admin.query(
+      "SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=$1 AND usename='estate_runtime' AND wait_event_type='Lock' AND query LIKE $2",
+      [environment.database, `%${table}%`],
+    );
+    if (state.rows[0].count > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("Expected the recovery request to wait for its source lock.");
 }
 
 beforeAll(async () => {
@@ -609,7 +653,7 @@ describe("unregistered native CMS API against a disposable real-role database", 
         JSON.stringify(draft().seo),
       ],
     );
-    const recovered = await direct((service) => service.getRevisionRecovery(id));
+    const recovered = await direct((service) => service.getRevisionRecovery(document.id, id));
     expect(recovered).toMatchObject({ id, documentId: document.id, canSave: false, canPublish: false });
     expect(recovered.data).toEqual({ schemaVersion: 7, blocks: unknown, seo: draft().seo });
     expect(JSON.stringify(recovered.issues)).not.toContain("<script>");
@@ -620,7 +664,270 @@ describe("unregistered native CMS API against a disposable real-role database", 
       id,
     ]);
     expect(stored.rows[0].block_data).toEqual(unknown);
+    const before = await counts(document.id);
+    const response = await request(owner, "GET", recoveryPath(document.id, id));
+    const body = requireRevisionRecovery(await response.json());
+    expect(response.status).toBe(200);
+    expect(body).toEqual(recovered);
+    expect(response.headers.get("etag")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await counts(document.id)).toEqual(before);
   });
+
+  it("recovers registered content read-only while retaining its normal frozen response and version", async () => {
+    const { document } = await createPair();
+    const revision = await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    );
+    const before = await counts(document.id);
+    const recovery = await recovered(await request(owner, "GET", recoveryPath(document.id, revision.id)));
+    expect(recovery).toMatchObject({
+      id: revision.id,
+      documentId: document.id,
+      canSave: false,
+      canPublish: false,
+      issues: [],
+    });
+    expect(recovery.data).toEqual({
+      schemaVersion: revision.schemaVersion,
+      blocks: revision.blocks,
+      seo: revision.seo,
+    });
+    expect(
+      await success(await request(owner, "GET", `${base()}/revisions/${revision.id}`), "Revision"),
+    ).toEqual(revision);
+    expect(await counts(document.id)).toEqual(before);
+  });
+
+  it("keeps recovery unavailable outside explicit synthetic loopback access", async () => {
+    const { document } = await createPair();
+    const id = await insertRecovery(document.id, {
+      schemaVersion: 7,
+      blocks: [{ private: "Do not disclose" }],
+      seo: {},
+    });
+    const input = {
+      method: "GET",
+      url: recoveryPath(document.id, id),
+      headers: { cookie: `estate_session=${owner.token}` },
+      remoteAddress: "127.0.0.1",
+    };
+    for (const request of [
+      { ...input, remoteAddress: "203.0.113.8" },
+      { ...input, headers: { ...input.headers, "x-forwarded-for": "127.0.0.1, 203.0.113.8" } },
+    ]) {
+      const response = await environment.adapter.handle(request);
+      expect(response.status).toBe(403);
+      expect(JSON.stringify(response.body)).not.toContain("Do not disclose");
+    }
+    const previous = process.env.APP_ENV;
+    try {
+      process.env.APP_ENV = "production";
+      const response = await environment.adapter.handle(input);
+      expect(response.status).toBe(404);
+      expect(JSON.stringify(response.body)).not.toContain("Do not disclose");
+    } finally {
+      if (previous === undefined) delete process.env.APP_ENV;
+      else process.env.APP_ENV = previous;
+    }
+  });
+
+  it("denies wrong-document, foreign-tenant and missing recovery bindings without original JSON", async () => {
+    const { document } = await createPair();
+    const second = await createPair();
+    const id = await insertRecovery(document.id, {
+      schemaVersion: 7,
+      blocks: [{ private: "Never disclose" }],
+      seo: {},
+    });
+    for (const path of [
+      recoveryPath(second.document.id, id),
+      recoveryPath(document.id, randomUUID()),
+      recoveryPath(randomUUID(), id),
+    ]) {
+      const body = await assertProblem(await request(owner, "GET", path), 404);
+      expect(JSON.stringify(body)).not.toContain("Never disclose");
+    }
+    await assertProblem(await request(otherOwner, "GET", recoveryPath(document.id, id, otherOwner)), 404);
+    await assertProblem(await request(otherOwner, "GET", recoveryPath(document.id, id)), 403);
+    await assertProblem(await request(owner, "GET", recoveryPath(document.id, "invalid")), 422);
+    await assertProblem(await request(owner, "GET", `${recoveryPath(document.id, id)}?unexpected=true`), 422);
+    await assertProblem(await fetch(`${environment.origin}${recoveryPath(document.id, id)}`), 401);
+    await assertProblem(await request(owner, "POST", recoveryPath(document.id, id)), 404);
+  });
+
+  it.each(["grant", "member", "capability", "site", "document", "profile"])(
+    "denies recovery after current %s eligibility is revoked",
+    async (mode) => {
+      const { site, document } = await createPair(editor);
+      const id = await insertRecovery(document.id);
+      if (mode === "grant")
+        await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+          JSON.stringify(grants.filter((grant) => grant.code !== "content.read")),
+          editorRole,
+        ]);
+      if (mode === "member")
+        await environment.admin.query("UPDATE app.membership SET status='disabled' WHERE id=$1", [
+          fixtures.agentMemberA,
+        ]);
+      if (mode === "capability")
+        await environment.admin.query(
+          "UPDATE app.entitlement SET state='disabled' WHERE tenant_id=$1 AND feature='websites'",
+          [fixtures.orgA],
+        );
+      if (mode === "site")
+        await environment.admin.query("UPDATE app.site SET state='suspended' WHERE id=$1", [site.id]);
+      if (mode === "document")
+        await environment.admin.query("UPDATE app.content_document SET archived_at=now() WHERE id=$1", [
+          document.id,
+        ]);
+      if (mode === "profile") environment.deniedProfiles.add(profileA);
+      const before = await counts(document.id);
+      const body = await assertProblem(
+        await request(editor, "GET", recoveryPath(document.id, id, editor)),
+        ["grant", "member", "capability"].includes(mode) ? 403 : 404,
+      );
+      expect(body).not.toHaveProperty("data");
+      expect(await counts(document.id)).toEqual(before);
+    },
+  );
+
+  it("refuses excessive original data and diagnostics without truncating stored JSON", async () => {
+    const { document } = await createPair();
+    let nested: unknown = null;
+    for (let index = 0; index < 32; index++) nested = { child: nested };
+    const samples = [
+      { schemaVersion: 7, blocks: [], seo: "界".repeat(90_000) },
+      { schemaVersion: 7, blocks: [], seo: nested },
+      { schemaVersion: 7, blocks: Array(20_001).fill(null), seo: {} },
+      { schemaVersion: 1, blocks: Array.from({ length: 1000 }, () => ({})), seo: draft().seo },
+    ];
+    for (const data of samples) {
+      const id = await insertRecovery(document.id, data);
+      const before = await counts(document.id);
+      const body = await assertProblem(await request(owner, "GET", recoveryPath(document.id, id)), 422);
+      expect(body).not.toHaveProperty("data");
+      const stored = await environment.admin.query(
+        "SELECT schema_version,block_data,seo FROM app.content_revision WHERE id=$1",
+        [id],
+      );
+      expect(stored.rows[0]).toEqual({
+        schema_version: data.schemaVersion,
+        block_data: data.blocks,
+        seo: data.seo,
+      });
+      expect(await counts(document.id)).toEqual(before);
+    }
+  });
+
+  it.each(["content_document", "site", "business_profile", "membership", "entitlement"])(
+    "denies recovery when the database clock expires across a blocked %s source",
+    async (table) => {
+      const { site, document } = await createPair(editor);
+      const id = await insertRecovery(document.id);
+      const before = await counts(document.id);
+      await environment.admin.query(
+        "UPDATE app.entitlement SET effective_until=clock_timestamp()+interval '2 seconds' WHERE tenant_id=$1 AND feature='websites'",
+        [fixtures.orgA],
+      );
+      const sources: Record<string, [string, string]> = {
+        content_document: ["SELECT id FROM app.content_document WHERE id=$1 FOR UPDATE", document.id],
+        site: ["SELECT id FROM app.site WHERE id=$1 FOR UPDATE", site.id],
+        business_profile: ["SELECT id FROM app.business_profile WHERE id=$1 FOR UPDATE", profileA],
+        membership: ["SELECT id FROM app.membership WHERE id=$1 FOR UPDATE", fixtures.agentMemberA],
+        entitlement: [
+          "SELECT tenant_id FROM app.entitlement WHERE tenant_id=$1 AND feature='websites' FOR UPDATE",
+          fixtures.orgA,
+        ],
+      };
+      const blocker = await environment.admin.connect();
+      let pending: Promise<Response> | undefined;
+      try {
+        await blocker.query("BEGIN");
+        await blocker.query(sources[table][0], [sources[table][1]]);
+        pending = request(editor, "GET", recoveryPath(document.id, id, editor));
+        await waitForLock(table);
+        const deadline = Date.now() + 5000;
+        let expired = false;
+        while (!expired && Date.now() < deadline) {
+          const result = await environment.admin.query(
+            "SELECT clock_timestamp()>=effective_until AS expired FROM app.entitlement WHERE tenant_id=$1 AND feature='websites'",
+            [fixtures.orgA],
+          );
+          expired = result.rows[0].expired;
+          if (!expired) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(expired).toBe(true);
+        await blocker.query("ROLLBACK");
+        expect(await assertProblem(await pending, 403)).toMatchObject({ code: "entitlement_disabled" });
+        expect(await counts(document.id)).toEqual(before);
+      } finally {
+        await blocker.query("ROLLBACK");
+        if (pending) await pending;
+        blocker.release();
+      }
+    },
+  );
+
+  it.each(["content_document", "site", "business_profile", "membership", "role_definition", "entitlement"])(
+    "rechecks %s eligibility after its locked source is changed",
+    async (table) => {
+      const { site, document } = await createPair(editor);
+      const id = await insertRecovery(document.id);
+      const sources: Record<string, [string, string]> = {
+        content_document: ["SELECT id FROM app.content_document WHERE id=$1 FOR UPDATE", document.id],
+        site: ["SELECT id FROM app.site WHERE id=$1 FOR UPDATE", site.id],
+        business_profile: ["SELECT id FROM app.business_profile WHERE id=$1 FOR UPDATE", profileA],
+        membership: ["SELECT id FROM app.membership WHERE id=$1 FOR UPDATE", fixtures.agentMemberA],
+        role_definition: ["SELECT id FROM app.role_definition WHERE id=$1 FOR UPDATE", editorRole],
+        entitlement: [
+          "SELECT tenant_id FROM app.entitlement WHERE tenant_id=$1 AND feature='websites' FOR UPDATE",
+          fixtures.orgA,
+        ],
+      };
+      const blocker = await environment.admin.connect();
+      let pending: Promise<Response> | undefined;
+      try {
+        await blocker.query("BEGIN");
+        await blocker.query(sources[table][0], [sources[table][1]]);
+        pending = request(editor, "GET", recoveryPath(document.id, id, editor));
+        await waitForLock(table);
+        if (table === "content_document")
+          await blocker.query("UPDATE app.content_document SET archived_at=now() WHERE id=$1", [document.id]);
+        if (table === "site")
+          await blocker.query("UPDATE app.site SET state='suspended' WHERE id=$1", [site.id]);
+        if (table === "business_profile") environment.deniedProfiles.add(profileA);
+        if (table === "membership")
+          await blocker.query("UPDATE app.membership SET status='disabled' WHERE id=$1", [
+            fixtures.agentMemberA,
+          ]);
+        if (table === "role_definition")
+          await blocker.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+            JSON.stringify(grants.filter((grant) => grant.code !== "content.read")),
+            editorRole,
+          ]);
+        if (table === "entitlement")
+          await blocker.query(
+            "UPDATE app.entitlement SET state='disabled' WHERE tenant_id=$1 AND feature='websites'",
+            [fixtures.orgA],
+          );
+        await blocker.query("COMMIT");
+        const body = await assertProblem(
+          await pending,
+          ["content_document", "site", "business_profile"].includes(table) ? 404 : 403,
+        );
+        expect(body).not.toHaveProperty("data");
+        expect((await counts(document.id)).revisions).toBe(1);
+      } finally {
+        await blocker.query("ROLLBACK");
+        if (pending) await pending;
+        blocker.release();
+      }
+    },
+  );
 
   it("uses signed resource-bound pagination and explicit revision IDs rather than a latest-draft inference", async () => {
     const { site, document } = await createPair();

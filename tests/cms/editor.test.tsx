@@ -11,6 +11,7 @@ import { CmsDraftPreview } from "../../apps/web/features/cms/draft-preview";
 import { describeDraftIssues, focusDraftFeedback } from "../../apps/web/features/cms/draft-validation";
 import type { components } from "../../packages/contracts/generated/api";
 import type { BrowserRevision } from "../../packages/cms/browser";
+import { revisionRecovery } from "../../packages/cms/recovery";
 
 const document: components["schemas"]["Document"] = {
   id: "a2000000-0000-4000-8000-000000000010",
@@ -558,6 +559,100 @@ describe("bounded local CMS edit recovery", () => {
     expect(controller.getSnapshot().message).toContain("Your previous draft is retained");
     expect(controller.undo()).toBe(true);
     expect(controller.getSnapshot().dirty).toBe(false);
+  });
+});
+
+describe("approved document-bound recovery browser projection", () => {
+  const response = (
+    data: unknown = {
+      schemaVersion: 8,
+      blocks: [{ type: "future", original: "<script>keep()</script>" }],
+      seo: {},
+    },
+  ) =>
+    revisionRecovery(revision().id, document.id, data, [
+      { path: "/schemaVersion", code: "schema_version_unsupported" },
+    ]);
+  it("validates the closed response and preserves escaped original JSON without enabling commands", async () => {
+    const { controller, client } = setup();
+    const value = response();
+    expect(controller.openRecoveryResponse(revision().id, value)).toBe(true);
+    expect(controller.getSnapshot()).toMatchObject({
+      recovery: { data: value.data },
+      draft: null,
+      dirty: false,
+    });
+    expect(controller.previewDraft()).toBeNull();
+    expect(controller.canEdit()).toBe(false);
+    await controller.save();
+    expect(client.saveDraft).not.toHaveBeenCalled();
+    const html = renderToStaticMarkup(
+      createElement(CmsDraftEditor, {
+        controller,
+        history: { items: [], hasMore: false, nextCursor: null },
+        onLoadMore: () => {},
+        onDirty: () => {},
+      }),
+    );
+    expect(html).toContain("&lt;script&gt;keep()&lt;/script&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("Save draft revision");
+  });
+  it("keeps even registered content read-only when it was read through recovery", () => {
+    const { controller } = setup();
+    const registered = revision();
+    const value = revisionRecovery(
+      registered.id,
+      registered.documentId,
+      {
+        schemaVersion: registered.schemaVersion,
+        blocks: registered.blocks,
+        seo: registered.seo,
+      },
+      [],
+    );
+    expect(controller.openRecoveryResponse(registered.id, value)).toBe(true);
+    expect(controller.startBlank()).toBe(false);
+    expect(controller.edit(() => {})).toBe(false);
+    expect(controller.getSnapshot().recovery?.data).toEqual(value.data);
+  });
+  it("rejects foreign document/revision bindings and writable flags before showing private data", () => {
+    const { controller } = setup();
+    const value = response();
+    expect(() => controller.openRecoveryResponse("a2000000-0000-4000-8000-000000000066", value)).toThrow(
+      "requested revision",
+    );
+    expect(() =>
+      controller.openRecoveryResponse(value.id, {
+        ...value,
+        documentId: "a2000000-0000-4000-8000-000000000066",
+      }),
+    ).toThrow("another document");
+    expect(() => controller.openRecoveryResponse(value.id, { ...value, canSave: true })).toThrow(
+      "supported limits",
+    );
+    expect(controller.getSnapshot()).toMatchObject({ recovery: null, draft: null, selectedRevisionId: null });
+  });
+  it("protects dirty drafts and removes recovery on offline/context loss, refusing late injections", () => {
+    const { controller } = setup();
+    edited(controller);
+    expect(controller.openRecoveryResponse(revision().id, response())).toBe(false);
+    controller.discardChanges();
+    controller.openRecoveryResponse(revision().id, response());
+    controller.setOnline(false);
+    expect(controller.getSnapshot()).toMatchObject({
+      recovery: null,
+      draft: null,
+      selectedRevisionId: null,
+      issues: [],
+    });
+    expect(controller.openRecoveryResponse(revision().id, response())).toBe(false);
+    controller.setOnline(true);
+    expect(controller.getSnapshot().recovery).toBeNull();
+    expect(controller.openRecoveryResponse(revision().id, response())).toBe(true);
+    controller.revoke();
+    expect(controller.openRecoveryResponse(revision().id, response())).toBe(false);
+    expect(controller.getSnapshot()).toMatchObject({ phase: "denied", recovery: null, draft: null });
   });
 });
 
