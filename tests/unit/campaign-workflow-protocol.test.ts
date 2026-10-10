@@ -265,16 +265,13 @@ describe("lossless initial ordered-list adapter", () => {
     expect(original.edges).toEqual([{ from: "first", to: "second", branch: "always" }]);
     expect(Object.isFrozen(edited.nodes)).toBe(true);
   });
-  it("keeps unsupported condition/message graphs read-only rather than flattening them", () => {
+  it("keeps unsupported condition, branch, join and unrecognized graphs read-only rather than flattening them", () => {
     for (const graph of [
       {
         ...chain(),
         nodes: [{ key: "condition", kind: "condition", condition: { intent: "buyer" } }],
       } as Schema<"CampaignVersionWrite">,
-      {
-        ...chain(),
-        nodes: [{ key: "email", kind: "email", messageDesignId: otherId }],
-      } as Schema<"CampaignVersionWrite">,
+      { ...chain(), nodes: [{ key: "future", kind: "future" }] } as unknown as Schema<"CampaignVersionWrite">,
       {
         ...chain(),
         edges: [{ from: "first", to: "second", branch: "true" }],
@@ -282,14 +279,36 @@ describe("lossless initial ordered-list adapter", () => {
       { ...chain(), edges: [] },
     ])
       expect(workflowLinearOrder(graph)).toBeNull();
-    expect(() =>
-      workflowLinearDefinition([{ key: "message", kind: "sms", messageDesignId: otherId }], chain()),
-    ).toThrow();
     const unsupported: Schema<"CampaignVersionWrite"> = {
       timezone: "UTC",
-      nodes: [{ key: "message", kind: "email", messageDesignId: otherId }],
+      nodes: [{ key: "branch", kind: "condition", condition: { intent: "buyer" } }],
       edges: [],
     };
     expect(() => workflowLinearDefinition(chain().nodes, unsupported)).toThrow();
+  });
+  it("copies and reorders complete mixed native-message chains without inventing design versions or losing metadata", () => {
+    const mixed: Schema<"CampaignVersionWrite"> = {
+      ...chain(),
+      nodes: [
+        ...chain().nodes,
+        { key: "email", kind: "email", messageDesignId: otherId },
+        { key: "sms", kind: "sms", messageDesignId: versionId },
+      ],
+      edges: [
+        { from: "first", to: "second", branch: "always" },
+        { from: "second", to: "email", branch: "always" },
+        { from: "email", to: "sms", branch: "always" },
+      ],
+    };
+    const original = copyWorkflowJson(mixed);
+    expect(workflowLinearOrder(mixed)).toEqual(["first", "second", "email", "sms"]);
+    const edited = workflowLinearDefinition(
+      [mixed.nodes[2], mixed.nodes[0], mixed.nodes[3], mixed.nodes[1]],
+      mixed,
+    );
+    expect(workflowLinearOrder(edited)).toEqual(["email", "first", "sms", "second"]);
+    expect(edited.nodes[0]).toEqual({ key: "email", kind: "email", messageDesignId: otherId });
+    expect(edited.quietHours).toEqual(mixed.quietHours);
+    expect(mixed).toEqual(original);
   });
 });

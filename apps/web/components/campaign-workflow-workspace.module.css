@@ -140,7 +140,9 @@
 }
 .step,
 .preview,
-.receipt {
+.receipt,
+.designCatalogue,
+.designPreview {
   display: grid;
   gap: 14px;
   min-width: 0;
@@ -148,6 +150,22 @@
   border: 1px solid var(--color-border);
   border-radius: 10px;
   overflow-wrap: anywhere;
+}
+.designPreview pre {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.6;
+}
+.designCheck {
+  max-width: 100%;
+  margin-top: 12px;
+  white-space: normal;
+}
+.designCheck svg {
+  flex-shrink: 0;
 }
 .preview h3,
 .receipt h3 {

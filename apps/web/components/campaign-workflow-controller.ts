@@ -5,6 +5,8 @@ import type {
 } from "../../../packages/marketing/types";
 import { WorkflowValidationError } from "../../../packages/marketing";
 import { ApiError, type Schema } from "../lib/api";
+import { requireWorkflowDesign } from "./campaign-workflow-design-catalogue";
+import type { MessageDesignReceipt } from "./message-design-protocol";
 import {
   copyWorkflowJson,
   isWorkflowId,
@@ -72,6 +74,7 @@ export class CampaignWorkflowController {
   private revoked = false;
   private detached = false;
   private nodeSequence = 0;
+  private readonly unavailableDesigns = new Map<string, string>();
   constructor(
     private readonly options: {
       binding: string;
@@ -127,6 +130,7 @@ export class CampaignWorkflowController {
     for (const listener of this.listeners) listener();
   }
   private clear(phase: CampaignWorkflowState["phase"], message: string) {
+    this.unavailableDesigns.clear();
     ++this.generation;
     ++this.readEpoch;
     this.writing = false;
@@ -209,6 +213,49 @@ export class CampaignWorkflowController {
     );
     if (!unavailable) this.options.onAccessRevoked?.();
     return true;
+  }
+  sourceAccessLost(error: ApiError) {
+    this.fail(error);
+  }
+  private draftIssues(definition: WorkflowDefinition): readonly WorkflowIssue[] {
+    return [
+      ...this.options.validate(definition),
+      ...definition.nodes.flatMap((node, index) =>
+        node.messageDesignId && this.unavailableDesigns.get(node.key) === node.messageDesignId
+          ? [
+              {
+                field: `nodes.${index}.messageDesignId`,
+                message: "This current native design is unavailable. Choose an authorized design explicitly.",
+              },
+            ]
+          : [],
+      ),
+    ];
+  }
+  designUnavailable(nodeKey: string, id: string) {
+    const node = this.state.draft?.nodes.find((item) => item.key === nodeKey);
+    if (!node || node.messageDesignId !== id || this.revoked || this.detached) return;
+    this.unavailableDesigns.set(nodeKey, id);
+    this.update({ issues: this.draftIssues(this.state.draft!) });
+  }
+  chooseDesign(nodeKey: string, receipt: MessageDesignReceipt): boolean {
+    if (!this.mayEdit() || !this.state.draft) return false;
+    const node = this.state.draft.nodes.find((item) => item.key === nodeKey);
+    if (!node || (node.kind !== "email" && node.kind !== "sms")) return false;
+    try {
+      const verified = requireWorkflowDesign(receipt.data, receipt.etag, receipt.data.id, node.kind);
+      this.unavailableDesigns.delete(nodeKey);
+      this.replaceDraft({
+        ...this.state.draft,
+        nodes: this.state.draft.nodes.map((item) =>
+          item.key === nodeKey ? { key: item.key, kind: item.kind, messageDesignId: verified.data.id } : item,
+        ),
+      });
+      return true;
+    } catch {
+      this.update({ error: "Choose a current authorized native design for this step's channel." });
+      return false;
+    }
   }
   private verifiedDefinition(definition: WorkflowDefinition) {
     const copy = copyWorkflowJson(definition);
@@ -316,6 +363,7 @@ export class CampaignWorkflowController {
   beginDraft(): boolean {
     if (!this.mayReplace() || !this.state.canWrite) return false;
     const draft: WorkflowDefinition = { nodes: [], edges: [], timezone: "UTC" };
+    this.unavailableDesigns.clear();
     this.update({
       draft,
       dirty: true,
@@ -326,7 +374,7 @@ export class CampaignWorkflowController {
       previewIssues: [],
       conditionChoices: {},
       error: "",
-      message: "New local workflow draft. Add a wait or task before saving an immutable version.",
+      message: "New local workflow draft. Add a wait, task, or authorized message reference before saving.",
     });
     return true;
   }
@@ -336,16 +384,17 @@ export class CampaignWorkflowController {
     if (!workflowLinearOrder(definition)) {
       this.update({
         message:
-          "This graph remains read-only. Its condition branches or message references cannot be authored in the initial linear editor.",
+          "This graph remains read-only. Its condition branches, joins or unsupported nodes cannot be authored in the linear editor.",
       });
       return false;
     }
     const draft = copyWorkflowJson(definition);
+    this.unavailableDesigns.clear();
     this.update({
       draft,
       dirty: true,
       phase: "editing",
-      issues: this.options.validate(draft),
+      issues: this.draftIssues(draft),
       preview: null,
       previewIssues: [],
       conditionChoices: {},
@@ -359,14 +408,15 @@ export class CampaignWorkflowController {
     this.update({
       draft: copyWorkflowJson(draft),
       dirty: true,
-      issues: this.options.validate(draft),
+      issues: this.draftIssues(draft),
       error: "",
       preview: null,
       previewIssues: [],
       conditionChoices: {},
     });
   }
-  add(kind: "wait" | "task"): boolean {
+  add(kind: "wait" | "task" | "email" | "sms"): boolean {
+    if (!["wait", "task", "email", "sms"].includes(kind)) return false;
     if (!this.mayEdit() || !this.state.draft || this.state.draft.nodes.length >= 100) return false;
     const order = this.state.draft.nodes.length ? workflowLinearOrder(this.state.draft) : [];
     if (!order) return false;
@@ -375,7 +425,11 @@ export class CampaignWorkflowController {
       key = `step_${++this.nodeSequence}`;
     } while (this.state.draft.nodes.some((node) => node.key === key));
     const node: Schema<"WorkflowNode"> =
-      kind === "wait" ? { key, kind, delaySeconds: 0 } : { key, kind, taskTitle: "" };
+      kind === "wait"
+        ? { key, kind, delaySeconds: 0 }
+        : kind === "task"
+          ? { key, kind, taskTitle: "" }
+          : { key, kind };
     const nodes = order.map((item) => this.state.draft!.nodes.find((current) => current.key === item)!);
     this.replaceDraft(workflowLinearDefinition([...nodes, node], this.state.draft));
     return true;
@@ -444,6 +498,7 @@ export class CampaignWorkflowController {
   discard(): boolean {
     if (this.revoked || this.detached || this.writing || this.state.pending || this.state.reading)
       return false;
+    this.unavailableDesigns.clear();
     this.update({
       draft: null,
       dirty: false,
@@ -524,7 +579,7 @@ export class CampaignWorkflowController {
     let command = this.state.pending;
     if (!command) {
       if (this.state.phase !== "editing" || !this.state.dirty) return;
-      const issues = this.options.validate(this.state.draft);
+      const issues = this.draftIssues(this.state.draft);
       this.update({ issues });
       if (issues.length) return;
       let key: string;

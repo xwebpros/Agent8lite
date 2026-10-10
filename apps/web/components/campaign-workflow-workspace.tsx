@@ -28,6 +28,13 @@ import {
   type WorkflowDefinition,
 } from "./campaign-workflow-protocol";
 import { requestWorkflowJson } from "./campaign-workflow-request";
+import {
+  CampaignWorkflowDesignCatalogue,
+  workflowDesignChoices,
+  type WorkflowDesignCatalogueState,
+  type WorkflowDesignChannel,
+} from "./campaign-workflow-design-catalogue";
+import { requestMessageDesign } from "./message-design-request";
 import styles from "./campaign-workflow-workspace.module.css";
 
 export type CampaignWorkflowWorkspaceProps = {
@@ -46,7 +53,10 @@ type WorkflowActions = {
   select(id: string): void;
   begin(): void;
   copy(): void;
-  add(kind: "wait" | "task"): void;
+  add(kind: "wait" | "task" | "email" | "sms"): void;
+  refreshDesigns(): void;
+  nextDesigns(cursor: string): void;
+  chooseDesign(key: string, id: string, channel: WorkflowDesignChannel): void;
   move(key: string, direction: -1 | 1): void;
   remove(key: string): void;
   editNode(key: string, value: string): void;
@@ -81,14 +91,44 @@ const prerequisiteLabels: Readonly<Record<string, string>> = {
   current_sms_design: "Current authorized SMS design",
 };
 
+export function WorkflowDesignCheckButton({
+  node,
+  step,
+  disabled,
+  onCheck,
+}: {
+  node: Schema<"WorkflowNode">;
+  step: number;
+  disabled: boolean;
+  onCheck: WorkflowActions["chooseDesign"];
+}) {
+  if ((node.kind !== "email" && node.kind !== "sms") || !node.messageDesignId) return null;
+  const { key, kind, messageDesignId } = node;
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      className={`button button-secondary ${styles.designCheck}`}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) onCheck(key, messageDesignId, kind);
+      }}
+    >
+      <RefreshCw size={16} aria-hidden="true" /> Check current design for step {step}
+    </Button>
+  );
+}
+
 /** Static presentation is testable without a browser; it exposes no command key or session context. */
 export function CampaignWorkflowView({
   state,
+  catalogue,
   active,
   online,
   actions,
 }: {
   state: CampaignWorkflowState;
+  catalogue: WorkflowDesignCatalogueState;
   active: boolean;
   online: boolean;
   actions: WorkflowActions;
@@ -96,6 +136,14 @@ export function CampaignWorkflowView({
   const prefix = useId(),
     timezoneInput = useRef<HTMLInputElement>(null);
   const hasDraft = Boolean(state.draft);
+  const emailChoices = useMemo(
+    () => workflowDesignChoices(online ? catalogue.page : null, "email"),
+    [catalogue.page, online],
+  );
+  const smsChoices = useMemo(
+    () => workflowDesignChoices(online ? catalogue.page : null, "sms"),
+    [catalogue.page, online],
+  );
   useEffect(() => {
     if (hasDraft) timezoneInput.current?.focus();
   }, [hasDraft]);
@@ -108,7 +156,7 @@ export function CampaignWorkflowView({
       ? linearOrder.map((key) => definition.nodes.find((node) => node.key === key)!)
       : definition.nodes
     : [];
-  const canEdit = hasDraft && state.canWrite && !locked;
+  const canEdit = hasDraft && state.canWrite && !locked && !catalogue.reading;
   const definitionError = state.issues.length ? `${prefix}-issues` : undefined;
   const nodeInvalid = (key: string, field: string) => {
     const index = definition?.nodes.findIndex((node) => node.key === key);
@@ -124,7 +172,13 @@ export function CampaignWorkflowView({
       const key = definition?.nodes[Number(node[1])]?.key;
       const index = rows.findIndex((item) => item.key === key);
       const label =
-        node[2] === "taskTitle" ? "task title" : node[2] === "delaySeconds" ? "wait delay" : "definition";
+        node[2] === "taskTitle"
+          ? "task title"
+          : node[2] === "delaySeconds"
+            ? "wait delay"
+            : node[2] === "messageDesignId"
+              ? "message design"
+              : "definition";
       return `Step ${index + 1} ${label}`;
     }
     if (field === "timezone") return "Workflow timezone";
@@ -295,11 +349,56 @@ export function CampaignWorkflowView({
               )}
               {!linearOrder && (
                 <p className={styles.notice}>
-                  This saved graph stays read-only. Condition branches and message references require a future
-                  branch editor or authorized design picker. Its nodes and edges are preserved intact.
+                  This saved graph stays read-only. Condition branches, joins and unsupported nodes require a
+                  future editor. Its nodes and edges are preserved intact.
                 </p>
               )}
             </>
+          )}
+          {hasDraft && (
+            <section className={styles.designCatalogue} aria-label="Current native message design catalogue">
+              <div className={styles.heading}>
+                <h4>Current native message designs</h4>
+                <Button
+                  variant="secondary"
+                  disabled={!online || catalogue.reading || state.phase === "sending"}
+                  onClick={actions.refreshDesigns}
+                >
+                  <RefreshCw size={16} aria-hidden="true" /> Refresh design choices
+                </Button>
+              </div>
+              <p className={styles.help}>
+                Choose a design explicitly for each message step. Saving verifies the current design and keeps
+                its revision with the workflow.
+              </p>
+              {catalogue.reading && <p role="status">Reading current authorized design choices…</p>}
+              {catalogue.error && (
+                <p role="alert" className={styles.error}>
+                  {catalogue.error}
+                </p>
+              )}
+              {online && catalogue.page ? (
+                <>
+                  <p className={styles.help}>
+                    This verified page has {emailChoices.length} native email and {smsChoices.length} native
+                    SMS choices. Other formats cannot be selected here.
+                  </p>
+                  {catalogue.page.hasMore && catalogue.page.nextCursor && (
+                    <Button
+                      variant="secondary"
+                      disabled={catalogue.reading || state.phase === "sending"}
+                      onClick={() => actions.nextDesigns(catalogue.page!.nextCursor!)}
+                    >
+                      Read next design page
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <p role="status">
+                  Current design choices have not been verified. Read the catalogue while online.
+                </p>
+              )}
+            </section>
           )}
           {hasDraft && state.draft && (
             <fieldset disabled={!canEdit} className={styles.policy}>
@@ -447,10 +546,112 @@ export function CampaignWorkflowView({
                       )}
                       {(node.kind === "email" || node.kind === "sms") && (
                         <>
-                          <p>Stored design reference: {node.messageDesignId}</p>
+                          <p>
+                            {hasDraft ? "Draft design reference" : "Stored design reference"}:{" "}
+                            {node.messageDesignId ?? "No design chosen"}
+                          </p>
+                          {hasDraft && (
+                            <div>
+                              <label htmlFor={`${prefix}-${node.key}-design`}>
+                                {node.kind === "email" ? "Email" : "SMS"} design for step {index + 1}
+                              </label>
+                              <select
+                                id={`${prefix}-${node.key}-design`}
+                                disabled={!canEdit || catalogue.reading || !catalogue.page}
+                                value={
+                                  (node.kind === "email" ? emailChoices : smsChoices).some(
+                                    (choice) => choice.id === node.messageDesignId,
+                                  )
+                                    ? node.messageDesignId
+                                    : ""
+                                }
+                                aria-invalid={
+                                  nodeInvalid(node.key, "messageDesignId") ||
+                                  catalogue.nodeError?.nodeKey === node.key ||
+                                  undefined
+                                }
+                                aria-describedby={
+                                  [
+                                    definitionError,
+                                    catalogue.nodeError?.nodeKey === node.key
+                                      ? `${prefix}-${node.key}-source-error`
+                                      : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ") || undefined
+                                }
+                                onChange={(event) => {
+                                  if (event.target.value)
+                                    actions.chooseDesign(
+                                      node.key,
+                                      event.target.value,
+                                      node.kind as WorkflowDesignChannel,
+                                    );
+                                }}
+                              >
+                                <option value="">
+                                  {node.messageDesignId
+                                    ? "Choose explicitly to replace or verify the reference"
+                                    : "Choose a current native design"}
+                                </option>
+                                {(node.kind === "email" ? emailChoices : smsChoices).map((choice) => (
+                                  <option value={choice.id} key={choice.id}>
+                                    {choice.name} · observed version {choice.version}
+                                  </option>
+                                ))}
+                              </select>
+                              {(node.kind === "email" ? emailChoices : smsChoices).some(
+                                (choice) => choice.id === node.messageDesignId,
+                              ) && (
+                                <WorkflowDesignCheckButton
+                                  node={node}
+                                  step={index + 1}
+                                  disabled={!canEdit || catalogue.reading}
+                                  onCheck={actions.chooseDesign}
+                                />
+                              )}
+                              {catalogue.nodeError?.nodeKey === node.key && (
+                                <p
+                                  id={`${prefix}-${node.key}-source-error`}
+                                  role="alert"
+                                  className={styles.error}
+                                >
+                                  {catalogue.nodeError.message}
+                                </p>
+                              )}
+                              {!catalogue.reading &&
+                                catalogue.page &&
+                                !(node.kind === "email" ? emailChoices : smsChoices).length && (
+                                  <p className={styles.help}>
+                                    No compatible design on this page. Read another page or author a native
+                                    design in the message design library.
+                                  </p>
+                                )}
+                            </div>
+                          )}
+                          {hasDraft &&
+                            online &&
+                            catalogue.preview &&
+                            catalogue.previewNodeKey === node.key &&
+                            catalogue.preview.data.id === node.messageDesignId && (
+                              <section
+                                className={styles.designPreview}
+                                aria-label={`Current observed design for step ${index + 1}`}
+                              >
+                                <h4>{catalogue.preview.data.name}</h4>
+                                <p>
+                                  Current design version {catalogue.preview.data.version}. Saving verifies it
+                                  again; sending eligibility is not checked.
+                                </p>
+                                {catalogue.preview.data.subject != null && (
+                                  <p>Subject: {catalogue.preview.data.subject}</p>
+                                )}
+                                <pre>{catalogue.preview.data.content}</pre>
+                              </section>
+                            )}
                           <p className={styles.notice}>
-                            No authorized design picker is available here. Sender, consent, entitlement and
-                            provider checks remain required; no message is sent.
+                            Current design access, sender, consent, suppression, channel entitlement and
+                            provider checks remain required before any future execution. No message is sent.
                           </p>
                         </>
                       )}
@@ -500,7 +701,7 @@ export function CampaignWorkflowView({
                   ))}
                 </ol>
               ) : (
-                <p>Add at least one wait or task. An empty definition cannot be saved.</p>
+                <p>Add at least one wait, task, email or SMS step. An empty definition cannot be saved.</p>
               )}
             </>
           ) : (
@@ -523,10 +724,24 @@ export function CampaignWorkflowView({
                 >
                   <Plus size={17} aria-hidden="true" /> Add task step
                 </Button>
+                <Button
+                  variant="secondary"
+                  disabled={!canEdit || rows.length >= 100}
+                  onClick={() => actions.add("email")}
+                >
+                  <Plus size={17} aria-hidden="true" /> Add email step
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={!canEdit || rows.length >= 100}
+                  onClick={() => actions.add("sms")}
+                >
+                  <Plus size={17} aria-hidden="true" /> Add SMS step
+                </Button>
               </div>
               <p className={styles.help}>
-                Condition authoring requires two distinct branches. Email and SMS authoring requires an
-                authorized design picker. Those authoring controls are unavailable in this initial editor.
+                Condition authoring requires two distinct branches and remains unavailable here. Message
+                references do not verify sending eligibility or activate a channel.
               </p>
               {state.issues.length > 0 && (
                 <div id={`${prefix}-issues`} className={styles.error} role="alert">
@@ -545,6 +760,7 @@ export function CampaignWorkflowView({
                   disabled={
                     !online ||
                     state.reading ||
+                    (!state.pending && catalogue.reading) ||
                     state.phase === "sending" ||
                     (!state.pending && Boolean(state.issues.length))
                   }
@@ -764,6 +980,41 @@ export default function CampaignWorkflowWorkspace(props: CampaignWorkflowWorkspa
     });
   }, [binding, campaignId, session.activeOrgId, csrf, canRead, canWrite]);
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const catalogueController = useMemo(() => {
+    const designBase = `/api/v1/orgs/${session.activeOrgId}/message-designs`;
+    const current = () =>
+      live.current.binding === binding &&
+      live.current.online &&
+      live.current.active &&
+      canRead &&
+      !["unavailable", "denied"].includes(controller.getSnapshot().phase);
+    const request = (path: string) => {
+      if (!current()) throw new Error("The current design context is unavailable.");
+      return requestMessageDesign(path, 200);
+    };
+    return new CampaignWorkflowDesignCatalogue({
+      online: live.current.online,
+      client: {
+        async list(cursor) {
+          return (
+            await request(
+              `${designBase}?${new URLSearchParams({ limit: "5", ...(cursor ? { cursor } : {}) })}`,
+            )
+          ).data;
+        },
+        detail: (id) => request(`${designBase}/${id}`),
+      },
+      isCurrent: current,
+      applySelection: (key, receipt) => controller.chooseDesign(key, receipt),
+      onSourceUnavailable: (key, id) => controller.designUnavailable(key, id),
+      onAuthorityLost: (error) => controller.sourceAccessLost(error),
+    });
+  }, [binding, controller, session.activeOrgId, canRead]);
+  const catalogue = useSyncExternalStore(
+    catalogueController.subscribe,
+    catalogueController.getSnapshot,
+    catalogueController.getSnapshot,
+  );
   useEffect(() => {
     controller.attach();
     live.current.props.onProtectedChange(controller.isProtected());
@@ -771,7 +1022,28 @@ export default function CampaignWorkflowWorkspace(props: CampaignWorkflowWorkspa
   }, [controller]);
   useEffect(() => {
     controller.setOnline(online);
-  }, [controller, online]);
+    catalogueController.setOnline(online);
+  }, [controller, catalogueController, online]);
+  useEffect(() => {
+    catalogueController.attach();
+    return () => catalogueController.detach();
+  }, [catalogueController]);
+  useEffect(() => {
+    if (["unavailable", "denied"].includes(state.phase)) catalogueController.invalidate();
+    else if (active && online && canRead) void catalogueController.loadPage();
+  }, [catalogueController, active, online, canRead, state.phase === "unavailable", state.phase === "denied"]);
+  useEffect(() => {
+    const fresh = () => {
+      if (document.visibilityState === "hidden") catalogueController.invalidate();
+      else void catalogueController.refresh();
+    };
+    window.addEventListener("focus", fresh);
+    document.addEventListener("visibilitychange", fresh);
+    return () => {
+      window.removeEventListener("focus", fresh);
+      document.removeEventListener("visibilitychange", fresh);
+    };
+  }, [catalogueController]);
   useEffect(() => {
     if (active && online && canRead && !controller.isProtected()) void controller.loadPage();
   }, [controller, active, online, canRead]);
@@ -803,6 +1075,16 @@ export default function CampaignWorkflowWorkspace(props: CampaignWorkflowWorkspa
     add: (kind) => {
       if (live.current.online) controller.add(kind);
     },
+    refreshDesigns: () => {
+      if (live.current.online) void catalogueController.refresh();
+    },
+    nextDesigns: (cursor) => {
+      if (live.current.online) void catalogueController.loadPage(cursor);
+    },
+    chooseDesign: (key, id, channel) => {
+      if (live.current.online && !controller.getSnapshot().pending)
+        void catalogueController.choose(key, id, channel);
+    },
     move: (key, direction) => {
       if (live.current.online) controller.move(key, direction);
     },
@@ -820,6 +1102,7 @@ export default function CampaignWorkflowWorkspace(props: CampaignWorkflowWorkspa
       if (live.current.online) controller.editQuietHours(value);
     },
     save: () => {
+      if (!controller.getSnapshot().pending && catalogueController.getSnapshot().reading) return;
       if (live.current.online) void controller.save();
     },
     discard: () => {
@@ -839,5 +1122,13 @@ export default function CampaignWorkflowWorkspace(props: CampaignWorkflowWorkspa
       if (live.current.online) controller.preview();
     },
   };
-  return <CampaignWorkflowView state={state} active={active} online={online} actions={actions} />;
+  return (
+    <CampaignWorkflowView
+      state={state}
+      catalogue={catalogue}
+      active={active}
+      online={online}
+      actions={actions}
+    />
+  );
 }

@@ -107,8 +107,7 @@ export function messageDesignJson(value: unknown, limit = messageDesignBodyLimit
 }
 export function copyMessageDesign<T>(value: T, limit = messageDesignBodyLimit): T {
   return JSON.parse(messageDesignJson(value, limit), (_key, item: unknown) => {
-    if (item !== null && typeof item === "object" && !Array.isArray(item))
-      Object.setPrototypeOf(item, null);
+    if (item !== null && typeof item === "object" && !Array.isArray(item)) Object.setPrototypeOf(item, null);
     return item;
   }) as T;
 }

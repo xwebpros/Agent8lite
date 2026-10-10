@@ -142,15 +142,8 @@ describe("version selection and lossless draft authoring", () => {
     expect(saved).toEqual(definition);
     expect(Object.isFrozen(saved.nodes)).toBe(true);
   });
-  it("keeps non-linear/message definitions untouched and explicitly read-only", async () => {
-    for (const definition of [
-      branches(),
-      {
-        timezone: "UTC",
-        nodes: [{ key: "email", kind: "email", messageDesignId: otherId }],
-        edges: [],
-      } as Schema<"CampaignVersionWrite">,
-    ]) {
+  it("keeps non-linear definitions untouched and explicitly read-only", async () => {
+    for (const definition of [branches()]) {
       const { controller, client } = setup();
       client.detail.mockResolvedValueOnce({ data: { ...version(), definition }, etag: '"1"' });
       await controller.select(versionId);
@@ -162,6 +155,80 @@ describe("version selection and lossless draft authoring", () => {
       await controller.save();
       expect(client.create).not.toHaveBeenCalled();
     }
+  });
+  it("requires current native/channel/strong-revision proof and stores only the explicit aggregate ID", async () => {
+    const { controller, client } = setup();
+    controller.beginDraft();
+    controller.add("email");
+    controller.add("sms");
+    const email: Schema<"MessageDesign"> = {
+      id: otherId,
+      name: "Observed email",
+      channel: "email",
+      editor: "native",
+      design: { schemaVersion: 1, blocks: [{ type: "text", text: "Private observed text" }] },
+      content: "Private observed text",
+      subject: "Observed subject",
+      version: 2,
+    };
+    expect(controller.chooseDesign("step_1", { data: email, etag: 'W/"2"' })).toBe(false);
+    expect(controller.chooseDesign("step_2", { data: email, etag: '"2"' })).toBe(false);
+    expect(controller.chooseDesign("step_1", { data: { ...email, editor: "unlayer" }, etag: '"2"' })).toBe(
+      false,
+    );
+    expect(controller.chooseDesign("step_1", { data: email, etag: '"2"' })).toBe(true);
+    expect(
+      controller.chooseDesign("step_2", { data: { ...email, id: versionId, channel: "sms" }, etag: '"2"' }),
+    ).toBe(true);
+    expect(controller.getSnapshot().draft!.nodes).toEqual([
+      { key: "step_1", kind: "email", messageDesignId: otherId },
+      { key: "step_2", kind: "sms", messageDesignId: versionId },
+    ]);
+    controller.move("step_2", -1);
+    controller.designUnavailable("step_1", otherId);
+    controller.add("wait");
+    expect(controller.getSnapshot().issues).toContainEqual({
+      field: "nodes.1.messageDesignId",
+      message: "This current native design is unavailable. Choose an authorized design explicitly.",
+    });
+    await controller.save();
+    expect(client.create).not.toHaveBeenCalled();
+    expect(controller.chooseDesign("step_1", { data: email, etag: '"2"' })).toBe(true);
+    client.create.mockRejectedValueOnce(new Error("unknown"));
+    await controller.save();
+    const original = controller.getSnapshot().pending;
+    expect(JSON.stringify(original!.body)).not.toContain("Private observed text");
+    expect(JSON.stringify(original!.body)).not.toContain("subject");
+    expect(controller.chooseDesign("step_1", { data: { ...email, id: campaignId }, etag: '"2"' })).toBe(
+      false,
+    );
+    controller.designUnavailable("step_1", otherId);
+    expect(controller.getSnapshot().pending).toEqual(original);
+    await controller.save();
+    expect(client.create.mock.calls[1][0]).toEqual(original);
+  });
+  it("losslessly copies an authorized immutable mixed message chain before any explicit edit", async () => {
+    const { controller, client } = setup();
+    const definition: Schema<"CampaignVersionWrite"> = {
+      timezone: "UTC",
+      quietHours: { start: "23:00", end: "06:00" },
+      nodes: [
+        { key: "email", kind: "email", messageDesignId: otherId },
+        { key: "wait", kind: "wait", delaySeconds: 12 },
+        { key: "sms", kind: "sms", messageDesignId: versionId },
+      ],
+      edges: [
+        { from: "email", to: "wait", branch: "always" },
+        { from: "wait", to: "sms", branch: "always" },
+      ],
+    };
+    client.detail.mockResolvedValueOnce({ data: { ...version(), definition }, etag: '"1"' });
+    await controller.select(versionId);
+    expect(controller.copySelected()).toBe(true);
+    expect(controller.getSnapshot().draft).toEqual(definition);
+    controller.move("sms", -1);
+    expect(controller.getSnapshot().selected!.data.definition).toEqual(definition);
+    expect(controller.getSnapshot().draft!.quietHours).toEqual(definition.quietHours);
   });
   it("uses explicit move/remove controls and relinks only the edited linear chain", () => {
     const { controller } = setup();

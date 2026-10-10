@@ -260,11 +260,11 @@ export async function readWorkflowJsonResponse(
   return value;
 }
 
-/** The initial writer supports a complete wait/task chain only; every other graph stays intact. */
+/** The ordered writer supports a complete wait/task/native-message chain; other graphs stay intact. */
 export function workflowLinearOrder(definition: WorkflowDefinition): readonly string[] | null {
   if (
     !definition.nodes.length ||
-    definition.nodes.some((node) => node.kind !== "wait" && node.kind !== "task")
+    definition.nodes.some((node) => !["wait", "task", "email", "sms"].includes(node.kind))
   )
     return null;
   const nodes = new Map(definition.nodes.map((node) => [node.key, node]));
@@ -308,7 +308,7 @@ export function workflowLinearDefinition(
       }),
     ),
   });
-  if (copy.nodes.some((node) => node.kind !== "wait" && node.kind !== "task"))
+  if (copy.nodes.some((node) => !["wait", "task", "email", "sms"].includes(node.kind)))
     throw new Error("Unsupported workflow graphs cannot be rewritten as a linear draft.");
   return freeze(copy);
 }

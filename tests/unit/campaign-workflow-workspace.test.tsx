@@ -8,8 +8,10 @@ import {
 } from "../../apps/web/components/campaign-workflow-controller";
 import CampaignWorkflowWorkspace, {
   CampaignWorkflowView,
+  WorkflowDesignCheckButton,
 } from "../../apps/web/components/campaign-workflow-workspace";
 import { ApiError, type Schema } from "../../apps/web/lib/api";
+import type { WorkflowDesignCatalogueState } from "../../apps/web/components/campaign-workflow-design-catalogue";
 
 const campaignId = "c3000000-0000-4000-8000-000000000001",
   versionId = "c3000000-0000-4000-8000-000000000002",
@@ -55,7 +57,22 @@ function setup(canWrite = true) {
   });
   return { controller, client };
 }
-function render(state: CampaignWorkflowState, active = true, online = state.online) {
+const unreadCatalogue = (): WorkflowDesignCatalogueState => ({
+  online: true,
+  reading: false,
+  page: null,
+  preview: null,
+  previewNodeKey: null,
+  phase: "unread",
+  error: "",
+  nodeError: null,
+});
+function render(
+  state: CampaignWorkflowState,
+  active = true,
+  online = state.online,
+  catalogue = unreadCatalogue(),
+) {
   const actions = {
     refresh: vi.fn(),
     next: vi.fn(),
@@ -63,6 +80,9 @@ function render(state: CampaignWorkflowState, active = true, online = state.onli
     begin: vi.fn(),
     copy: vi.fn(),
     add: vi.fn(),
+    refreshDesigns: vi.fn(),
+    nextDesigns: vi.fn(),
+    chooseDesign: vi.fn(),
     move: vi.fn(),
     remove: vi.fn(),
     editNode: vi.fn(),
@@ -77,7 +97,13 @@ function render(state: CampaignWorkflowState, active = true, online = state.onli
   };
   return {
     markup: renderToStaticMarkup(
-      <CampaignWorkflowView state={state} active={active} online={online} actions={actions} />,
+      <CampaignWorkflowView
+        state={state}
+        catalogue={catalogue}
+        active={active}
+        online={online}
+        actions={actions}
+      />,
     ),
     actions,
   };
@@ -199,7 +225,7 @@ describe("accessible immutable workflow presentation", () => {
     expect(markup).toContain("CRM task write permission");
     expect(markup).not.toContain("task created");
   });
-  it("shows an existing message reference with unavailable prerequisites and no fabricated design picker", async () => {
+  it("shows an immutable message reference with unmet sending prerequisites and offers an explicit lossless copy", async () => {
     const { controller, client } = setup();
     const graph: Schema<"CampaignVersionWrite"> = {
       timezone: "UTC",
@@ -210,10 +236,146 @@ describe("accessible immutable workflow presentation", () => {
     await controller.select(versionId);
     const { markup } = render(controller.getSnapshot());
     expect(markup).toContain(designId);
-    expect(markup).toContain("No authorized design picker is available here");
+    expect(markup).toContain("provider checks remain required");
     expect(markup).not.toContain(`value="${designId}"`);
-    disabled(markup, "Copy to new workflow draft");
+    expect(
+      buttons(markup).find((button) => button.text === "Copy to new workflow draft")!.html,
+    ).not.toContain('disabled=""');
     expect(buttons(markup).some((button) => /send|publish/i.test(button.text))).toBe(false);
+  });
+  it("provides explicit channel-filtered current design controls, bounded pagination and an escaped observed preview", () => {
+    const { controller } = setup();
+    const design: Schema<"MessageDesign"> = {
+      id: designId,
+      name: "<Observed & current>",
+      channel: "email",
+      editor: "native",
+      version: 4,
+      design: { schemaVersion: 1, blocks: [{ type: "text", text: "Private observed content" }] },
+      content: "Private observed content",
+      subject: "Observed subject",
+    };
+    const sms: Schema<"MessageDesign"> = { ...design, id: versionId, channel: "sms", name: "Native SMS" };
+    controller.beginDraft();
+    controller.add("email");
+    controller.add("sms");
+    controller.chooseDesign("step_1", { data: design, etag: '"4"' });
+    const catalogue: WorkflowDesignCatalogueState = {
+      ...unreadCatalogue(),
+      phase: "ready",
+      page: { items: [design, sms], hasMore: true, nextCursor: "private-design-cursor" },
+      preview: { data: design, etag: '"4"' },
+      previewNodeKey: "step_1",
+    };
+    const { markup, actions } = render(controller.getSnapshot(), true, true, catalogue);
+    expect(markup).toContain("Email design for step 1");
+    expect(markup).toContain("SMS design for step 2");
+    expect(markup).toContain("Read next design page");
+    expect(markup).toContain("&lt;Observed &amp; current&gt;");
+    expect(markup).not.toContain("<Observed");
+    expect(markup).toContain("Current design version 4");
+    expect(markup).toContain("sending eligibility is not checked");
+    expect(markup).toContain("Saving verifies the current design and keeps its revision with the workflow");
+    expect(markup).not.toContain("client version");
+    expect(markup).not.toContain("private-design-cursor");
+    const selects = [...markup.matchAll(/<select\b[^>]*>[\s\S]*?<\/select>/g)].map((match) => match[0]);
+    expect(
+      selects.find((select) =>
+        select.includes(`id="${Array.from(markup.matchAll(/<label for="([^"]+)">Email design/g))[0][1]}"`),
+      ),
+    ).not.toContain(`value="${versionId}"`);
+    for (const action of Object.values(actions)) expect(action).not.toHaveBeenCalled();
+    const offline = render(controller.getSnapshot(), true, false, catalogue).markup;
+    expect(offline).not.toContain("Private observed content");
+    expect(offline).not.toContain("<Observed");
+    expect(offline).not.toContain("Read next design page");
+    expect(offline).toContain("Draft design reference");
+    disabled(offline, "Add email step");
+    disabled(offline, "Add SMS step");
+  });
+  it("rechecks the exact existing design through an explicit button and keeps protected/offline verification disabled", async () => {
+    const { controller, client } = setup();
+    const design: Schema<"MessageDesign"> = {
+      id: designId,
+      name: "Current email",
+      channel: "email",
+      editor: "native",
+      version: 4,
+      design: { schemaVersion: 1, blocks: [{ type: "text", text: "Current text" }] },
+      content: "Current text",
+    };
+    const catalogue: WorkflowDesignCatalogueState = {
+      ...unreadCatalogue(),
+      phase: "ready",
+      page: { items: [design], hasMore: false, nextCursor: null },
+      nodeError: { nodeKey: "step_1", message: "Current source could not be verified." },
+    };
+    controller.beginDraft();
+    controller.add("email");
+    controller.chooseDesign("step_1", { data: design, etag: '"4"' });
+    controller.designUnavailable("step_1", designId);
+    const node = controller.getSnapshot().draft!.nodes[0];
+    const onCheck = vi.fn();
+    const control = WorkflowDesignCheckButton({ node, step: 1, disabled: false, onCheck });
+    expect(control).not.toBeNull();
+    control!.props.onClick();
+    expect(onCheck).toHaveBeenCalledExactlyOnceWith("step_1", designId, "email");
+    expect(controller.getSnapshot().draft!.nodes[0].messageDesignId).toBe(designId);
+    expect(controller.getSnapshot().issues.some((issue) => issue.field === "nodes.0.messageDesignId")).toBe(
+      true,
+    );
+    const markup = render(controller.getSnapshot(), true, true, catalogue).markup;
+    expect(
+      buttons(markup).find((button) => button.text === "Check current design for step 1")!.html,
+    ).not.toContain('disabled=""');
+    expect(markup).toContain("Current source could not be verified");
+    disabled(
+      render(controller.getSnapshot(), true, true, { ...catalogue, reading: true }).markup,
+      "Check current design for step 1",
+    );
+    expect(render(controller.getSnapshot(), true, false, catalogue).markup).not.toContain(
+      "Check current design for step 1",
+    );
+    expect(render(controller.getSnapshot(), true, true, unreadCatalogue()).markup).not.toContain(
+      "Check current design for step 1",
+    );
+    controller.chooseDesign("step_1", { data: design, etag: '"4"' });
+    client.create.mockRejectedValueOnce(new Error("unknown"));
+    await controller.save();
+    const original = controller.getSnapshot().pending;
+    disabled(
+      render(controller.getSnapshot(), true, true, catalogue).markup,
+      "Check current design for step 1",
+    );
+    const locked = WorkflowDesignCheckButton({ node, step: 1, disabled: true, onCheck });
+    locked!.props.onClick();
+    expect(onCheck).toHaveBeenCalledOnce();
+    expect(controller.getSnapshot().pending).toEqual(original);
+    expect(
+      WorkflowDesignCheckButton({
+        node: { key: "task", kind: "task", taskTitle: "Task" },
+        step: 1,
+        disabled: false,
+        onCheck,
+      }),
+    ).toBeNull();
+  });
+  it("keeps new saves disabled during source verification while allowing an unchanged unknown command retry", async () => {
+    const { controller, client } = setup();
+    controller.beginDraft();
+    controller.add("task");
+    controller.editNode("step_1", "Reviewed task");
+    const catalogue = { ...unreadCatalogue(), reading: true };
+    disabled(render(controller.getSnapshot(), true, true, catalogue).markup, "Save immutable workflow draft");
+    client.create.mockRejectedValueOnce(new Error("unknown"));
+    await controller.save();
+    const markup = render(controller.getSnapshot(), true, true, catalogue).markup;
+    expect(
+      buttons(markup).find((button) => button.text === "Retry original workflow command")!.html,
+    ).not.toContain('disabled=""');
+    disabled(markup, "Add email step");
+    disabled(markup, "Add SMS step");
+    expect(markup).not.toContain("private-key-never-render");
   });
   it("locks unknown graph inputs and destructive actions while keeping an exact original retry available", async () => {
     const { controller, client } = setup();
