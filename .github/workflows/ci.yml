@@ -52,6 +52,9 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
+      - run: pnpm verify:runtime
+      - name: Compiled API fixture-mode and production-denial smoke
+        run: pnpm verify:runtime:local
       - run: pnpm dev > /tmp/estate-dev.log 2>&1 &
       - name: Await synthetic servers
         run: node scripts/wait-ready.mjs

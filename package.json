@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.25.0",
-  "engines": {"node": "24.19.0"},
+  "engines": {
+    "node": "24.19.0"
+  },
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:campaign-drafts": "node --import tsx scripts/enable-synthetic-campaign-drafts.mjs",
@@ -17,7 +19,12 @@
     "test": "vitest run",
     "test:isolated": "node scripts/test-isolated.mjs",
     "test:e2e": "playwright test",
-    "build": "pnpm --dir apps/web build",
+    "build": "node scripts/build-runtime.mjs && pnpm --dir apps/web build",
+    "build:runtime": "node scripts/build-runtime.mjs",
+    "verify:runtime": "node scripts/verify-runtime.mjs",
+    "verify:runtime:local": "node scripts/verify-runtime-local.mjs",
+    "start:api": "node dist/runtime/apps/api/src/main.js",
+    "start:worker": "node dist/runtime/apps/worker/src/main.js",
     "lint": "biome check apps/api/src apps/worker/src apps/web/app apps/web/components apps/web/features apps/web/lib packages/ui packages/auth packages/db packages/providers packages/storage packages/templates packages/marketing packages/cms packages/mls packages/contracts/internal scripts tests --diagnostic-level=error",
     "format": "biome format --write apps/api/src apps/worker/src apps/web/app apps/web/components apps/web/features apps/web/lib packages/ui packages/auth packages/db packages/providers packages/storage packages/templates packages/marketing packages/cms packages/mls packages/contracts/internal scripts tests"
   },

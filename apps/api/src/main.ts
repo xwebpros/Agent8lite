@@ -831,7 +831,21 @@ export async function createApplication() {
   }
   const module = {
     module: ApiModule,
-    providers: [{ provide: "STAFF_DATABASE_LIFECYCLE", useValue: { onApplicationShutdown: closeStaff } }],
+    providers: [
+      { provide: "STAFF_DATABASE_LIFECYCLE", useValue: { onApplicationShutdown: closeStaff } },
+      {
+        provide: "RUNTIME_DATABASE_LIFECYCLE",
+        useValue: {
+          onApplicationShutdown: async () => {
+            try {
+              await closeRuntimePool();
+            } catch {
+              throw new Error("runtime_database_shutdown_failed");
+            }
+          },
+        },
+      },
+    ],
   };
   const app = await NestFactory.create<NestExpressApplication>(module, {
     logger: ["error", "warn"],
@@ -932,16 +946,33 @@ export async function createApplication() {
   });
   app.use(cookieParser());
   app.enableShutdownHooks();
-  await app.init();
+  try {
+    await app.init();
+  } catch (error) {
+    try {
+      await app.close();
+    } catch {
+      /* The caller reports only a fixed startup code. */
+    }
+    await closeStaff();
+    throw error;
+  }
   return app;
 }
 
-if (process.argv[1]?.replaceAll("\\", "/").endsWith("/main.ts")) {
+if (typeof require === "function" && typeof module !== "undefined" && require.main === module) {
+  let startingApplication: NestExpressApplication | undefined;
   createApplication()
     .then(async (app) => {
+      startingApplication = app;
       await app.listen(Number(process.env.API_PORT ?? 3001), process.env.API_HOST ?? "127.0.0.1");
       console.log(
-        "Estate API listening with synthetic-loopback identity, mock MLS and no-delivery services.",
+        JSON.stringify({
+          status: "listening",
+          identityMode: syntheticEnabled ? "synthetic-loopback" : "unconfigured",
+          mlsMode: "mock",
+          deliveryMode: "no-delivery",
+        }),
       );
     })
     .catch(async (error) => {
@@ -949,6 +980,11 @@ if (process.argv[1]?.replaceAll("\\", "/").endsWith("/main.ts")) {
         JSON.stringify({ code: error instanceof RuntimeRoleError ? error.code : "api_startup_failed" }),
       );
       process.exitCode = 1;
+      try {
+        await startingApplication?.close();
+      } catch {
+        /* Startup logs contain only fixed codes. */
+      }
       try {
         await closeRuntimePool();
       } catch {

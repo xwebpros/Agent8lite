@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noEmitOnError": true,
+    "rootDir": ".",
+    "outDir": "dist/runtime",
+    "types": ["node"],
+    "declaration": false,
+    "sourceMap": false,
+    "incremental": false
+  },
+  "include": ["apps/api/src/main.ts", "apps/worker/src/main.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx", "tests", "apps/web"]
+}
