@@ -47,7 +47,11 @@ function ownJson(input: unknown): { value: unknown; text: string } {
     if (remaining < 0) fail();
   };
   const read = (value: unknown, depth: number): { value: unknown; text: string } => {
-    if (depth > 20 || (typeof value === "string" && value.length > 262144)) return fail();
+    if (
+      depth > 20 ||
+      (typeof value === "string" && (value.length > 262144 || /[\uD800-\uDFFF]/u.test(value)))
+    )
+      return fail();
     if (
       value === null ||
       typeof value === "string" ||

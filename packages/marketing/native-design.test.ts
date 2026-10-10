@@ -59,6 +59,11 @@ describe("pure native static-text design preparation", () => {
     expect(prepare(input("a".repeat(100000))).body.content).toHaveLength(100000);
     expect(() => prepare(input("a".repeat(100001)))).toThrowError(NativeMessageDesignError);
   });
+  it.each(["\ud800", "\udc00"])("rejects lone Unicode surrogate case %# before storage", (text) => {
+    for (const value of [input(text), { ...input(), name: text }, { ...input(), subject: text }])
+      expect(() => prepare(value)).toThrowError(NativeMessageDesignError);
+    expect(prepare(input("😀")).renderedContent).toBe("😀");
+  });
   it("bounds the complete escaped UTF8 write body, independently of codepoint limits", () => {
     expect(() => prepare(input("😀".repeat(40000)))).toThrowError(NativeMessageDesignError);
     expect(() => prepare(input("a\n".repeat(50000)))).toThrowError(NativeMessageDesignError);
