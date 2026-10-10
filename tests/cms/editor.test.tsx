@@ -239,6 +239,204 @@ describe("CMS editor command lifecycle", () => {
     expect(client.saveDraft).not.toHaveBeenCalled();
     expect(controller.getSnapshot().phase).toBe("denied");
   });
+  it("pauses a queued save when connectivity is lost and requires an explicit exact retry", async () => {
+    const { controller, client, keys } = setup();
+    edited(controller);
+    const previous = controller.getSnapshot();
+    const saving = controller.save();
+    controller.setOnline(false);
+    await saving;
+    expect(client.saveDraft).not.toHaveBeenCalled();
+    expect(controller.getSnapshot()).toMatchObject({
+      draft: previous.draft,
+      dirty: true,
+      etag: previous.etag,
+      phase: "uncertain",
+      canUndo: false,
+    });
+    expect(controller.getSnapshot().message).toContain("offline");
+    expect(controller.discardChanges()).toBe(false);
+    controller.setOnline(true);
+    await Promise.resolve();
+    expect(client.saveDraft).not.toHaveBeenCalled();
+    await controller.save();
+    expect(client.saveDraft).toHaveBeenCalledWith({
+      documentId: document.id,
+      body: previous.draft,
+      ifMatch: previous.etag,
+      idempotencyKey: "draft-command-1",
+    });
+    expect(keys()).toBe(1);
+    expect(controller.getSnapshot().phase).toBe("saved");
+  });
+  it("retains the original uncertain command when a queued reconciliation goes offline", async () => {
+    const seen: CmsSaveCommand[] = [];
+    const { controller, client, keys } = setup({
+      saveDraft: vi.fn(async (command: CmsSaveCommand) => {
+        seen.push(structuredClone(command));
+        if (seen.length === 1) throw new TypeError("response lost");
+        return receipt(command);
+      }),
+    });
+    edited(controller);
+    await controller.save();
+    const retry = controller.save();
+    controller.setOnline(false);
+    await retry;
+    expect(client.saveDraft).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot()).toMatchObject({ phase: "uncertain", dirty: true });
+    controller.setOnline(true);
+    await Promise.resolve();
+    expect(client.saveDraft).toHaveBeenCalledTimes(1);
+    await controller.save();
+    expect(seen[1]).toEqual(seen[0]);
+    expect(keys()).toBe(1);
+    expect(controller.getSnapshot().phase).toBe("saved");
+  });
+  it("accepts a valid durable save receipt after connectivity is lost during an already dispatched write", async () => {
+    let release!: () => void;
+    const { controller, client } = setup({
+      saveDraft: vi.fn(
+        (command: CmsSaveCommand) =>
+          new Promise<ReturnType<typeof receipt>>((resolve) => {
+            release = () => resolve(receipt(command));
+          }),
+      ),
+    });
+    edited(controller);
+    const saving = controller.save();
+    await Promise.resolve();
+    expect(client.saveDraft).toHaveBeenCalledTimes(1);
+    controller.setOnline(false);
+    release();
+    await saving;
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "saved",
+      dirty: false,
+      online: false,
+      etag: '"2"',
+    });
+  });
+  it.each(["revoked", "offline"])(
+    "does not dispatch a version read after a subscription makes its binding %s",
+    async (condition) => {
+      const { controller, client } = setup({
+        saveDraft: async () => {
+          throw { status: 412 };
+        },
+      });
+      edited(controller);
+      await controller.save();
+      let interrupted = false;
+      const unsubscribe = controller.subscribe(() => {
+        if (interrupted || controller.getSnapshot().message !== "Reading the current document version…")
+          return;
+        interrupted = true;
+        if (condition === "revoked") controller.revoke();
+        else controller.setOnline(false);
+      });
+      await controller.refreshVersion();
+      unsubscribe();
+      expect(client.readDocument).not.toHaveBeenCalled();
+      expect(controller.getSnapshot()).toMatchObject({
+        phase: condition === "revoked" ? "denied" : "conflict",
+        etag: '"1"',
+      });
+      if (condition === "revoked") expect(controller.getSnapshot().draft).toBeNull();
+      else {
+        expect(controller.getSnapshot().message).toContain("interrupted");
+        controller.setOnline(true);
+        await controller.refreshVersion();
+        expect(client.readDocument).toHaveBeenCalledTimes(1);
+        expect(controller.getSnapshot()).toMatchObject({ phase: "editing", etag: '"3"', dirty: true });
+      }
+    },
+  );
+  it.each(["success", "network failure"])(
+    "ignores an interrupted version read's late %s after reconnecting",
+    async (outcome) => {
+      let release!: () => void;
+      let reads = 0;
+      const { controller, client } = setup({
+        saveDraft: vi.fn(async () => {
+          throw { status: 412 };
+        }),
+        readDocument: vi.fn(() => {
+          if (++reads > 1) return Promise.resolve({ data: { ...document, version: 4 }, etag: '"4"' });
+          return new Promise<Awaited<ReturnType<CmsDraftClient["readDocument"]>>>((resolve, reject) => {
+            release = () =>
+              outcome === "success"
+                ? resolve({ data: { ...document, version: 3 }, etag: '"3"' })
+                : reject(new TypeError("connection lost"));
+          });
+        }),
+      });
+      edited(controller);
+      await controller.save();
+      const previous = controller.getSnapshot();
+      const reading = controller.refreshVersion();
+      controller.setOnline(false);
+      controller.setOnline(true);
+      release();
+      await reading;
+      expect(controller.getSnapshot()).toMatchObject({
+        phase: "conflict",
+        draft: previous.draft,
+        etag: '"1"',
+        dirty: true,
+      });
+      expect(controller.getSnapshot().message).toContain("interrupted");
+      expect(client.readDocument).toHaveBeenCalledTimes(1);
+      await controller.save();
+      expect(client.saveDraft).toHaveBeenCalledTimes(1);
+      await controller.refreshVersion();
+      expect(client.readDocument).toHaveBeenCalledTimes(2);
+      expect(controller.getSnapshot()).toMatchObject({ phase: "editing", etag: '"4"', dirty: true });
+    },
+  );
+  it("still clears the current binding when an interrupted version read returns an access denial", async () => {
+    let release!: () => void;
+    const { controller } = setup({
+      saveDraft: async () => {
+        throw { status: 412 };
+      },
+      readDocument: () =>
+        new Promise((_resolve, reject) => {
+          release = () => reject({ status: 403 });
+        }),
+    });
+    edited(controller);
+    await controller.save();
+    const reading = controller.refreshVersion();
+    controller.setOnline(false);
+    release();
+    await reading;
+    expect(controller.getSnapshot()).toMatchObject({ phase: "denied", draft: null, dirty: false });
+  });
+  it("ignores a late version read after root revokes its binding", async () => {
+    let release!: () => void;
+    const { controller } = setup({
+      saveDraft: async () => {
+        throw { status: 412 };
+      },
+      readDocument: () =>
+        new Promise((resolve) => {
+          release = () => resolve({ data: { ...document, version: 3 }, etag: '"3"' });
+        }),
+    });
+    edited(controller);
+    await controller.save();
+    const reading = controller.refreshVersion();
+    controller.revoke();
+    release();
+    await reading;
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: "denied",
+      draft: null,
+      etag: '"1"',
+      dirty: false,
+    });
+  });
   it("rejects foreign revision and recovery bindings without displaying their private content", () => {
     const { controller } = setup();
     const foreign = { ...revision(), documentId: "a2000000-0000-4000-8000-000000000022" };
