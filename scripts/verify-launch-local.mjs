@@ -162,6 +162,25 @@ try {
     directSynthetic.status === 404 && (await directSynthetic.json()).code === "synthetic_identity_disabled",
     "launch_probe_api_synthetic_identity_enabled",
   );
+  for (const route of ["/", "/contacts", "/tasks"]) {
+    const page = await request(appPort, route);
+    const html = await page.text();
+    check(
+      page.status === 200 &&
+        html.includes("Opening your workspace") &&
+        !html.includes("Synthetic staff console") &&
+        page.headers.get("cache-control")?.includes("no-store"),
+      "launch_probe_workspace_route_invalid",
+    );
+  }
+  const staffPage = await request(appPort, "/dev/staff");
+  const staffHtml = await staffPage.text();
+  check(
+    staffPage.status === 200 &&
+      staffHtml.includes("Synthetic staff console") &&
+      !staffHtml.includes("Opening your workspace"),
+    "launch_probe_staff_layout_invalid",
+  );
   await stop(app);
 
   phase = "child-failure";
@@ -185,8 +204,14 @@ try {
     loginPage.status === 200 &&
       loginHtml.includes("Preview password") &&
       !loginHtml.includes("Sample pipeline") &&
+      !loginHtml.includes("Opening your workspace") &&
       loginPage.headers.get("cache-control")?.includes("no-store"),
     "launch_probe_demo_page_access_invalid",
+  );
+  const workspaceRedirect = await request(port, "/contacts");
+  check(
+    workspaceRedirect.status === 307 && workspaceRedirect.headers.get("location")?.endsWith("/demo"),
+    "launch_probe_demo_workspace_redirect_invalid",
   );
   const signin = async (password, originHeader = origin) =>
     request(port, "/demo/session", {
@@ -325,6 +350,7 @@ if (failure) {
       assignedPorts: "non-default",
       application: "owned-api-plus-web",
       productionIdentity: "denied",
+      workspaceRoutes: "private-dynamic-shell-and-separate-demo-staff-verified",
       childFailure: "sibling-closed",
       demo: "web-only-no-database",
       previewAccess: "origin-password-cookie-CSRF-logout-verified",

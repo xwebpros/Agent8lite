@@ -755,6 +755,16 @@ class ApiController {
               status: Number(successEntry?.[0] ?? 200),
               etag: version ? `"${version}"` : undefined,
             };
+          } else if (resource === "contacts" && req.method === "PATCH" && id && !action) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.patchContact(
+              id,
+              req.body,
+              revision(req),
+              req.headers["idempotency-key"] as string,
+              `${req.method} ${req.path}`,
+            );
           } else {
             response = await crm.idempotent(
               req.headers["idempotency-key"] as string,
@@ -813,7 +823,10 @@ class ApiController {
                 if (req.method === "POST" && resource === "leads" && id && action === "stage-transitions")
                   return crm.transition(id, req.body, revision(req));
                 if (req.method === "POST" && resource === "leads" && id && action === "notes")
-                  return (await crm.notes(id, req.body, revision(req))) as { body: unknown; status: number };
+                  return (await crm.notes(id, req.body, revision(req))) as {
+                    body: unknown;
+                    status: number;
+                  };
                 throw new AccessError(
                   503,
                   "feature_not_implemented",

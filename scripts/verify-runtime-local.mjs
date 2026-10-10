@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
@@ -286,6 +286,37 @@ try {
     invalidContacts.status === 422 && (await invalidContacts.json()).code === "query_invalid",
     "runtime_local_contact_query_failed",
   );
+  // Verify the compiled PATCH boundary against a proved-absent UUID; never edit an interactive record.
+  const absentContactPath = `${contactPath}/${randomUUID()}`;
+  const absentContact = await request(synthetic, absentContactPath, { headers: { cookie } });
+  check(absentContact.status === 404, "runtime_local_contact_probe_record_present");
+  const contactCommandHeaders = {
+    cookie,
+    origin,
+    "content-type": "application/json",
+    "x-csrf-token": csrf,
+    "idempotency-key": randomUUID(),
+    "if-match": '"1"',
+  };
+  const commandBody = JSON.stringify({ displayName: "Synthetic compiled boundary probe" });
+  const absentEdit = await request(synthetic, absentContactPath, {
+    method: "PATCH",
+    headers: contactCommandHeaders,
+    body: commandBody,
+  });
+  check(
+    absentEdit.status === 404 && (await absentEdit.json()).code === "resource_unavailable",
+    "runtime_local_contact_edit_boundary_failed",
+  );
+  const invalidEdit = await request(synthetic, `${absentContactPath}?scope=own`, {
+    method: "PATCH",
+    headers: contactCommandHeaders,
+    body: commandBody,
+  });
+  check(
+    invalidEdit.status === 422 && (await invalidEdit.json()).code === "query_invalid",
+    "runtime_local_contact_edit_query_failed",
+  );
   const appointmentPage = ajv.compile({ $ref: "contract#/components/schemas/PageAppointment" });
   const appointmentPath = `/v1/orgs/${identity.activeOrgId}/appointments`;
   const appointments = await request(synthetic, `${appointmentPath}?limit=25`, { headers: { cookie } });
@@ -437,6 +468,7 @@ if (failure) {
       loadedTasks: "contract-valid-private-read-and-query-denial",
       dashboardReport: "contract-valid-member-utc-measurement-and-query-denial",
       contactNameSearch: "contract-valid-private-filtered-page-and-query-denial",
+      contactEditBoundary: "proved-absent-record-and-query-denied-without-domain-write",
       forwardedRequestsDenied: 4,
       productionModesDenied: 2,
       cliListenFailure: "closed",

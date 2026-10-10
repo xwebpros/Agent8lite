@@ -10,6 +10,7 @@ import { assertDelegation } from "../../../packages/auth/permissions";
 import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { dashboardClockInstant, dashboardUtcPeriod } from "./dashboard-time";
 import { parseContactQuery } from "./contact-query";
+import { contactCommandJson, contactReceipt, contactRevision, prepareContactPatch } from "./contact-command";
 
 type Row = Record<string, any>;
 type Body = Record<string, any>;
@@ -280,7 +281,7 @@ export class CrmService {
 
   private select(resource: string) {
     return resource === "contacts"
-      ? `r.*, ARRAY(SELECT c.normalized_value FROM app.contact_channel c WHERE c.contact_id=r.id AND c.kind='email' AND c.active ORDER BY c.created_at,c.id) AS emails, ARRAY(SELECT c.normalized_value FROM app.contact_channel c WHERE c.contact_id=r.id AND c.kind='phone' AND c.active ORDER BY c.created_at,c.id) AS phones`
+      ? `r.*, ARRAY(SELECT c.normalized_value FROM app.contact_channel c WHERE c.contact_id=r.id AND c.kind='email' AND c.active ORDER BY c.is_primary DESC,c.created_at,c.id) AS emails, ARRAY(SELECT c.normalized_value FROM app.contact_channel c WHERE c.contact_id=r.id AND c.kind='phone' AND c.active ORDER BY c.is_primary DESC,c.created_at,c.id) AS phones`
       : "r.*";
   }
 
@@ -537,6 +538,181 @@ export class CrmService {
     };
   }
 
+  private async contactCommandAuthority(lock = false) {
+    const context = this.context;
+    const result = await this.client.query(
+      `SELECT 1 FROM app.membership m
+       JOIN app.role_definition r ON(r.tenant_id,r.id)=(m.tenant_id,m.role_id)
+       JOIN app.organization o ON o.id=m.tenant_id
+       WHERE session_user='estate_runtime' AND current_user='estate_runtime'
+         AND app.current_tenant()=$1::uuid AND app.current_actor()=$2::uuid
+         AND m.tenant_id=$1 AND m.user_id=$2 AND m.id=$3 AND m.role_id=$4
+         AND m.status='active' AND o.status='active' AND r.permission_grants=$5::jsonb
+         AND r.name=$6 AND o.timezone=$7 ${lock ? "FOR SHARE OF m,r,o" : ""}`,
+      [
+        context.organizationId,
+        context.userId,
+        context.memberId,
+        context.roleId,
+        permissionGrantJson(context.permissions),
+        context.roleName,
+        context.timezone,
+      ],
+    );
+    if (!result.rowCount)
+      throw new AccessError(403, "permission_denied", "Current contact authority is unavailable.");
+  }
+
+  /** Contact PATCH owns its exact request/receipt boundary; other generic commands retain their protocol. */
+  async patchContact(
+    id: string,
+    body: unknown,
+    expectedVersion: string | undefined,
+    key: string | undefined,
+    routeKey: string,
+  ): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "contact");
+    const command = prepareContactPatch(id, body, expectedVersion, key, routeKey, context.organizationId);
+    const current = new CrmService(this.client, context, this.traceId);
+    const readScope = requirePermission(context, "crm.contacts.read");
+    const writeScope = requirePermission(context, "crm.contacts.write");
+    const source = `SELECT r.* FROM app.contact r
+      WHERE r.tenant_id=app.current_tenant() AND r.id=$1 AND r.archived_at IS NULL
+        AND ${current.scopeSql("contacts", readScope, "$2")}
+        AND ${current.scopeSql("contacts", writeScope, "$2")} AND $2::uuid IS NOT NULL`;
+    const sourceParameters = [command.id, context.memberId];
+    await current.contactCommandAuthority(true);
+    await requireEntitlement(this.client, "crm.contacts.write");
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${context.organizationId}:${context.userId}:${command.routeKey}:${command.key}`,
+    ]);
+    // Explicit FOR UPDATE also prevents a new lead's FK from changing creator/no-active-lead scope.
+    if (!(await this.client.query(`${source} FOR UPDATE OF r`, sourceParameters)).rowCount) notFound();
+    const leads = await this.client.query(
+      "SELECT id,owner_member_id FROM app.lead WHERE tenant_id=app.current_tenant() AND contact_id=$1 ORDER BY id FOR SHARE",
+      [command.id],
+    );
+    if (readScope === "team" || writeScope === "team") {
+      const members = new Set<string>([context.memberId]);
+      for (const lead of leads.rows) if (lead.owner_member_id) members.add(lead.owner_member_id);
+      await this.client.query(
+        `SELECT office_id,member_id FROM app.office_member WHERE tenant_id=app.current_tenant()
+         AND member_id=ANY($1::uuid[]) ORDER BY office_id,member_id FOR SHARE`,
+        [[...members]],
+      );
+    }
+    const authorized = (await this.client.query(source, sourceParameters)).rows[0] ?? notFound();
+    await current.contactCommandAuthority();
+    await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
+    const version = contactRevision(authorized.row_version);
+    const receipts = await this.client.query(
+      `SELECT request_hash,response_body,status_code,response_etag,
+              expires_at>clock_timestamp() AS unexpired
+       FROM app.idempotency_record WHERE tenant_id=app.current_tenant()
+         AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+      [context.userId, command.routeKey, command.key],
+    );
+    if (receipts.rowCount) {
+      const receipt = receipts.rows[0];
+      if (receipt.request_hash !== command.requestHash)
+        throw new AccessError(
+          409,
+          "idempotency_conflict",
+          "This idempotency key was used with a different request.",
+        );
+      if (!receipt.unexpired)
+        throw new AccessError(
+          409,
+          "receipt_expired",
+          "The original command receipt has expired. Review the current record.",
+        );
+      const historical = contactReceipt(receipt.response_body, command);
+      const etag = `"${historical.version}"`;
+      if (receipt.status_code !== 200 || (receipt.response_etag !== null && receipt.response_etag !== etag))
+        throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+      await current.contactCommandAuthority();
+      await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
+      const expiry = await this.client.query(
+        `SELECT receipt.expires_at>clock_timestamp() AS unexpired,
+          EXISTS(SELECT 1 FROM app.entitlement capability WHERE capability.tenant_id=app.current_tenant()
+            AND capability.feature='crm' AND capability.state='enabled'
+            AND(capability.effective_until IS NULL OR capability.effective_until>clock_timestamp())) AS crm_enabled
+         FROM app.idempotency_record receipt WHERE receipt.tenant_id=app.current_tenant()
+         AND receipt.actor_ref=$1 AND receipt.route_key=$2 AND receipt.key=$3`,
+        [context.userId, command.routeKey, command.key],
+      );
+      if (expiry.rowCount && !expiry.rows[0].crm_enabled)
+        throw new AccessError(
+          403,
+          "entitlement_disabled",
+          "This organization does not have an active capability for this operation.",
+        );
+      if (!expiry.rowCount || !expiry.rows[0].unexpired)
+        throw new AccessError(
+          409,
+          "receipt_expired",
+          "The original command receipt has expired. Review the current record.",
+        );
+      return { body: historical, status: 200, etag };
+    }
+    if (version !== command.version)
+      throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+    if (version >= Number.MAX_SAFE_INTEGER)
+      throw new AccessError(409, "revision_exhausted", "Contact revision cannot be advanced.");
+    const updated = await this.client.query(
+      `UPDATE app.contact SET display_name=$1,birthday=$2,updated_at=now(),row_version=row_version+1
+       WHERE tenant_id=app.current_tenant() AND id=$3 AND row_version=$4 RETURNING row_version`,
+      [
+        command.body.displayName.trim(),
+        command.body.birthday === undefined ? authorized.birthday : command.body.birthday,
+        command.id,
+        String(version),
+      ],
+    );
+    if (updated.rowCount !== 1 || contactRevision(updated.rows[0]?.row_version) !== version + 1)
+      throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+    await current.channels(command.id, command.body, true);
+    const projection =
+      (
+        await this.client.query(
+          `SELECT ${current.select("contacts")} FROM app.contact r WHERE r.tenant_id=app.current_tenant()
+       AND r.id=$1 AND r.archived_at IS NULL AND ${current.scopeSql("contacts", readScope, "$2")}
+       AND ${current.scopeSql("contacts", writeScope, "$2")} AND $2::uuid IS NOT NULL`,
+          sourceParameters,
+        )
+      ).rows[0] ?? notFound();
+    const contact = contactReceipt(models.contact(projection), command);
+    const etag = `"${contact.version}"`;
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff)
+       VALUES($1,$2,'contact.updated','contact',$3,$4,$5)`,
+      [
+        context.organizationId,
+        context.userId,
+        contact.id,
+        current.traceId,
+        `{"resourceVersion":${JSON.stringify(contact.version)}}`,
+      ],
+    );
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+       (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
+       VALUES($1,$2,$3,$4,$5,$6,200,$7,now()+interval '1 day')`,
+      [
+        context.organizationId,
+        context.userId,
+        command.routeKey,
+        command.key,
+        command.requestHash,
+        contactCommandJson(contact),
+        etag,
+      ],
+    );
+    await current.contactCommandAuthority();
+    await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
+    return { body: contact, status: 200, etag };
+  }
+
   async idempotent(
     key: string | undefined,
     routeKey: string,
@@ -786,19 +962,18 @@ export class CrmService {
     body: Body,
     expectedVersion: string | undefined,
   ): Promise<Mutation> {
+    if (resource === "contacts")
+      throw new AccessError(
+        503,
+        "contact_command_required",
+        "Contact edits require the verified command boundary.",
+      );
     const config = this.resource(resource);
     const scope = requirePermission(this.context, config.write);
     const current = await this.row(resource, id, true, true);
     requireVersion(current, expectedVersion);
     let row: Row;
-    if (resource === "contacts") {
-      await this.client.query(
-        `UPDATE app.contact SET display_name=$1,birthday=$2,updated_at=now(),row_version=row_version+1 WHERE id=$3`,
-        [text(body.displayName), body.birthday === undefined ? current.birthday : body.birthday, id],
-      );
-      await this.channels(id, body, true);
-      row = await this.row(resource, id);
-    } else if (resource === "leads") {
+    if (resource === "leads") {
       const owner = "ownerMemberId" in body ? body.ownerMemberId : current.owner_member_id;
       if (owner) await this.activeMember(owner, scope);
       if (!owner && scope !== "organization")

@@ -62,6 +62,16 @@ import { partitionLoadedTasks, resolveTaskDrawerTiming, validTaskAgendaTimezone 
 import { TaskCompletionProtocol, type TaskCompletionCommand } from "./task-completion";
 import ContactsSearch from "./contacts-search";
 import { contactSearchContextBinding } from "./contacts-search-controller";
+import {
+  ContactEditProtocol,
+  contactEditContext,
+  contactEditRequest,
+  contactEditReadGuard,
+  contactEditReadFailureDisposition,
+  readContactEditContact,
+  type ContactEditCommand,
+} from "./contact-edit";
+import ContactEditPanel, { type ContactEditDraft } from "./contact-edit-panel";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -187,6 +197,27 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   currentAccessRevision.current = accessRevision;
   taskCompletion.current.bind(taskCompletionBinding);
   const taskPending = Boolean(taskCompletion.current.getSnapshot().command);
+  const contactEdit = useRef(new ContactEditProtocol());
+  const contactLifetimeActive = useRef(false);
+  const activeContactEdit = useRef<ContactEditCommand | null>(null);
+  const [, updateContactEdit] = useState(0);
+  const [contactDenied, setContactDenied] = useState(false);
+  const [contactVisible, setContactVisible] = useState(true);
+  const contactReadBinding = contactEditContext({
+    session,
+    memberId: member,
+    csrf,
+    accessRevision,
+    requireWrite: false,
+  });
+  const contactEditBinding = contactDenied
+    ? null
+    : contactEditContext({ session, memberId: member, csrf, accessRevision });
+  const currentContactBinding = useRef(contactReadBinding);
+  currentContactBinding.current = contactDenied ? null : contactReadBinding;
+  contactEdit.current.bind(contactEditBinding);
+  const contactSnapshot = contactEdit.current.getSnapshot();
+  const contactPending = Boolean(contactSnapshot.command);
   const unsaved =
     dirty ||
     noteDirty ||
@@ -195,6 +226,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     campaignDirty ||
     notificationPending ||
     taskPending ||
+    contactPending ||
     Boolean(invitationTransfer);
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
@@ -209,6 +241,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
   const [activatedUpdate, setActivatedUpdate] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const selectedContactBinding = useRef<string | null>(null);
+  const [contactDraft, setContactDraft] = useState<ContactEditDraft | null>(null);
+  const [contactReviewed, setContactReviewed] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const taskDrawerBaseline = useRef<{ task: Task; value: string } | null>(null);
@@ -217,6 +252,36 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     taskDrawerBaseline.current = { task: selectedTask, value: localDateTime(selectedTask.dueAt) };
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const currentContactUI = useRef({
+    binding: contactReadBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    detailKind,
+    detailId,
+    busy,
+    loading,
+    detailLoading,
+    noteDirty,
+    tagDirty,
+    dirty,
+    modal,
+  });
+  currentContactUI.current = {
+    binding: currentContactBinding.current,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    detailKind,
+    detailId,
+    busy,
+    loading,
+    detailLoading,
+    noteDirty,
+    tagDirty,
+    dirty,
+    modal,
+  };
   const [invitationAcceptance, setInvitationAcceptance] = useState<{
     userId: string;
     job: Schema<"Job">;
@@ -233,7 +298,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     cmsProtected.current ||
     campaignProtected.current ||
     notificationProtected.current ||
-    Boolean(taskCompletion.current.getSnapshot().command);
+    Boolean(taskCompletion.current.getSnapshot().command) ||
+    Boolean(contactEdit.current.getSnapshot().command);
   const protectCms = useCallback((value: boolean) => {
     cmsProtected.current = value;
     if (value) reloadProtected.current = true;
@@ -330,7 +396,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         cmsProtected.current ||
         campaignProtected.current ||
         notificationProtected.current ||
-        taskCompletion.current.getSnapshot().command
+        taskCompletion.current.getSnapshot().command ||
+        contactEdit.current.getSnapshot().command
       ) {
         setLoading(false);
         return;
@@ -397,6 +464,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           ["permission_denied", "entitlement_disabled"].includes(err.code ?? "");
         if (err instanceof ApiError && [401, 403].includes(err.status) && !unrelatedCrmDenial) {
           taskCompletion.current.bind(null);
+          contactEdit.current.bind(null);
+          currentContactBinding.current = null;
+          selectedContactBinding.current = null;
+          setContactDraft(null);
+          setContactDenied(true);
           activeTaskCompletion.current = null;
           setBusy(false);
           updateTaskCompletion((value) => value + 1);
@@ -452,6 +524,31 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           setBusy(false);
         }
         taskCompletion.current.bind(binding);
+        const nextContactReadBinding = contactEditContext({
+          session: result.data,
+          memberId: result.headers.get("X-Member-Id") || "",
+          csrf: result.headers.get("X-CSRF-Token") || "",
+          accessRevision: currentAccessRevision.current,
+          requireWrite: false,
+        });
+        const nextContactBinding = contactEditContext({
+          session: result.data,
+          memberId: result.headers.get("X-Member-Id") || "",
+          csrf: result.headers.get("X-CSRF-Token") || "",
+          accessRevision: currentAccessRevision.current,
+        });
+        if (currentContactBinding.current !== nextContactReadBinding) {
+          activeContactEdit.current = null;
+          ++detailEpoch.current;
+          selectedContactBinding.current = null;
+          setContactDraft(null);
+          setSelectedContact(null);
+          setBusy(false);
+          updateContactEdit((value) => value + 1);
+        }
+        contactEdit.current.bind(nextContactBinding);
+        currentContactBinding.current = nextContactReadBinding;
+        setContactDenied(false);
         updateTaskCompletion((value) => value + 1);
         setSession(result.data);
         retainedSession.current = result.data;
@@ -477,6 +574,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         }
         setSession(null);
         taskCompletion.current.bind(null);
+        contactEdit.current.bind(null);
+        activeContactEdit.current = null;
+        currentContactBinding.current = null;
+        selectedContactBinding.current = null;
+        setContactDraft(null);
+        setContactDenied(true);
+        setSelectedContact(null);
         activeTaskCompletion.current = null;
         setBusy(false);
         updateTaskCompletion((value) => value + 1);
@@ -499,12 +603,46 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   );
 
   useEffect(() => {
+    contactLifetimeActive.current = true;
+    contactEdit.current.bind(contactEditBinding);
+    return () => {
+      contactLifetimeActive.current = false;
+      contactEdit.current.bind(null);
+      currentContactBinding.current = null;
+      activeContactEdit.current = null;
+      ++detailEpoch.current;
+    };
+  }, []);
+  useEffect(() => {
     void readSession();
   }, [readSession]);
   useEffect(() => {
     taskCompletion.current.bind(taskCompletionBinding);
     return () => taskCompletion.current.bind(null);
   }, [taskCompletionBinding]);
+  useEffect(() => {
+    const visibility = () => {
+      setContactVisible(document.visibilityState === "visible");
+      updateContactEdit((value) => value + 1);
+    };
+    visibility();
+    const clock = window.setInterval(() => {
+      if (document.visibilityState === "visible") updateContactEdit((value) => value + 1);
+    }, 30000);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      window.clearInterval(clock);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, []);
+  useEffect(() => {
+    if (detailKind !== "contact") return;
+    if (selectedContactBinding.current !== currentContactBinding.current) {
+      setSelectedContact(null);
+      setContactDraft(null);
+      setDirty(false);
+    }
+  }, [contactReadBinding, contactDenied, detailKind]);
   useEffect(() => {
     setOnline(navigator.onLine);
     const on = () => {
@@ -533,6 +671,14 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (modal) dialog.current?.showModal();
   }, [modal]);
   useEffect(() => {
+    const pendingContact = contactEdit.current.getSnapshot().command;
+    if (
+      pendingContact &&
+      (detailKind !== "contact" || detailId?.toLowerCase() !== pendingContact.contactId.toLowerCase())
+    ) {
+      setDetailLoading(false);
+      return;
+    }
     if (!detailId || !detailKind || !session?.activeOrgId) {
       setSelectedContact(null);
       setSelectedLead(null);
@@ -542,8 +688,25 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (detailDialog.current && !detailDialog.current.open) detailDialog.current.showModal();
     let active = true;
     const generation = ++detailEpoch.current;
-    const current = () => active && generation === detailEpoch.current;
+    const capturedContactBinding = contactReadBinding;
+    const contactReadTicket = { binding: capturedContactBinding, contactId: detailId, generation };
+    const contactReadCurrent = () => ({
+      binding: currentContactBinding.current,
+      contactId: currentContactUI.current.detailId,
+      generation: detailEpoch.current,
+      kind: currentContactUI.current.detailKind,
+      active: active && contactLifetimeActive.current,
+      online: currentContactUI.current.online && navigator.onLine,
+      visible: currentContactUI.current.visible && document.visibilityState === "visible",
+      changingOrganization: currentContactUI.current.changingOrganization,
+    });
+    const current = () =>
+      active &&
+      generation === detailEpoch.current &&
+      (detailKind !== "contact" ||
+        contactEditReadGuard(contactReadTicket, contactReadCurrent()).displayCurrent);
     setDetailLoading(true);
+    if (detailKind === "contact") setContactReviewed(false);
     setDetailError("");
     setSelectedContact(null);
     setSelectedLead(null);
@@ -552,8 +715,27 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     void (async () => {
       try {
         if (detailKind === "contact") {
-          const response = await api<Contact>(`${base}/contacts/${encodeURIComponent(detailId)}`);
-          if (current()) setSelectedContact(response.data);
+          if (
+            !capturedContactBinding ||
+            contactDenied ||
+            !currentContactUI.current.online ||
+            !currentContactUI.current.visible ||
+            currentContactUI.current.changingOrganization ||
+            document.visibilityState !== "visible"
+          )
+            return;
+          const response = await readContactEditContact(session.activeOrgId!, detailId);
+          if (current()) {
+            selectedContactBinding.current = capturedContactBinding;
+            setSelectedContact(response.data);
+            setContactReviewed(Boolean(contactEdit.current.getSnapshot().command));
+            if (!contactEdit.current.getSnapshot().command)
+              setContactDraft({
+                displayName: response.data.displayName,
+                email: response.data.emails[0] || "",
+                phone: response.data.phones[0] || "",
+              });
+          }
         } else if (detailKind === "lead") {
           const response = await api<Lead>(`${base}/leads/${encodeURIComponent(detailId)}`);
           if (!current()) return;
@@ -565,15 +747,35 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           if (current()) setSelectedTask(response.data);
         }
       } catch (err) {
-        if (current()) setDetailError(err instanceof Error ? err.message : "Record unavailable.");
+        if (detailKind === "contact") {
+          const readCurrent = contactReadCurrent();
+          const disposition = contactEditReadFailureDisposition(
+            contactReadTicket,
+            readCurrent,
+            err instanceof ApiError ? err.status : undefined,
+          );
+          const displayCurrent = contactEditReadGuard(contactReadTicket, readCurrent).displayCurrent;
+          if (disposition === "access-denied") invalidateContactAccess();
+          if (disposition === "source-unavailable") clearContactSourceDetail();
+          if (displayCurrent && disposition !== "ignore")
+            setDetailError(
+              "Current contact details are unavailable. Refresh access or read the current contact again.",
+            );
+        } else if (current()) setDetailError(err instanceof Error ? err.message : "Record unavailable.");
       } finally {
-        if (current()) setDetailLoading(false);
+        if (active && generation === detailEpoch.current) setDetailLoading(false);
       }
     })();
     return () => {
       active = false;
     };
-  }, [detailId, detailKind, session?.activeOrgId]);
+  }, [
+    detailId,
+    detailKind,
+    session?.activeOrgId,
+    detailKind === "contact" ? contactReadBinding : null,
+    detailKind === "contact" ? contactDenied : false,
+  ]);
   useEffect(() => {
     setStandalone(
       window.matchMedia("(display-mode: standalone)").matches ||
@@ -595,11 +797,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       if (reloadProtected.current) {
         setActivatedUpdate(true);
         setNotice(
-          taskCompletion.current.getSnapshot().command
-            ? "The app update activated. Reconcile the unconfirmed task completion before reloading."
-            : notificationProtected.current
-              ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
-              : "The app update activated. Finish or discard your current draft before reloading.",
+          contactEdit.current.getSnapshot().command
+            ? "The app update activated. Reconcile the unconfirmed contact save before reloading."
+            : taskCompletion.current.getSnapshot().command
+              ? "The app update activated. Reconcile the unconfirmed task completion before reloading."
+              : notificationProtected.current
+                ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
+                : "The app update activated. Finish or discard your current draft before reloading.",
         );
         return;
       }
@@ -635,6 +839,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     receiveHeaders?: (headers: Headers) => void,
     explicitKey?: string,
   ) {
+    if (contactEdit.current.getSnapshot().command)
+      throw new Error("Reconcile the unconfirmed contact save before starting another command.");
     if (!online) throw new Error("You’re offline. Your draft is still in this tab; reconnect before saving.");
     if (taskCompletion.current.getSnapshot().command && /\/tasks(?:\/|$)/.test(path))
       throw new Error("Reconcile the unconfirmed task completion before changing tasks.");
@@ -708,6 +914,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   }
   async function continueInvitation(transfer: InvitationTransfer, identity: "owner" | "agent") {
     if (busy || !online) return;
+    if (contactEdit.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed contact save before changing identity.");
+      return;
+    }
     if (taskCompletion.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed task completion before changing identity.");
       return;
@@ -747,6 +957,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     capturedContact.current = null;
   }
   function closeDetail() {
+    if (contactEdit.current.getSnapshot().command) {
+      setError(
+        "Reconcile the unconfirmed contact save before leaving contact details. Current-record review does not end its unconfirmed outcome.",
+      );
+      return;
+    }
     if (taskCompletion.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed task completion before leaving task details.");
       return;
@@ -756,36 +972,322 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     setDetailError("");
     setNoteDirty(false);
     setTagDirty(false);
+    setContactDraft(null);
     router.push(`/${view}`);
+  }
+  function invalidateContactAccess() {
+    contactEdit.current.bind(null);
+    currentContactBinding.current = null;
+    activeContactEdit.current = null;
+    ++detailEpoch.current;
+    selectedContactBinding.current = null;
+    setSelectedContact(null);
+    setContactDraft(null);
+    setDirty(false);
+    setContactDenied(true);
+    setDetailLoading(false);
+    setBusy(false);
+    updateContactEdit((value) => value + 1);
+  }
+  function clearContactSourceDetail() {
+    ++detailEpoch.current;
+    selectedContactBinding.current = null;
+    setSelectedContact(null);
+    setContactDraft(null);
+    setContactReviewed(false);
+    setDetailLoading(false);
+    setDirty(false);
+  }
+  async function reviewContact(
+    acknowledged = false,
+    expectedId?: string,
+    acknowledgedCommand?: ContactEditCommand,
+  ) {
+    const active = retainedSession.current;
+    const binding = currentContactBinding.current;
+    const ui = currentContactUI.current;
+    if (
+      !contactLifetimeActive.current ||
+      !active?.activeOrgId ||
+      !binding ||
+      !ui.online ||
+      !navigator.onLine ||
+      !ui.visible ||
+      ui.changingOrganization ||
+      ui.detailKind !== "contact" ||
+      !ui.detailId ||
+      (expectedId !== undefined && ui.detailId.toLowerCase() !== expectedId.toLowerCase()) ||
+      document.visibilityState !== "visible" ||
+      cmsProtected.current ||
+      campaignProtected.current ||
+      notificationProtected.current ||
+      ui.noteDirty ||
+      ui.tagDirty ||
+      ui.modal ||
+      taskCompletion.current.getSnapshot().command ||
+      (acknowledged
+        ? !acknowledgedCommand ||
+          activeContactEdit.current !== acknowledgedCommand ||
+          expectedId?.toLowerCase() !== acknowledgedCommand.contactId.toLowerCase()
+        : ui.busy || ui.detailLoading)
+    )
+      return;
+    const retainedCommand = contactEdit.current.getSnapshot().command;
+    if (retainedCommand && ui.detailId.toLowerCase() !== retainedCommand.contactId.toLowerCase()) return;
+    const pending = Boolean(retainedCommand);
+    if (
+      !acknowledged &&
+      !pending &&
+      ui.dirty &&
+      !window.confirm("Discard unsaved contact edits and read the current record?")
+    )
+      return;
+    const generation = ++detailEpoch.current;
+    const id = ui.detailId;
+    const readTicket = { binding, contactId: id, generation };
+    const readCurrent = () => ({
+      binding: currentContactBinding.current,
+      contactId: currentContactUI.current.detailId,
+      generation: detailEpoch.current,
+      kind: currentContactUI.current.detailKind,
+      active: contactLifetimeActive.current,
+      online: currentContactUI.current.online && navigator.onLine,
+      visible: currentContactUI.current.visible && document.visibilityState === "visible",
+      changingOrganization: currentContactUI.current.changingOrganization,
+    });
+    setDetailLoading(true);
+    setContactReviewed(false);
+    setDetailError("");
+    if (!pending) {
+      selectedContactBinding.current = null;
+      setSelectedContact(null);
+      setContactDraft(null);
+    }
+    const current = () => contactEditReadGuard(readTicket, readCurrent()).displayCurrent;
+    try {
+      const response = await readContactEditContact(active.activeOrgId, id);
+      if (!current()) return;
+      selectedContactBinding.current = binding;
+      setSelectedContact(response.data);
+      setContactReviewed(pending);
+      if (!pending) {
+        setContactDraft({
+          displayName: response.data.displayName,
+          email: response.data.emails[0] || "",
+          phone: response.data.phones[0] || "",
+        });
+        setDirty(false);
+        if (contactEdit.current.getSnapshot().phase !== "acknowledged") contactEdit.current.clear();
+        updateContactEdit((value) => value + 1);
+      }
+      if (acknowledged)
+        setNotice("Contact save acknowledged. Current contact details have been read separately.");
+    } catch (err) {
+      const liveRead = readCurrent();
+      const disposition = contactEditReadFailureDisposition(
+        readTicket,
+        liveRead,
+        err instanceof ApiError ? err.status : undefined,
+      );
+      if (disposition === "ignore") return;
+      const displayCurrent = contactEditReadGuard(readTicket, liveRead).displayCurrent;
+      if (disposition === "access-denied") invalidateContactAccess();
+      else if (disposition === "source-unavailable") clearContactSourceDetail();
+      if (!displayCurrent) return;
+      selectedContactBinding.current = null;
+      setSelectedContact(null);
+      setContactReviewed(false);
+      if (!pending) setContactDraft(null);
+      setDetailError(
+        acknowledged
+          ? "Contact save acknowledged, but current details are unavailable. No historical receipt has been applied."
+          : "Current contact details are unavailable. The retained command, if any, remains unconfirmed.",
+      );
+    } finally {
+      if (generation === detailEpoch.current) setDetailLoading(false);
+    }
+  }
+  async function sendContactEdit(snapshot: ContactEditCommand) {
+    const active = retainedSession.current;
+    const ui = currentContactUI.current;
+    if (
+      !contactLifetimeActive.current ||
+      !active?.activeOrgId ||
+      !ui.online ||
+      !navigator.onLine ||
+      !ui.visible ||
+      ui.changingOrganization ||
+      ui.busy ||
+      ui.loading ||
+      ui.detailLoading ||
+      ui.noteDirty ||
+      ui.tagDirty ||
+      ui.modal ||
+      cmsProtected.current ||
+      campaignProtected.current ||
+      notificationProtected.current ||
+      taskCompletion.current.getSnapshot().command ||
+      ui.detailKind !== "contact" ||
+      ui.detailId?.toLowerCase() !== snapshot.contactId.toLowerCase() ||
+      document.visibilityState !== "visible" ||
+      !contactEdit.current.isBoundTo(contactEditBinding) ||
+      !contactEdit.current.isCurrent(snapshot) ||
+      activeContactEdit.current ||
+      !contactEdit.current.canRetry(snapshot)
+    ) {
+      if (contactEdit.current.isCurrent(snapshot) && !activeContactEdit.current) {
+        contactEdit.current.reject(snapshot, new Error("Contact send is unavailable."));
+        updateContactEdit((value) => value + 1);
+      }
+      return;
+    }
+    reloadProtected.current = true;
+    activeContactEdit.current = snapshot;
+    updateContactEdit((value) => value + 1);
+    setBusy(true);
+    setContactReviewed(false);
+    setDetailError("");
+    try {
+      const result = await contactEditRequest(active.activeOrgId, snapshot, csrf);
+      if (!contactLifetimeActive.current || !contactEdit.current.isCurrent(snapshot)) return;
+      if (!contactEdit.current.acknowledge(snapshot, result.data, result.etag)) {
+        setDetailError(
+          "The contact save may have completed, but its receipt could not be verified. Reconcile the retained original command.",
+        );
+        return;
+      }
+      updateContactEdit((value) => value + 1);
+      setDirty(false);
+      selectedContactBinding.current = null;
+      setSelectedContact(null);
+      setContactDraft(null);
+      setNotice("Contact save acknowledged. Reading current details separately.");
+      await reviewContact(true, snapshot.contactId, snapshot);
+      if (
+        contactLifetimeActive.current &&
+        currentContactBinding.current === snapshot.context &&
+        currentContactUI.current.online &&
+        currentContactUI.current.visible &&
+        !currentContactUI.current.changingOrganization &&
+        navigator.onLine &&
+        document.visibilityState === "visible"
+      )
+        await refresh(active);
+    } catch (err) {
+      const outcome = contactEdit.current.reject(snapshot, err);
+      if (outcome === "ignored") return;
+      if (err instanceof ApiError && [401, 403].includes(err.status)) invalidateContactAccess();
+      if (err instanceof ApiError && err.status === 404) {
+        clearContactSourceDetail();
+      }
+      setDetailError(
+        outcome === "unknown"
+          ? "Contact save unconfirmed. Reconciliation keeps its original input, key and record version."
+          : err instanceof ApiError && err.status === 412
+            ? "The first save was rejected because the contact changed. Review current details before another save."
+            : "The contact save was rejected or current access is unavailable. Review input and current access before trying again.",
+      );
+    } finally {
+      if (contactLifetimeActive.current) updateContactEdit((value) => value + 1);
+      if (activeContactEdit.current === snapshot) {
+        activeContactEdit.current = null;
+        setBusy(false);
+      }
+    }
+  }
+  async function reconcileContactEdit() {
+    if (
+      !contactLifetimeActive.current ||
+      currentContactUI.current.busy ||
+      currentContactUI.current.detailLoading ||
+      currentContactUI.current.noteDirty ||
+      currentContactUI.current.tagDirty ||
+      currentContactUI.current.modal ||
+      cmsProtected.current ||
+      campaignProtected.current ||
+      notificationProtected.current ||
+      taskCompletion.current.getSnapshot().command ||
+      !currentContactUI.current.online ||
+      !navigator.onLine ||
+      changingOrganization ||
+      !contactEdit.current.isBoundTo(contactEditBinding) ||
+      document.visibilityState !== "visible"
+    )
+      return;
+    const pending = contactEdit.current.getSnapshot().command;
+    if (
+      !pending ||
+      currentContactUI.current.detailKind !== "contact" ||
+      currentContactUI.current.detailId?.toLowerCase() !== pending.contactId.toLowerCase()
+    )
+      return;
+    try {
+      await sendContactEdit(contactEdit.current.retry());
+    } catch {
+      setDetailError(
+        "The original contact save cannot currently be resent. Review the current contact; its earlier outcome remains unconfirmed.",
+      );
+    }
   }
   async function saveDetail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session?.activeOrgId || busy || !online || noteDirty || tagDirty) return;
     const fields = new FormData(event.currentTarget);
     const base = `/v1/orgs/${session.activeOrgId}`;
+    if (detailKind === "contact") {
+      if (
+        !contactLifetimeActive.current ||
+        !navigator.onLine ||
+        !selectedContact ||
+        !contactDraft ||
+        currentContactUI.current.busy ||
+        currentContactUI.current.loading ||
+        currentContactUI.current.detailLoading ||
+        currentContactUI.current.noteDirty ||
+        currentContactUI.current.tagDirty ||
+        currentContactUI.current.detailKind !== "contact" ||
+        currentContactUI.current.detailId?.toLowerCase() !== selectedContact.id.toLowerCase() ||
+        selectedContactBinding.current !== currentContactBinding.current ||
+        !contactEdit.current.isBoundTo(contactEditBinding) ||
+        changingOrganization ||
+        detailLoading ||
+        document.visibilityState !== "visible" ||
+        contactEdit.current.getSnapshot().phase === "conflict" ||
+        contactEdit.current.getSnapshot().command ||
+        taskCompletion.current.getSnapshot().command ||
+        cmsProtected.current ||
+        campaignProtected.current ||
+        notificationProtected.current
+      )
+        return;
+      try {
+        const input: Schema<"ContactWrite"> = {
+          displayName: contactDraft.displayName.trim(),
+          emails: contactDraft.email.trim()
+            ? [contactDraft.email.trim(), ...selectedContact.emails.slice(1)]
+            : selectedContact.emails.slice(1),
+          phones: contactDraft.phone.trim()
+            ? [contactDraft.phone.trim(), ...selectedContact.phones.slice(1)]
+            : selectedContact.phones.slice(1),
+          ...(Object.hasOwn(selectedContact, "birthday") ? { birthday: selectedContact.birthday } : {}),
+        };
+        const snapshot = contactEdit.current.begin(
+          { contactId: selectedContact.id, version: selectedContact.version, body: input },
+          crypto.randomUUID(),
+        );
+        reloadProtected.current = true;
+        await sendContactEdit(snapshot);
+      } catch {
+        setDetailError(
+          "Contact input could not be verified. Enter a name and valid email or phone channels before saving.",
+        );
+      }
+      return;
+    }
     setBusy(true);
     setDetailError("");
     try {
-      if (detailKind === "contact" && selectedContact) {
-        const input: Schema<"ContactWrite"> = {
-          displayName: String(fields.get("displayName")).trim(),
-          emails: String(fields.get("email")).trim()
-            ? [String(fields.get("email")).trim(), ...selectedContact.emails.slice(1)]
-            : selectedContact.emails.slice(1),
-          phones: String(fields.get("phone")).trim()
-            ? [String(fields.get("phone")).trim(), ...selectedContact.phones.slice(1)]
-            : selectedContact.phones.slice(1),
-          birthday: selectedContact.birthday,
-        };
-        setSelectedContact(
-          await command<Contact>(
-            `${base}/contacts/${selectedContact.id}`,
-            input,
-            "PATCH",
-            selectedContact.version,
-          ),
-        );
-      } else if (detailKind === "lead" && selectedLead) {
+      if (detailKind === "lead" && selectedLead) {
         const input: Schema<"LeadPatch"> = {
           intent: String(fields.get("intent")) as Lead["intent"],
           timeline: String(fields.get("timeline")).trim() || null,
@@ -835,6 +1337,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   function openModal(next: "lead" | "task") {
+    if (contactEdit.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed contact save before starting another edit.");
+      return;
+    }
     if (next === "task" && taskCompletion.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed task completion before changing tasks.");
       return;
@@ -1048,6 +1554,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function switchOrganization(id: string) {
+    if (contactEdit.current.getSnapshot().command) {
+      setError(
+        "Reconcile the unconfirmed contact save before switching organizations. Current-record review does not confirm its outcome.",
+      );
+      return;
+    }
     if (taskCompletion.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed task completion before switching organizations.");
       return;
@@ -1108,6 +1620,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function logout() {
+    if (contactEdit.current.getSnapshot().command) {
+      setError(
+        "Reconcile the unconfirmed contact save before signing out. Current-record review does not confirm its outcome.",
+      );
+      return;
+    }
     if (taskCompletion.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed task completion before signing out.");
       return;
@@ -1380,7 +1898,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     <div
       className="workspace"
       onClickCapture={(event) => {
-        if (!taskCompletion.current.getSnapshot().command || !(event.target instanceof Element)) return;
+        if (
+          (!taskCompletion.current.getSnapshot().command && !contactEdit.current.getSnapshot().command) ||
+          !(event.target instanceof Element)
+        )
+          return;
         const anchor = event.target.closest("a[href]");
         if (!(anchor instanceof HTMLAnchorElement)) return;
         const destination = new URL(anchor.href);
@@ -1393,7 +1915,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           return;
         event.preventDefault();
         event.stopPropagation();
-        setError("Reconcile the unconfirmed task completion before navigating away.");
+        setError(
+          contactEdit.current.getSnapshot().command
+            ? "Reconcile the unconfirmed contact save before navigating away. Current-record review does not confirm its outcome."
+            : "Reconcile the unconfirmed task completion before navigating away.",
+        );
       }}
     >
       <a className="skip-link" href="#main">
@@ -1447,6 +1973,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               aria-current={view === id ? "page" : undefined}
               className={`nav-link ${view === id ? "active" : ""}`}
               onClick={(event) => {
+                if (contactEdit.current.getSnapshot().command) {
+                  event.preventDefault();
+                  setError("Reconcile the unconfirmed contact save before leaving this view.");
+                  return;
+                }
                 if (cmsProtected.current || campaignProtected.current || notificationProtected.current) {
                   event.preventDefault();
                   setError(
@@ -1705,6 +2236,54 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               </div>
             )}
 
+          {contactSnapshot.command &&
+            (detailKind !== "contact" ||
+              detailId?.toLowerCase() !== contactSnapshot.command.contactId.toLowerCase()) && (
+              <div className="connection-banner" role="status">
+                <ShieldCheck size={18} aria-hidden="true" />
+                <span>A contact save remains unconfirmed in this tab.</span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  style={{ minHeight: 44, whiteSpace: "normal" }}
+                  disabled={
+                    !online ||
+                    busy ||
+                    changingOrganization ||
+                    !contactVisible ||
+                    !contactEditBinding ||
+                    noteDirty ||
+                    tagDirty ||
+                    cmsDirty ||
+                    campaignDirty ||
+                    notificationPending
+                  }
+                  onClick={() => {
+                    const pending = contactEdit.current.getSnapshot().command;
+                    if (
+                      !pending ||
+                      !contactEdit.current.isBoundTo(contactEditBinding) ||
+                      !currentContactUI.current.online ||
+                      currentContactUI.current.busy ||
+                      currentContactUI.current.detailLoading ||
+                      currentContactUI.current.noteDirty ||
+                      currentContactUI.current.tagDirty ||
+                      currentContactUI.current.modal ||
+                      currentContactUI.current.changingOrganization ||
+                      cmsProtected.current ||
+                      campaignProtected.current ||
+                      notificationProtected.current ||
+                      taskCompletion.current.getSnapshot().command ||
+                      document.visibilityState !== "visible"
+                    )
+                      return;
+                    router.push("/contacts?contact=" + encodeURIComponent(pending.contactId));
+                  }}
+                >
+                  Return to unconfirmed contact save
+                </Button>
+              </div>
+            )}
           {notificationPending && view !== "notifications" && (
             <div className="connection-banner" role="status">
               <Bell size={18} aria-hidden="true" />
@@ -1724,6 +2303,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 onClick={() => {
                   if (taskCompletion.current.getSnapshot().command) {
                     setError("Reconcile the unconfirmed task completion before opening Notifications.");
+                    return;
+                  }
+                  if (contactEdit.current.getSnapshot().command) {
+                    setError("Reconcile the unconfirmed contact save before opening Notifications.");
                     return;
                   }
                   router.push("/notifications");
@@ -2750,254 +3333,285 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           </form>
         </dialog>
       )}
-      {detailId && session && (
-        <dialog
-          ref={detailDialog}
-          className="editor-dialog detail-dialog"
-          onCancel={(event) => {
-            event.preventDefault();
-            closeDetail();
-          }}
-          aria-labelledby="detail-title"
-        >
-          <div className="editor-header">
-            <div>
-              <span className="eyebrow">{detailKind?.toUpperCase()} DETAILS</span>
-              <h2 id="detail-title">
-                {selectedContact?.displayName || selectedTask?.title || "Record details"}
-              </h2>
+      {detailId &&
+        session &&
+        (!contactSnapshot.command ||
+          (detailKind === "contact" &&
+            detailId.toLowerCase() === contactSnapshot.command.contactId.toLowerCase())) && (
+          <dialog
+            ref={detailDialog}
+            className="editor-dialog detail-dialog"
+            onCancel={(event) => {
+              event.preventDefault();
+              closeDetail();
+            }}
+            aria-labelledby="detail-title"
+          >
+            <div className="editor-header">
+              <div>
+                <span className="eyebrow">{detailKind?.toUpperCase()} DETAILS</span>
+                <h2 id="detail-title">
+                  {detailKind === "contact" &&
+                  (!online ||
+                    !contactVisible ||
+                    selectedContactBinding.current !== currentContactBinding.current)
+                    ? "Contact details"
+                    : selectedContact?.displayName || selectedTask?.title || "Record details"}
+                </h2>
+              </div>
+              <button
+                className="icon-button"
+                aria-label="Close record details"
+                disabled={busy || contactPending}
+                onClick={closeDetail}
+              >
+                <X size={21} />
+              </button>
             </div>
-            <button
-              className="icon-button"
-              aria-label="Close record details"
-              disabled={busy}
-              onClick={closeDetail}
-            >
-              <X size={21} />
-            </button>
-          </div>
-          {detailLoading ? (
-            <div className="empty">Loading authorized record…</div>
-          ) : (
-            <form onSubmit={saveDetail} onChange={() => setDirty(true)}>
-              <div className="editor-body">
-                {detailError && (
-                  <div className="error" role="alert">
-                    {detailError}
-                  </div>
-                )}
-                {detailKind === "contact" && selectedContact && (
-                  <>
-                    <label>
-                      Full name
-                      <input
-                        name="displayName"
-                        defaultValue={selectedContact.displayName}
-                        required
-                        maxLength={120}
-                      />
-                    </label>
-                    <label>
-                      Email
-                      <input
-                        name="email"
-                        type="email"
-                        defaultValue={selectedContact.emails[0] || ""}
-                        maxLength={254}
-                      />
-                    </label>
-                    <label>
-                      Phone (optional)
-                      <input
-                        name="phone"
-                        type="tel"
-                        defaultValue={selectedContact.phones[0] || ""}
-                        maxLength={32}
-                      />
-                    </label>
-                    <p className="muted">
-                      Additional channels are preserved. Communication consent is not changed by editing
-                      contact details.
-                    </p>
-                  </>
-                )}
-                {detailKind === "lead" && selectedLead && (
-                  <>
-                    <div className="detail-summary">
-                      <span className="avatar light">{initials(selectedContact?.displayName || "Lead")}</span>
-                      <div>
-                        <strong>{selectedContact?.displayName || "Contact unavailable"}</strong>
-                        <span>{selectedContact?.emails[0] || "Email unknown"}</span>
-                      </div>
+            {detailLoading ? (
+              <div className="empty">Loading authorized record…</div>
+            ) : (
+              <form onSubmit={saveDetail} onChange={() => setDirty(true)}>
+                <div className="editor-body">
+                  {detailError && (detailKind !== "contact" || (online && contactVisible)) && (
+                    <div className="error" role="alert">
+                      {detailError}
                     </div>
-                    <label>
-                      Intent
-                      <select name="intent" defaultValue={selectedLead.intent}>
-                        <option value="unknown">Unknown</option>
-                        <option value="buyer">Buyer</option>
-                        <option value="seller">Seller</option>
-                        <option value="both">Buyer & seller</option>
-                      </select>
-                    </label>
-                    <label>
-                      Timeline (optional)
-                      <input name="timeline" defaultValue={selectedLead.timeline || ""} maxLength={80} />
-                    </label>
-                    <dl className="detail-facts">
-                      <div>
-                        <dt>Stage</dt>
-                        <dd>
-                          {data.stages.find((stage) => stage.id === selectedLead.stageId)?.name ||
-                            "Unavailable"}
-                        </dd>
+                  )}
+                  {detailKind === "contact" && (
+                    <ContactEditPanel
+                      contact={
+                        selectedContactBinding.current === currentContactBinding.current
+                          ? selectedContact
+                          : null
+                      }
+                      draft={
+                        selectedContactBinding.current === currentContactBinding.current ? contactDraft : null
+                      }
+                      snapshot={contactSnapshot}
+                      online={online && !changingOrganization}
+                      visible={contactVisible}
+                      busy={busy}
+                      reading={detailLoading}
+                      canEdit={Boolean(contactEditBinding) && !contactDenied}
+                      canRead={Boolean(contactReadBinding) && !contactDenied}
+                      canRetry={contactEdit.current.canRetry()}
+                      currentReviewed={contactReviewed}
+                      onDraftChange={(value) => {
+                        if (
+                          !contactEdit.current.isBoundTo(contactEditBinding) ||
+                          contactEdit.current.getSnapshot().command ||
+                          selectedContactBinding.current !== currentContactBinding.current ||
+                          !currentContactUI.current.online ||
+                          document.visibilityState !== "visible"
+                        )
+                          return;
+                        setContactDraft(value);
+                        setDirty(true);
+                        reloadProtected.current = true;
+                      }}
+                      onReconcile={() => void reconcileContactEdit()}
+                      onReview={() => void reviewContact()}
+                    />
+                  )}
+                  {detailKind === "lead" && selectedLead && (
+                    <>
+                      <div className="detail-summary">
+                        <span className="avatar light">
+                          {initials(selectedContact?.displayName || "Lead")}
+                        </span>
+                        <div>
+                          <strong>{selectedContact?.displayName || "Contact unavailable"}</strong>
+                          <span>{selectedContact?.emails[0] || "Email unknown"}</span>
+                        </div>
                       </div>
-                      <div>
-                        <dt>Source</dt>
-                        <dd>
-                          {data.sources.find((source) => source.id === selectedLead.sourceId)?.label ||
-                            "Unavailable"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Owner</dt>
-                        <dd>
-                          {selectedLead.ownerMemberId === member
-                            ? "Assigned to you"
-                            : selectedLead.ownerMemberId
-                              ? "Assigned member"
-                              : "Unassigned queue"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Engagement score</dt>
-                        <dd>
-                          {selectedLead.score == null
-                            ? "Unknown"
-                            : `${selectedLead.score} · ${selectedLead.scoreVersion || "Version unavailable"}`}
-                        </dd>
-                      </div>
-                    </dl>
-                  </>
-                )}
-                {detailKind === "task" && selectedTask && (
-                  <>
-                    <label>
-                      Title
-                      <input name="title" defaultValue={selectedTask.title} required maxLength={200} />
-                    </label>
-                    <label>
-                      Due date and time
-                      <input
-                        name="dueAt"
-                        type="datetime-local"
-                        defaultValue={taskDrawerBaseline.current?.value || ""}
-                        required
-                      />
-                      <span className="field-help">
-                        Unchanged time preserves the stored instant and timezone. Changed wall times use your
-                        device timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}. Ambiguous or
-                        skipped times follow your device’s daylight-saving resolution.
-                      </span>
-                    </label>
-                    <label>
-                      Priority
-                      <select name="priority" defaultValue={selectedTask.priority}>
-                        <option value="low">Low</option>
-                        <option value="normal">Normal</option>
-                        <option value="high">High</option>
-                      </select>
-                    </label>
-                    <label>
-                      Status
-                      <select name="state" defaultValue={selectedTask.state}>
-                        <option value="open">Open</option>
-                        <option value="done">Done</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </label>
-                  </>
-                )}
-                {(selectedContact || selectedLead || selectedTask) && (
-                  <p className="form-note">
-                    <ShieldCheck size={15} />
-                    Version{" "}
-                    {detailKind === "lead"
-                      ? selectedLead?.version
-                      : detailKind === "task"
-                        ? selectedTask?.version
-                        : selectedContact?.version}{" "}
-                    · Changes require this exact record version.
-                  </p>
-                )}
-              </div>
-              <div className="editor-footer">
-                <Button type="button" variant="secondary" disabled={busy} onClick={closeDetail}>
-                  Close
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    !dirty ||
-                    noteDirty ||
-                    tagDirty ||
-                    busy ||
-                    !online ||
-                    !(detailKind === "contact"
-                      ? permission("crm.contacts.write") && selectedContact
-                      : detailKind === "lead"
-                        ? permission("crm.leads.write") && selectedLead
-                        : canTask && selectedTask)
-                  }
-                >
-                  {busy ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </form>
-          )}
-          {selectedLead && session.activeOrgId && (
-            <LeadTimeline
-              key={`${session.activeOrgId}:${selectedLead.id}`}
-              lead={selectedLead}
-              organizationId={session.activeOrgId}
-              timezone={timezone}
-              online={online}
-              working={busy}
-              editInProgress={dirty || tagDirty}
-              canWrite={permission("crm.leads.write")}
-              onDirty={setNoteDirty}
-              setWorking={setBusy}
-              runCommand={command}
-              onSaved={async () => {
-                const generation = detailEpoch.current;
-                const result = await api<Lead>(`/v1/orgs/${session.activeOrgId}/leads/${selectedLead.id}`);
-                if (generation !== detailEpoch.current) return;
-                setSelectedLead(result.data);
-                await refresh(session);
-              }}
-            />
-          )}
-          {selectedLead &&
-            session.activeOrgId &&
-            permission("crm.tags.read") &&
-            permission("crm.leads.write") && (
-              <LeadTags
+                      <label>
+                        Intent
+                        <select name="intent" defaultValue={selectedLead.intent}>
+                          <option value="unknown">Unknown</option>
+                          <option value="buyer">Buyer</option>
+                          <option value="seller">Seller</option>
+                          <option value="both">Buyer & seller</option>
+                        </select>
+                      </label>
+                      <label>
+                        Timeline (optional)
+                        <input name="timeline" defaultValue={selectedLead.timeline || ""} maxLength={80} />
+                      </label>
+                      <dl className="detail-facts">
+                        <div>
+                          <dt>Stage</dt>
+                          <dd>
+                            {data.stages.find((stage) => stage.id === selectedLead.stageId)?.name ||
+                              "Unavailable"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Source</dt>
+                          <dd>
+                            {data.sources.find((source) => source.id === selectedLead.sourceId)?.label ||
+                              "Unavailable"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Owner</dt>
+                          <dd>
+                            {selectedLead.ownerMemberId === member
+                              ? "Assigned to you"
+                              : selectedLead.ownerMemberId
+                                ? "Assigned member"
+                                : "Unassigned queue"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Engagement score</dt>
+                          <dd>
+                            {selectedLead.score == null
+                              ? "Unknown"
+                              : `${selectedLead.score} · ${selectedLead.scoreVersion || "Version unavailable"}`}
+                          </dd>
+                        </div>
+                      </dl>
+                    </>
+                  )}
+                  {detailKind === "task" && selectedTask && (
+                    <>
+                      <label>
+                        Title
+                        <input name="title" defaultValue={selectedTask.title} required maxLength={200} />
+                      </label>
+                      <label>
+                        Due date and time
+                        <input
+                          name="dueAt"
+                          type="datetime-local"
+                          defaultValue={taskDrawerBaseline.current?.value || ""}
+                          required
+                        />
+                        <span className="field-help">
+                          Unchanged time preserves the stored instant and timezone. Changed wall times use
+                          your device timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}. Ambiguous
+                          or skipped times follow your device’s daylight-saving resolution.
+                        </span>
+                      </label>
+                      <label>
+                        Priority
+                        <select name="priority" defaultValue={selectedTask.priority}>
+                          <option value="low">Low</option>
+                          <option value="normal">Normal</option>
+                          <option value="high">High</option>
+                        </select>
+                      </label>
+                      <label>
+                        Status
+                        <select name="state" defaultValue={selectedTask.state}>
+                          <option value="open">Open</option>
+                          <option value="done">Done</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
+                  {(selectedContact || selectedLead || selectedTask) &&
+                    (detailKind !== "contact" ||
+                      (online &&
+                        contactVisible &&
+                        selectedContactBinding.current === currentContactBinding.current)) && (
+                      <p className="form-note">
+                        <ShieldCheck size={15} />
+                        Version{" "}
+                        {detailKind === "lead"
+                          ? selectedLead?.version
+                          : detailKind === "task"
+                            ? selectedTask?.version
+                            : selectedContact?.version}{" "}
+                        ·{" "}
+                        {detailKind === "contact" && contactPending
+                          ? "Reconciliation retains the original save version."
+                          : "Changes require this exact record version."}
+                      </p>
+                    )}
+                </div>
+                <div className="editor-footer">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={busy || contactPending}
+                    onClick={closeDetail}
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={
+                      !dirty ||
+                      noteDirty ||
+                      tagDirty ||
+                      busy ||
+                      contactPending ||
+                      !online ||
+                      (detailKind === "contact" &&
+                        (!contactVisible ||
+                          changingOrganization ||
+                          !contactEditBinding ||
+                          selectedContactBinding.current !== currentContactBinding.current ||
+                          contactSnapshot.phase === "conflict")) ||
+                      !(detailKind === "contact"
+                        ? permission("crm.contacts.write") && selectedContact
+                        : detailKind === "lead"
+                          ? permission("crm.leads.write") && selectedLead
+                          : canTask && selectedTask)
+                    }
+                  >
+                    {busy ? "Saving…" : "Save changes"}
+                  </Button>
+                </div>
+              </form>
+            )}
+            {selectedLead && session.activeOrgId && (
+              <LeadTimeline
                 key={`${session.activeOrgId}:${selectedLead.id}`}
                 lead={selectedLead}
                 organizationId={session.activeOrgId}
+                timezone={timezone}
                 online={online}
                 working={busy}
-                editInProgress={dirty || noteDirty}
-                runCommand={command}
-                onDirty={setTagDirty}
+                editInProgress={dirty || tagDirty}
+                canWrite={permission("crm.leads.write")}
+                onDirty={setNoteDirty}
                 setWorking={setBusy}
-                onSaved={async (lead) => {
-                  setSelectedLead(lead);
+                runCommand={command}
+                onSaved={async () => {
+                  const generation = detailEpoch.current;
+                  const result = await api<Lead>(`/v1/orgs/${session.activeOrgId}/leads/${selectedLead.id}`);
+                  if (generation !== detailEpoch.current) return;
+                  setSelectedLead(result.data);
                   await refresh(session);
                 }}
               />
             )}
-        </dialog>
-      )}
+            {selectedLead &&
+              session.activeOrgId &&
+              permission("crm.tags.read") &&
+              permission("crm.leads.write") && (
+                <LeadTags
+                  key={`${session.activeOrgId}:${selectedLead.id}`}
+                  lead={selectedLead}
+                  organizationId={session.activeOrgId}
+                  online={online}
+                  working={busy}
+                  editInProgress={dirty || noteDirty}
+                  runCommand={command}
+                  onDirty={setTagDirty}
+                  setWorking={setBusy}
+                  onSaved={async (lead) => {
+                    setSelectedLead(lead);
+                    await refresh(session);
+                  }}
+                />
+              )}
+          </dialog>
+        )}
     </div>
   );
 }
