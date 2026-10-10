@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["./redis-service.acceptance.ts"],
+  "exclude": ["../../node_modules"]
+}

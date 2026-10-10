@@ -29,7 +29,28 @@ async function main() {
     .filter((file) => file.endsWith(".test.ts"))
     .sort()
     .map((file) => path.join("tests/integration", file));
-  const suites = [["tests/unit", "packages"], ...integration.map((file) => [file])];
+  const scopedFiles = (
+    await Promise.all(
+      ["tests/cms", "tests/mls"].map(async (root) => {
+        try {
+          return (await readdir(root, { recursive: true }))
+            .filter((file) => file.endsWith(".test.ts"))
+            .map((file) => path.join(root, file));
+        } catch (error) {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        }
+      }),
+    )
+  )
+    .flat()
+    .sort();
+  const scopedIntegration = scopedFiles.filter((file) => file.endsWith(".integration.test.ts"));
+  const scopedUnit = scopedFiles.filter((file) => !file.endsWith(".integration.test.ts"));
+  const suites = [
+    ["tests/unit", "packages", ...scopedUnit],
+    ...[...integration, ...scopedIntegration].map((file) => [file]),
+  ];
   const totals = { files: 0, tests: 0, passed: 0, failed: 0, skipped: 0, failedBatches: 0 };
   await mkdir(directory, { recursive: true });
   try {

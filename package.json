@@ -17,8 +17,8 @@
     "test:isolated": "node scripts/test-isolated.mjs",
     "test:e2e": "playwright test",
     "build": "pnpm --dir apps/web build",
-    "lint": "biome check apps/api/src apps/worker/src apps/web/app apps/web/components apps/web/lib packages/ui packages/auth packages/db packages/providers packages/storage packages/templates scripts tests --diagnostic-level=error",
-    "format": "biome format --write apps/api/src apps/worker/src apps/web/app apps/web/components apps/web/lib packages/ui packages/auth packages/db packages/providers packages/storage packages/templates scripts tests"
+    "lint": "biome check apps/api/src apps/worker/src apps/web/app apps/web/components apps/web/lib packages/ui packages/auth packages/db packages/providers packages/storage packages/templates packages/cms packages/mls scripts tests --diagnostic-level=error",
+    "format": "biome format --write apps/api/src apps/worker/src apps/web/app apps/web/components apps/web/lib packages/ui packages/auth packages/db packages/providers packages/storage packages/templates packages/cms packages/mls scripts tests"
   },
   "dependencies": {
     "next": "16.4.0",

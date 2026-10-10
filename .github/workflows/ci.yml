@@ -53,6 +53,11 @@ jobs:
       - name: Await synthetic servers
         run: node scripts/wait-ready.mjs
       - run: pnpm test:isolated
+      - name: BullMQ transport with dedicated synthetic Redis
+        run: pnpm exec vitest run --config tests/recovery/redis-service.vitest.config.mts
+        env:
+          REQUIRED_REDIS: redis://127.0.0.1:56379
+          REQUIRED_REDIS_ISOLATED: 'true'
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - uses: actions/upload-artifact@v4

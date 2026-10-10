@@ -6,6 +6,6 @@
     "experimentalDecorators": true, "emitDecoratorMetadata": true,
     "types": ["node", "vitest/globals"], "noEmit": true
   },
-  "include": ["apps/api/**/*.ts", "apps/worker/**/*.ts", "packages/**/*.ts", "tests/integration/**/*.ts", "tests/unit/**/*.ts"],
+  "include": ["apps/api/**/*.ts", "apps/worker/**/*.ts", "packages/**/*.ts", "tests/integration/**/*.ts", "tests/unit/**/*.ts", "tests/cms/**/*.ts", "tests/mls/**/*.ts"],
   "exclude": ["node_modules", "apps/web", "packages/ui", "packages/contracts/generated"]
 }
