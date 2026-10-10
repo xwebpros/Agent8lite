@@ -54,14 +54,14 @@ try {
       .count;
     const roles = (
       await fresh.query(
-        "SELECT rolname,rolsuper,rolbypassrls FROM pg_roles WHERE rolname IN ('estate_runtime','estate_worker') ORDER BY rolname",
+        "SELECT rolname,rolsuper,rolbypassrls,rolcreatedb,rolcreaterole FROM pg_roles WHERE rolname IN ('estate_runtime','estate_worker','estate_control','estate_staff_issuer') ORDER BY rolname",
       )
     ).rows;
     if (
       tables < 50 ||
       organizations !== 2 ||
-      roles.length !== 2 ||
-      roles.some((role) => role.rolsuper || role.rolbypassrls)
+      roles.length !== 4 ||
+      roles.some((role) => role.rolsuper || role.rolbypassrls || role.rolcreatedb || role.rolcreaterole)
     )
       throw new Error("Fresh schema acceptance failed.");
     console.log(

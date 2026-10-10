@@ -29,6 +29,8 @@ jobs:
       WEB_ORIGIN: http://localhost:3000
       DATABASE_URL: postgresql://estate_runtime:local-runtime-only@127.0.0.1:55432/estate
       MIGRATION_DATABASE_URL: postgresql://postgres:local-migration-only@127.0.0.1:55432/estate
+      CONTROL_DATABASE_URL: postgresql://estate_control:local-control-only@127.0.0.1:55432/estate
+      STAFF_ISSUER_DATABASE_URL: postgresql://estate_staff_issuer:local-staff-issuer-only@127.0.0.1:55432/estate
       REDIS_URL: redis://127.0.0.1:56379
       MLS_PROVIDER: mock
       DELIVERY_PROVIDER: no-delivery
@@ -45,6 +47,7 @@ jobs:
       - run: node scripts/check-contracts.mjs --generated
       - run: pnpm db:verify-fresh
       - run: pnpm db:migrate
+      - run: node scripts/local-control-identities.mjs
       - run: pnpm db:seed
       - run: pnpm typecheck
       - run: pnpm lint

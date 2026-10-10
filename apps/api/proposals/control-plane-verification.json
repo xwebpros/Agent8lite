@@ -1,0 +1,96 @@
+{
+  "controlPlaneCandidate": "passed",
+  "probes": 15,
+  "newForcedRlsTables": 3,
+  "runtimeConsumers": "not_started",
+  "productionIdentity": "unconfigured",
+  "verifiedAt": "2026-10-10T02:45:25.314Z",
+  "candidateChecksumReplay": "passed",
+  "checks": [
+    "01_role_and_recursive_separation",
+    "02_direct_control_session_forgery_denied",
+    "03_issuer_minimal_privileges_and_binding",
+    "04_issuer_principal_revocation_lock",
+    "05_missing_context_and_forged_authority",
+    "06_current_permission_principal_and_session_revocation",
+    "07_transaction_local_context_pool_reuse",
+    "08_grant_binding_allowlist_and_source_privileges",
+    "09_revoked_expired_legacy_grants_and_no_resurrection",
+    "10_support_lock_races_and_recipient_helper",
+    "11_owned_claim_and_safe_initial_job",
+    "12_clock_expiry_blocks_seed_and_success",
+    "13_claim_takeover_and_conditional_completion",
+    "14_transactional_module_seed_rollback",
+    "15_forced_rls_minimal_grants_and_existing_runtime"
+  ],
+  "separationChecks": [
+    "direct:estate_control->estate_runtime",
+    "multi_hop_noinherit:estate_control->estate_runtime",
+    "direct:estate_control->estate_worker",
+    "multi_hop_noinherit:estate_control->estate_worker",
+    "direct:estate_control->estate_staff_issuer",
+    "multi_hop_noinherit:estate_control->estate_staff_issuer",
+    "direct:estate_staff_issuer->estate_runtime",
+    "multi_hop_noinherit:estate_staff_issuer->estate_runtime",
+    "direct:estate_staff_issuer->estate_worker",
+    "multi_hop_noinherit:estate_staff_issuer->estate_worker",
+    "direct:estate_staff_issuer->estate_control",
+    "multi_hop_noinherit:estate_staff_issuer->estate_control"
+  ],
+  "migrations": [
+    {
+      "name": "0001-blueprint.sql",
+      "sha256": "32961ed3476e08e758ca7172519b45ff2d41ee1b341fb02b6b67cf4623590a2e"
+    },
+    {
+      "name": "0002-runtime-security.sql",
+      "sha256": "35d21be2d6d3d22772bb7e9615dd4a5819592b3480c77fce04d8aeb8d666e33e"
+    },
+    {
+      "name": "0003-outbox-consumer.sql",
+      "sha256": "dbf4864cc05aa77ebb1aefc9071b66b334f0dfee9f0539164c26ba2e62e83b43"
+    },
+    {
+      "name": "0004-administration.sql",
+      "sha256": "47474d416f047fd8363cbacd7676e30e0e016afccb8350359b9675bcf0f2c636"
+    },
+    {
+      "name": "0005-support.sql",
+      "sha256": "881e3295a274d2bc785273fa7f10c972ea0bdb92cb8ae143052d958468b878a0"
+    },
+    {
+      "name": "0006-billing.sql",
+      "sha256": "a6597a0818f1268c2d30e1b373178d174c7455fc8e4f2c585bb842179f7eb148"
+    },
+    {
+      "name": "0007-import-export.sql",
+      "sha256": "58ff7c19aacb4179d0b18b6876f74ee329d9ae8211b0764e7cdc8cf8bdf37071"
+    },
+    {
+      "name": "0008-crm-configuration-deals.sql",
+      "sha256": "19d8d2a5929d8b1cf7a96f64012a9c4642d54c800244e7de7e59b891aed76cbd"
+    },
+    {
+      "name": "0009-crm-routing-capture.sql",
+      "sha256": "ae8ec3db4dca3a58fb77ac89ca2df806e70621a75b3a09fdc496c4f42c567a9c"
+    },
+    {
+      "name": "0010-consent-suppression.sql",
+      "sha256": "439647dcc13f12f8d051929859e48e0886e7d7b7254255ce491b8c0478e69f92"
+    },
+    {
+      "name": "0011-consent-source-lock.sql",
+      "sha256": "8049a124971a6d437952af4a0fe1d71d36e3125984e6d899adbbbc1095497323"
+    },
+    {
+      "name": "0012-control-plane-provisioning.sql",
+      "sha256": "fbd31b23ea13d1ff074747b49aa34ae3f03bfa8b8962d98021b4a3132c83fe4e"
+    }
+  ],
+  "unimplementedGates": [
+    "verified OIDC staff issuance consumer",
+    "HTTP CSRF/mode/socket/banner",
+    "current replay/principal/grant application ports",
+    "complete bootstrap module defaults and failure/retry orchestration"
+  ]
+}

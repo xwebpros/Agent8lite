@@ -19,6 +19,11 @@ const consent = JSON.parse(
 ajv.addSchema(consent);
 for (const definition of Object.keys(consent.$defs))
   ajv.compile({ $ref: `${consent.$id}#/$defs/${definition}` });
+const staff = JSON.parse(
+  await fs.readFile("packages/contracts/internal/synthetic-staff-v1.schema.json", "utf8"),
+);
+ajv.addSchema(staff);
+for (const definition of Object.keys(staff.$defs)) ajv.compile({ $ref: `${staff.$id}#/$defs/${definition}` });
 ajv.compile(
   JSON.parse(await fs.readFile("packages/contracts/internal/worker-wakeup-v1.schema.json", "utf8")),
 );

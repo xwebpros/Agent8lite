@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/synthetic-staff-v1",
+  "$defs": {
+    "SessionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "identity": { "type": "string", "enum": ["administrator", "support"] } },
+      "required": ["identity"]
+    },
+    "SupportSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "organizationId": { "type": "string", "format": "uuid" },
+        "accessGrantId": { "type": "string", "format": "uuid" }
+      },
+      "required": ["organizationId", "accessGrantId"]
+    },
+    "EmptyCommand": { "type": "object", "additionalProperties": false, "maxProperties": 0 },
+    "SessionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "staffUserId": { "type": "string", "format": "uuid" },
+        "permissions": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 100 }
+        },
+        "synthetic": { "const": true },
+        "supportContext": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "organizationId": { "type": "string", "format": "uuid" },
+                "accessGrantId": { "type": "string", "format": "uuid" },
+                "permissions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "maxLength": 100 }
+                },
+                "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+                "expiresAt": { "type": "string", "format": "date-time" }
+              },
+              "required": ["organizationId", "accessGrantId", "permissions", "reason", "expiresAt"]
+            }
+          ]
+        }
+      },
+      "required": ["staffUserId", "permissions", "synthetic", "supportContext"]
+    }
+  }
+}
