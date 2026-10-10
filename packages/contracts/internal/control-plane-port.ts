@@ -104,10 +104,21 @@ export interface SupportReadContext {
   readonly permissionCodes: readonly string[];
   readonly provenance: "synthetic-local";
 }
+/** Current authorized metadata; this reference alone never authorizes customer access. */
+export interface SupportGrantReference {
+  readonly accessGrantId: string;
+  readonly grantVersion: string;
+}
 export interface SupportAccessPort {
   createGrant(organizationId: string, body: Schemas["AccessGrant"], key: string): Promise<Schemas["Job"]>;
-  select(selection: SyntheticSupportSelection): Promise<SyntheticStaffSessionResponse>;
-  clear(): Promise<SyntheticStaffSessionResponse>;
+  /** Requester-only recovery returns the current authorized reference without renewing expiry. */
+  readCommand(jobId: string): Promise<{
+    readonly job: Schemas["Job"];
+    readonly grant: SupportGrantReference;
+  }>;
+  /** Commands bind idempotency to the exact opaque session, not merely its staff principal. */
+  select(selection: SyntheticSupportSelection, key: string): Promise<SyntheticStaffSessionResponse>;
+  clear(key: string): Promise<SyntheticStaffSessionResponse>;
   revoke(
     organizationId: string,
     grantId: string,
