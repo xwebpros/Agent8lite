@@ -49,6 +49,7 @@ import CrmConfiguration from "./crm-configuration";
 import LeadTags from "./lead-tags";
 import RoutingPanel from "./routing-panel";
 import SyntheticCapture from "./synthetic-capture";
+import ConsentPanel from "./consent-panel";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -92,7 +93,7 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-export default function Workspace() {
+export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeaturesEnabled: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const query = useSearchParams();
@@ -107,6 +108,7 @@ export default function Workspace() {
   const segment = pathname.split("/")[1] || "dashboard";
   const view: View = navigation.some((item) => item.id === segment) ? (segment as View) : "dashboard";
   const [session, setSession] = useState<Session | null>(null);
+  const [syntheticIdentity, setSyntheticIdentity] = useState(false);
   const [csrf, setCsrf] = useState("");
   const [member, setMember] = useState("");
   const [profileVersion, setProfileVersion] = useState<number | null>(null);
@@ -157,6 +159,7 @@ export default function Workspace() {
   const organization = session?.organizations.find((org) => org.id === session.activeOrgId);
   const timezone = session?.profile.timezone || "America/Los_Angeles";
   const permission = (name: string) => session?.permissions.includes(name) === true;
+  const syntheticEnabled = syntheticFeaturesEnabled && syntheticIdentity && Boolean(session);
   const canCapture = permission("crm.contacts.write") && permission("crm.leads.write");
   const canTask = permission("crm.tasks.write");
   const settingsPanel = [
@@ -169,18 +172,21 @@ export default function Workspace() {
     "invitations",
     "crm",
     "routing",
+    "consent",
   ].includes(query.get("panel") || "")
     ? query.get("panel")
     : "device";
   const dealsTab = view === "pipeline" && query.get("tab") === "deals";
   const captureTab = view === "pipeline" && query.get("tab") === "capture";
-  const captureAllowed = [
-    "crm.contacts.read",
-    "crm.contacts.write",
-    "crm.leads.read",
-    "crm.leads.write",
-    "crm.sources.read",
-  ].every(permission);
+  const captureAllowed =
+    syntheticEnabled &&
+    [
+      "crm.contacts.read",
+      "crm.contacts.write",
+      "crm.leads.read",
+      "crm.leads.write",
+      "crm.sources.read",
+    ].every(permission);
 
   const refresh = useCallback(
     async (active: Session) => {
@@ -238,6 +244,7 @@ export default function Workspace() {
           (err.status === 401 || err.code === "membership_required" || err.code === "membership_inactive")
         ) {
           setSession(null);
+          setSyntheticIdentity(false);
           setCsrf("");
           setMember("");
           setInvitationTransfer(null);
@@ -256,6 +263,7 @@ export default function Workspace() {
       const result = await api<Session>("/v1/session");
       if (epoch !== sessionEpoch.current) return;
       setSession(result.data);
+      setSyntheticIdentity(result.headers.get("X-Synthetic-Identity") === "true");
       setCsrf(result.headers.get("X-CSRF-Token") || "");
       setMember(result.headers.get("X-Member-Id") || "");
       verifiedMember.current = result.headers.get("X-Member-Id") || "";
@@ -265,6 +273,7 @@ export default function Workspace() {
     } catch (err) {
       if (epoch !== sessionEpoch.current) return;
       setSession(null);
+      setSyntheticIdentity(false);
       setData(emptyData);
       setRefreshed(null);
       setCsrf("");
@@ -397,10 +406,11 @@ export default function Workspace() {
     method = "POST",
     version?: number,
     receiveHeaders?: (headers: Headers) => void,
+    explicitKey?: string,
   ) {
     if (!online) throw new Error("You’re offline. Your draft is still in this tab; reconnect before saving.");
     const fingerprint = `${session?.activeOrgId}:${path}:${method}:${JSON.stringify(body)}:${version ?? ""}`;
-    let key = commandKeys.current.get(fingerprint);
+    let key = explicitKey || commandKeys.current.get(fingerprint);
     if (!key) {
       key = crypto.randomUUID();
       commandKeys.current.set(fingerprint, key);
@@ -413,7 +423,7 @@ export default function Workspace() {
     if (version) headers["If-Match"] = `"${version}"`;
     const result = await api<T>(path, { method, headers, body: JSON.stringify(body) });
     receiveHeaders?.(result.headers);
-    commandKeys.current.delete(fingerprint);
+    if (!explicitKey) commandKeys.current.delete(fingerprint);
     return result.data;
   }
   async function loadMore(resource: "contacts" | "leads" | "tasks") {
@@ -475,6 +485,7 @@ export default function Workspace() {
     setData(emptyData);
     setRefreshed(null);
     setSession(null);
+    setSyntheticIdentity(false);
     setCsrf("");
     setMember("");
     verifiedMember.current = "";
@@ -730,6 +741,7 @@ export default function Workspace() {
       ++sessionEpoch.current;
       ++detailEpoch.current;
       setSession(null);
+      setSyntheticIdentity(false);
       setData(emptyData);
       setRefreshed(null);
       setCsrf("");
@@ -1452,7 +1464,7 @@ export default function Workspace() {
               Your current role cannot read deals and their linked leads.
             </Empty>
           )}
-          {captureTab && (
+          {captureTab && syntheticEnabled && (
             <SyntheticCapture
               key={`${session.activeOrgId}:${scope}`}
               session={session}
@@ -1467,6 +1479,11 @@ export default function Workspace() {
               setWorking={setBusy}
               onSaved={() => refresh(session)}
             />
+          )}
+          {captureTab && !syntheticEnabled && (
+            <Empty icon={<ShieldCheck size={30} />} title="Synthetic capture unavailable">
+              This demonstration requires an explicitly enabled local synthetic session.
+            </Empty>
           )}
           {view === "pipeline" && !dealsTab && !captureTab && (
             <div className="pipeline-board">
@@ -1572,6 +1589,11 @@ export default function Workspace() {
                 },
                 { id: "invitations", label: "Invitations", allowed: true },
                 { id: "routing", label: "Routing", allowed: permission("crm.routing.read") },
+                {
+                  id: "consent",
+                  label: "Synthetic consent",
+                  allowed: syntheticEnabled && permission("consent.write"),
+                },
                 {
                   id: "crm",
                   label: "CRM configuration",
@@ -1752,6 +1774,7 @@ export default function Workspace() {
             <BillingPanel
               key={session.activeOrgId}
               session={session}
+              syntheticEnabled={syntheticEnabled}
               online={online}
               working={busy}
               runCommand={command}
@@ -1759,6 +1782,25 @@ export default function Workspace() {
               setWorking={setBusy}
             />
           )}
+          {view === "settings" &&
+            settingsPanel === "consent" &&
+            (syntheticEnabled ? (
+              <ConsentPanel
+                key={`${session.userId}:${session.activeOrgId}:${scope}`}
+                session={session}
+                memberId={member}
+                scope={scope}
+                online={online}
+                working={busy}
+                runCommand={command}
+                onDirty={setDirty}
+                setWorking={setBusy}
+              />
+            ) : (
+              <Empty icon={<ShieldCheck size={30} />} title="Synthetic consent unavailable">
+                This demonstration requires an explicitly enabled local synthetic session.
+              </Empty>
+            ))}
           {view === "settings" && settingsPanel === "data" && (
             <DataTransfer
               key={session.activeOrgId}

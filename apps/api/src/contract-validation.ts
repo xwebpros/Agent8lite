@@ -1,7 +1,9 @@
 import Ajv from "ajv";
+import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
 import contract from "../../../packages/contracts/openapi.json";
 import nativeCapture from "../../../packages/contracts/internal/native-capture-v1.schema.json";
+import syntheticConsent from "../../../packages/contracts/internal/synthetic-consent-v1.schema.json";
 import { AccessError } from "../../../packages/db/tenant-transaction";
 
 const ajv = new Ajv({ strict: false, allErrors: true, allowUnionTypes: true });
@@ -14,6 +16,32 @@ ajv.addSchema({
 });
 const nativeCaptureValidator = ajv.compile(nativeCapture);
 const validators = new Map<string, ReturnType<typeof ajv.compile>>();
+const consentAjv = new Ajv2020({ strict: false, allErrors: true, allowUnionTypes: true });
+addFormats(consentAjv);
+consentAjv.addSchema({
+  $id: "https://estate.example/schemas/openapi",
+  components: { schemas: contract.components.schemas },
+});
+consentAjv.addSchema(syntheticConsent);
+const consentValidators = new Map<string, ReturnType<typeof consentAjv.compile>>();
+
+export function validateSyntheticConsent(
+  name: "EvidenceRequest" | "EvidenceResponse" | "ChannelsResponse",
+  value: unknown,
+  response = false,
+) {
+  let validator = consentValidators.get(name);
+  if (!validator) {
+    validator = consentAjv.compile({ $ref: `${syntheticConsent.$id}#/$defs/${name}` });
+    consentValidators.set(name, validator);
+  }
+  if (!validator(value))
+    throw new AccessError(
+      response ? 500 : 422,
+      response ? "response_contract_failure" : "schema_invalid",
+      response ? "Response validation failed." : "Request does not match the consent helper schema.",
+    );
+}
 
 export function validateNativeCapture(value: unknown) {
   if (!nativeCaptureValidator(value))

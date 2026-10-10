@@ -458,4 +458,29 @@ describe("web BFF private transport boundary — actual NextRequest handlers, no
         expect(response.headers.get(name)).toBe(allowed ? value : null);
     }
   });
+
+  it("exposes synthetic session identity only for the exact enabled local session GET", async () => {
+    for (const [method, path, mode, enabled, base, marker, expected] of [
+      ["GET", ["v1", "session"], "test", "true", origin, "true", "true"],
+      ["GET", ["v1", "session"], "development", "true", "http://127.0.0.1:3000", "true", "true"],
+      ["GET", ["v1", "session"], "test", "true", origin, "TRUE", null],
+      ["GET", ["v1", "session"], "test", "true", origin, "false", null],
+      ["POST", ["v1", "session"], "test", "true", origin, "true", null],
+      ["GET", ["v1", "session", "profile"], "test", "true", origin, "true", null],
+      ["GET", contactPath, "test", "true", origin, "true", null],
+      ["GET", ["v1", "session"], "production", "true", origin, "true", null],
+      ["GET", ["v1", "session"], "test", "false", origin, "true", null],
+      ["GET", ["v1", "session"], "test", "true", "https://public.example", "true", null],
+    ] as const) {
+      vi.stubEnv("APP_ENV", mode);
+      vi.stubEnv("DEV_AUTH_ENABLED", enabled);
+      network.mockReset();
+      network.mockResolvedValueOnce(
+        Response.json({ synthetic: true }, { headers: { "x-synthetic-identity": marker } }),
+      );
+      const response = await invoke(request(method, "{}", {}, base), [...path]);
+      privateResponse(response, 200);
+      expect(response.headers.get("x-synthetic-identity")).toBe(expected);
+    }
+  });
 });

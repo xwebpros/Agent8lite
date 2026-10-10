@@ -40,7 +40,10 @@ import { DealService } from "./deal-service";
 import { CrmConfigurationService } from "./crm-configuration-service";
 import { RoutingService } from "./routing-service";
 import { NativeCaptureService } from "./native-capture-service";
+import { ConsentService } from "./consent-service";
+import { ConsentChannelService } from "./consent-channel-service";
 import type { NativeCaptureDecision } from "../../../packages/contracts/internal/capture-port";
+import { validateSyntheticConsent } from "./contract-validation";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -218,15 +221,7 @@ class ApiController {
           "An approved identity provider is required.",
         );
       const session = await readSession(runtimePool, req.cookies?.[sessionCookie]);
-      const forwarded = req.headers["x-forwarded-for"];
-      if (
-        !loopback(req.socket.remoteAddress) ||
-        (forwarded &&
-          String(forwarded)
-            .split(",")
-            .some((address) => !loopback(address.trim())))
-      )
-        throw new AccessError(403, "loopback_required", "Synthetic sessions are available on loopback only.");
+      localAccess(req);
       const reading = ["GET", "HEAD"].includes(req.method);
       rate(requestRates, `${session.userId}:${reading ? "read" : "mutation"}`, reading ? 300 : 120);
       if (req.method !== "GET" && req.method !== "HEAD") {
@@ -280,6 +275,35 @@ class ApiController {
         return;
       }
       const organizationMatch = req.path.match(/^\/v1\/orgs\/([^/]+)$/);
+      const consentChannels = req.path.match(/^\/dev\/consent-channels\/([^/]+)$/);
+      if (consentChannels && req.method === "GET") {
+        localAccess(req);
+        const body = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          if (requirePermission(context, "consent.write") !== "organization")
+            throw new AccessError(
+              403,
+              "consent_scope_unavailable",
+              "Organization consent authority is required.",
+            );
+          const response = await new ConsentChannelService(client, context).list(consentChannels[1]);
+          validateSyntheticConsent("ChannelsResponse", response, true);
+          return response;
+        });
+        res.json(body);
+        return;
+      }
+      if (req.path === "/dev/consent-evidence" && req.method === "POST") {
+        localIdentity(req);
+        validateSyntheticConsent("EvidenceRequest", req.body);
+        const body = await withTenantTransaction(runtimePool, session, (client, context) =>
+          new ConsentService(client, context, traceId).issueEvidence(
+            req.body,
+            req.headers["idempotency-key"] as string,
+          ),
+        );
+        res.status(201).json(body);
+        return;
+      }
       if (req.path === "/v1/member-invitations/accept" && req.method === "POST") {
         validateSchema("InvitationAccept", req.body);
         const result = await acceptInvitation(
@@ -474,6 +498,14 @@ class ApiController {
         session,
         async (client, context) => {
           requirePermission(context, spec["x-permission"]);
+          if (resource === "consent-events" && req.method === "POST" && !id) {
+            const body = await new ConsentService(client, context, traceId).record(req.body, {
+              producer: "staff",
+              key: req.headers["idempotency-key"] as string,
+            });
+            if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+            return { body, status: 202 };
+          }
           await requireEntitlement(client, spec["x-permission"]);
           const crm = new CrmService(client, context, traceId);
           const admin = new AdminService(client, context, traceId);

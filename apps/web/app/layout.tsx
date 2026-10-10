@@ -4,6 +4,7 @@ import "./settings-sections.css";
 import "./data-transfer.css";
 import "./administration.css";
 import "./routing-capture.css";
+import "./consent.css";
 
 export const metadata: Metadata = {
   title: "Estate — Real estate workspace",

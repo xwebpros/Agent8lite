@@ -28,6 +28,12 @@ async function sessionTransaction<T>(
 }
 
 export async function readSession(pool: Pool, token: string | undefined): Promise<ServerSession> {
+  if (!["development", "test"].includes(process.env.APP_ENV ?? "") || process.env.DEV_AUTH_ENABLED !== "true")
+    throw new AccessError(
+      401,
+      "identity_provider_unconfigured",
+      "An approved identity provider is required.",
+    );
   if (!token || !/^[a-f0-9]{64}$/.test(token))
     throw new AccessError(401, "authentication_required", "Sign in required.");
   const tokenHash = hashToken(token);

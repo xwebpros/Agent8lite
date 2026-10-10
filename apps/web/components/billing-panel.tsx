@@ -9,6 +9,7 @@ import type { Schema } from "../lib/api";
 
 type Props = {
   session: Schema<"Session">;
+  syntheticEnabled: boolean;
   online: boolean;
   working: boolean;
   runCommand: <T>(
@@ -21,7 +22,15 @@ type Props = {
   onDirty(value: boolean): void;
   setWorking(value: boolean): void;
 };
-export default function BillingPanel({ session, online, working, runCommand, onDirty, setWorking }: Props) {
+export default function BillingPanel({
+  session,
+  syntheticEnabled,
+  online,
+  working,
+  runCommand,
+  onDirty,
+  setWorking,
+}: Props) {
   const [overview, setOverview] = useState<Schema<"BillingOverview"> | null>(null);
   const [preview, setPreview] = useState<Schema<"BillingPreview"> | null>(null);
   const [termsVersion, setTermsVersion] = useState("");
@@ -177,7 +186,7 @@ export default function BillingPanel({ session, online, working, runCommand, onD
     }
   }
   async function reconcileSynthetic() {
-    if (!jobPreviewId || !pending) return;
+    if (!syntheticEnabled || !jobPreviewId || !pending) return;
     setWorking(true);
     setJobError("");
     setNotice("");
@@ -383,7 +392,7 @@ export default function BillingPanel({ session, online, working, runCommand, onD
               Synthetic provider reconciliation is a separate local operation. No job or capability is marked
               complete by this page.
             </p>
-            {pending && jobPreviewId && (
+            {syntheticEnabled && pending && jobPreviewId && (
               <div className="synthetic-reconciliation">
                 <strong>Local synthetic demonstration</strong>
                 <p>
@@ -402,7 +411,7 @@ export default function BillingPanel({ session, online, working, runCommand, onD
           </div>
         </section>
       )}
-      {canManage && (
+      {canManage && syntheticEnabled && (
         <section className="panel settings-card billing-change">
           <h3>Preview a subscription change</h3>
           <p className="muted">

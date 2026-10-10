@@ -170,6 +170,17 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     for (const cookie of response.headers.getSetCookie()) returned.append("set-cookie", cookie);
     if (
       request.method === "GET" &&
+      path.length === 2 &&
+      path[0] === "v1" &&
+      path[1] === "session" &&
+      ["development", "test"].includes(process.env.APP_ENV || "") &&
+      process.env.DEV_AUTH_ENABLED === "true" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(authority.hostname) &&
+      response.headers.get("x-synthetic-identity") === "true"
+    )
+      returned.set("X-Synthetic-Identity", "true");
+    if (
+      request.method === "GET" &&
       path.length === 4 &&
       path[0] === "v1" &&
       path[1] === "orgs" &&

@@ -1,0 +1,124 @@
+.consent-section > .synthetic-note,
+.consent-readback-note {
+  margin: 24px 0;
+}
+.consent-readback-note {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 20px;
+  border: 1px solid #dfe6ef;
+  border-radius: 10px;
+  background: #f4f7fb;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.consent-readback-note > svg {
+  flex: 0 0 20px;
+  color: var(--color-primary);
+  margin-top: 3px;
+}
+.consent-editor,
+.consent-history {
+  margin-top: 25px;
+}
+.consent-editor h3 {
+  font-size: 20px;
+}
+.consent-editor h4,
+.consent-operation h4 {
+  font-size: 16px;
+}
+.consent-section .muted {
+  font-size: 14px;
+  line-height: 1.8;
+}
+.consent-editor fieldset > label {
+  display: block;
+  margin-top: 22px;
+}
+.consent-editor fieldset > .button {
+  margin-top: 15px;
+}
+.consent-proof {
+  padding: 20px;
+  border: 1px solid #dfe6ef;
+  border-radius: 10px;
+  margin: 25px 0;
+}
+.consent-proof p {
+  margin: 14px 0;
+}
+.consent-proof dl {
+  display: grid;
+  gap: 15px;
+  margin: 20px 0;
+}
+.consent-proof dt {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+.consent-proof dd {
+  font-size: 16px;
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+.consent-editor .checkbox-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin: 25px 0;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.consent-editor .checkbox-row input {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-top: 3px;
+}
+.consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 25px;
+}
+.consent-section .button {
+  white-space: normal;
+}
+.consent-history .panel-heading {
+  flex-wrap: wrap;
+  gap: 15px;
+}
+.consent-operation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid #e3eaf3;
+  padding: 25px;
+}
+.consent-operation > div {
+  flex: 1;
+  min-width: 160px;
+}
+.consent-operation p {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .consent-readback-note,
+  .consent-proof,
+  .consent-operation {
+    padding: 18px;
+  }
+  .consent-actions > .button,
+  .consent-operation > .button {
+    width: 100%;
+  }
+  .consent-section select {
+    font-size: 16px;
+  }
+}
