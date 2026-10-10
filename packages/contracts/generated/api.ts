@@ -3310,6 +3310,11 @@ export interface components {
             agentName?: string | null;
             disclaimer: string;
             logoUrl?: string | null;
+            contact?: ({
+                /** @enum {string} */
+                kind: "email" | "phone";
+                value: string;
+            } & (unknown & unknown)) | null;
         };
         ListingCriteria: {
             feedIds?: string[];

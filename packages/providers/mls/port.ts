@@ -1,3 +1,7 @@
+import type { components } from "../../contracts/generated/api";
+
+export type MlsAttributionContact = NonNullable<components["schemas"]["Attribution"]["contact"]>;
+
 /** Design interface only. Implement and test mock first at M5. No secrets in UI or DTOs. */
 export type ProviderMode = "replication" | "live_query" | "embed";
 export type PermissionState = "allowed" | "denied" | "unknown";
@@ -68,7 +72,12 @@ export interface CanonicalListing {
   readonly propertyType: string | null;
   readonly displayAllowed: boolean;
   readonly addressAllowed: boolean;
-  readonly attribution: { brokerage: string | null; agent: string | null; disclaimer: string };
+  readonly attribution: {
+    brokerage: string | null;
+    agent: string | null;
+    disclaimer: string;
+    contact?: MlsAttributionContact | null;
+  };
   readonly synthetic: boolean;
 }
 export interface SourceChange {
