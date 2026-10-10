@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/worker-wakeup-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "contextKey": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "required": ["version", "contextKey"]
+}
