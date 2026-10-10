@@ -56,6 +56,12 @@ describe("closed document-bound revision history metadata", () => {
       },
     ],
     [
+      "case-only duplicate IDs",
+      (value: ReturnType<typeof page>) => {
+        value.items.push({ ...value.items[0], id: value.items[0].id.toUpperCase() });
+      },
+    ],
+    [
       "missing continuation",
       (value: ReturnType<typeof page>) => {
         value.hasMore = true;

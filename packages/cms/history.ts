@@ -30,7 +30,7 @@ export function requireRevisionHistory(value: unknown, documentId: string): Revi
     const body = detached as RevisionHistory;
     if (
       body.items.some((item) => item.documentId !== documentId) ||
-      new Set(body.items.map((item) => item.id)).size !== body.items.length
+      new Set(body.items.map((item) => item.id.toLowerCase())).size !== body.items.length
     )
       throw new HistoryEnvelopeError();
     return body;
