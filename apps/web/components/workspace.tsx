@@ -23,7 +23,6 @@ import {
   Mail,
   Plus,
   RefreshCw,
-  Search,
   Settings2,
   ShieldCheck,
   Smartphone,
@@ -61,6 +60,8 @@ import AppointmentAgenda from "./appointment-agenda";
 import TaskAgenda from "./task-agenda";
 import { partitionLoadedTasks, resolveTaskDrawerTiming, validTaskAgendaTimezone } from "./task-agenda-time";
 import { TaskCompletionProtocol, type TaskCompletionCommand } from "./task-completion";
+import ContactsSearch from "./contacts-search";
+import { contactSearchContextBinding } from "./contacts-search-controller";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -195,7 +196,6 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     notificationPending ||
     taskPending ||
     Boolean(invitationTransfer);
-  const [search, setSearch] = useState("");
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
   const [cursors, setCursors] = useState({
@@ -275,6 +275,19 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   ]);
   const currentTaskAgenda = useRef(taskAgendaContext);
   currentTaskAgenda.current = taskAgendaContext;
+  const contactSearchContext = [
+    session ? contactSearchContextBinding({ session, memberId: member, accessRevision, scope }) : "",
+    view,
+    String(online),
+    String(busy),
+    String(loading),
+    String(detailLoading),
+    String(changingOrganization),
+  ]
+    .map((part) => part.length + ":" + part)
+    .join("|");
+  const currentContactSearch = useRef(contactSearchContext);
+  currentContactSearch.current = contactSearchContext;
   const visibleNavigation = navigation.filter((item) => {
     if (item.id === "properties") return syntheticEnabled && permission("mls.read");
     if (item.id === "websites")
@@ -1174,6 +1187,32 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
     router.push("/pipeline?lead=" + encodeURIComponent(id));
   }
+  function openSearchContact(id: string) {
+    if (
+      currentContactSearch.current !== contactSearchContext ||
+      view !== "contacts" ||
+      !online ||
+      busy ||
+      loading ||
+      detailLoading ||
+      changingOrganization ||
+      document.visibilityState !== "visible" ||
+      !permission("crm.contacts.read") ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    )
+      return;
+    if (reloadProtected.current) {
+      setError(
+        taskCompletion.current.getSnapshot().command
+          ? "Reconcile the unconfirmed task completion before opening contact details."
+          : notificationProtected.current
+            ? "Reconcile the unconfirmed notification read before opening contact details."
+            : "Resolve the current draft or unconfirmed command before opening contact details.",
+      );
+      return;
+    }
+    router.push("/contacts?contact=" + encodeURIComponent(id));
+  }
   function taskAgendaAllowed() {
     if (
       currentTaskAgenda.current !== taskAgendaContext ||
@@ -2000,68 +2039,23 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           )}
 
           {view === "contacts" && (
-            <section className="panel contacts-panel">
-              <div className="list-toolbar">
-                <div className="search-field">
-                  <Search size={18} />
-                  <input
-                    aria-label="Search loaded contacts"
-                    placeholder="Search loaded contacts…"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </div>
-                <Badge>{data.contacts.length} loaded contacts</Badge>
-              </div>
-              {data.contacts.length ? (
-                <div className="contacts-list">
-                  {data.contacts
-                    .filter((contact) =>
-                      `${contact.displayName} ${contact.emails.join(" ")} ${contact.phones.join(" ")}`
-                        .toLowerCase()
-                        .includes(search.toLowerCase()),
-                    )
-                    .map((contact) => (
-                      <article className="contact-card" key={contact.id} id={`contact-${contact.id}`}>
-                        <div className="contact-person">
-                          <span className="avatar light">{initials(contact.displayName)}</span>
-                          <div>
-                            <h3>
-                              <Link href={`/contacts?contact=${contact.id}`}>{contact.displayName}</Link>
-                            </h3>
-                            <span>
-                              {data.leads.filter((lead) => lead.contactId === contact.id).length}{" "}
-                              opportunities
-                            </span>
-                          </div>
-                        </div>
-                        <div className="contact-channel">
-                          <Mail size={15} />
-                          <span>{contact.emails[0] || "Email unknown"}</span>
-                        </div>
-                        <div className="contact-channel">
-                          <span>{contact.phones[0] || "Phone unknown"}</span>
-                          <Badge>v{contact.version}</Badge>
-                        </div>
-                      </article>
-                    ))}
-                </div>
-              ) : (
-                <Empty
-                  icon={<Users size={32} />}
-                  title={refreshed ? "Make your first connection" : "Contacts unavailable"}
-                >
-                  {refreshed
-                    ? "Capture a lead to create a contact and an assigned opportunity. No messages are sent."
-                    : "The service has not returned your contacts."}
-                </Empty>
-              )}
-              <div className="panel-footer muted">
-                Search filters the loaded page. CSV import and export are available in Settings when your role
-                permits them. Saved filters are not available in this implementation slice.
-                {cursors.contacts ? " More records are available using Load more contacts." : ""}
-              </div>
-            </section>
+            <ContactsSearch
+              key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}:${scope}`}
+              session={session}
+              memberId={member}
+              accessRevision={accessRevision}
+              scope={scope}
+              online={online}
+              changingOrganization={changingOrganization}
+              refreshMarker={refreshed}
+              actionsBlocked={busy || loading || detailLoading || unsaved}
+              onOpenContact={openSearchContact}
+              onAccessRevoked={() =>
+                setError(
+                  "Contact search access changed. Use Refresh workspace to verify current access before reopening Contacts.",
+                )
+              }
+            />
           )}
 
           {view === "pipeline" && (
@@ -2536,17 +2530,6 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 Your current role cannot read routing configuration.
               </Empty>
             ))}
-          {view === "contacts" && cursors.contacts && (
-            <div className="pagination">
-              <Button
-                variant="secondary"
-                disabled={loading || busy || !online}
-                onClick={() => void loadMore("contacts")}
-              >
-                {loading ? "Loading…" : "Load more contacts"}
-              </Button>
-            </div>
-          )}
           {view === "pipeline" && !dealsTab && !captureTab && cursors.leads && (
             <div className="pagination">
               <Button

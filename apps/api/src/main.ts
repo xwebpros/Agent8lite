@@ -702,6 +702,15 @@ class ApiController {
           const routing = new RoutingService(client, context, traceId);
           let response: ApiCommandResponse;
           if (req.method === "GET") {
+            if (
+              resource === "contacts" &&
+              !id &&
+              !action &&
+              (req.body !== undefined ||
+                req.headers["transfer-encoding"] !== undefined ||
+                Number(req.headers["content-length"] || 0) > 0)
+            )
+              throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
             let body: unknown;
             if (resource === "routing" && !id) {
               response = await routing.list(req.query);

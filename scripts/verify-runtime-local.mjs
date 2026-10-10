@@ -267,6 +267,25 @@ try {
   const ajv = new Ajv({ strict: false });
   addFormats(ajv);
   ajv.addSchema({ $id: "contract", components: contract.components });
+  const contactPage = ajv.compile({ $ref: "contract#/components/schemas/PageContact" });
+  const contactPath = `/v1/orgs/${identity.activeOrgId}/contacts`;
+  const contactFilter = encodeURIComponent(JSON.stringify({ q: "Synthetic" }));
+  const contacts = await request(synthetic, `${contactPath}?limit=25&filter=${contactFilter}`, {
+    headers: { cookie },
+  });
+  check(
+    contacts.status === 200 &&
+      contactPage(await contacts.json()) &&
+      contacts.headers.get("cache-control")?.includes("private") &&
+      contacts.headers.get("cache-control")?.includes("no-store") &&
+      !contacts.headers.has("etag"),
+    "runtime_local_contact_search_failed",
+  );
+  const invalidContacts = await request(synthetic, `${contactPath}?scope=own`, { headers: { cookie } });
+  check(
+    invalidContacts.status === 422 && (await invalidContacts.json()).code === "query_invalid",
+    "runtime_local_contact_query_failed",
+  );
   const appointmentPage = ajv.compile({ $ref: "contract#/components/schemas/PageAppointment" });
   const appointmentPath = `/v1/orgs/${identity.activeOrgId}/appointments`;
   const appointments = await request(synthetic, `${appointmentPath}?limit=25`, { headers: { cookie } });
@@ -417,6 +436,7 @@ if (failure) {
       storedAppointments: "contract-valid-private-read-and-query-denial",
       loadedTasks: "contract-valid-private-read-and-query-denial",
       dashboardReport: "contract-valid-member-utc-measurement-and-query-denial",
+      contactNameSearch: "contract-valid-private-filtered-page-and-query-denial",
       forwardedRequestsDenied: 4,
       productionModesDenied: 2,
       cliListenFailure: "closed",

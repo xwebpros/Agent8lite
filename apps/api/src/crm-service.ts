@@ -9,6 +9,7 @@ import { cursorBinding, decodeCursor, encodeCursor } from "./cursors";
 import { assertDelegation } from "../../../packages/auth/permissions";
 import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { dashboardClockInstant, dashboardUtcPeriod } from "./dashboard-time";
+import { parseContactQuery } from "./contact-query";
 
 type Row = Record<string, any>;
 type Body = Record<string, any>;
@@ -59,9 +60,9 @@ function timezone(value: string) {
   return value;
 }
 
-function dashboardContext(value: TenantContext): TenantContext {
+function detachedReadContext(value: TenantContext, subject: "reporting" | "contact"): TenantContext {
   const invalid = (): never => {
-    throw new AccessError(403, "permission_denied", "Current reporting authority is required.");
+    throw new AccessError(403, "permission_denied", `Current ${subject} authority is required.`);
   };
   const ownObject = (input: unknown): input is Record<string, unknown> => {
     if (!input || typeof input !== "object" || types.isProxy(input)) return false;
@@ -320,6 +321,7 @@ export class CrmService {
   }
 
   async list(resource: string, query: Record<string, unknown>) {
+    if (resource === "contacts") return this.listContacts(query);
     const configuration = this.resource(resource);
     const scope =
       resource === "tasks" ? await this.taskAuthority() : requirePermission(this.context, configuration.read);
@@ -425,6 +427,111 @@ export class CrmService {
     if (resource === "pipeline-stages") rows.sort((a, b) => a.position - b.position);
     return {
       items: rows.map(configuration.mapper),
+      nextCursor: hasMore ? encodeCursor(rows.at(-1)!.id, binding) : null,
+      hasMore,
+    };
+  }
+
+  private async listContacts(query: unknown): Promise<components["schemas"]["PageContact"]> {
+    const { limit, cursor: suppliedCursor, filter } = parseContactQuery(query);
+    const context = detachedReadContext(this.context, "contact");
+    const current = new CrmService(this.client, context, this.traceId);
+    const scope = requirePermission(context, "crm.contacts.read");
+    const leadScope = filter.tagIds?.length ? requirePermission(context, "crm.leads.read") : null;
+    if (filter.tagIds?.length) requirePermission(context, "crm.tags.read");
+    const authority = `SELECT 1 FROM app.membership m
+      JOIN app.role_definition r ON(r.tenant_id,r.id)=(m.tenant_id,m.role_id)
+      JOIN app.organization o ON o.id=m.tenant_id
+      WHERE session_user='estate_runtime' AND current_user='estate_runtime'
+        AND app.current_tenant()=$1::uuid AND app.current_actor()=$2::uuid
+        AND m.tenant_id=$1 AND m.user_id=$2 AND m.id=$3 AND m.role_id=$4
+        AND m.status='active' AND o.status='active' AND r.permission_grants=$5::jsonb
+        AND r.name=$6 AND o.timezone=$7`;
+    const parameters = [
+      context.organizationId,
+      context.userId,
+      context.memberId,
+      context.roleId,
+      permissionGrantJson(context.permissions),
+      context.roleName,
+      context.timezone,
+    ];
+    const assertAuthority = async (lock = false) => {
+      if (!(await this.client.query(`${authority}${lock ? " FOR SHARE OF m,r,o" : ""}`, parameters)).rowCount)
+        throw new AccessError(403, "permission_denied", "Current contact authority is unavailable.");
+    };
+    await assertAuthority(true);
+    await requireEntitlement(this.client, "crm.contacts.read");
+    if (scope === "team" || leadScope === "team")
+      await this.client.query(
+        `SELECT office_id,member_id FROM app.office_member WHERE tenant_id=app.current_tenant()
+         AND member_id=$1 ORDER BY office_id,member_id FOR SHARE`,
+        [context.memberId],
+      );
+    await assertAuthority();
+    await requireEntitlement(this.client, "crm.contacts.read", { lock: false });
+    // Version the contact binding only. Own detached data enters a primitive-only canonical serializer.
+    const binding = createHash("sha256")
+      .update(
+        stable({
+          binding: "contact-list:v2",
+          tenant: context.organizationId,
+          actor: context.userId,
+          member: context.memberId,
+          role: context.roleId,
+          permissions: context.permissions,
+          resource: "contacts",
+          scope,
+          sort: "id:asc",
+          filter,
+        }),
+      )
+      .digest("hex");
+    const cursor = decodeCursor(suppliedCursor, binding);
+    if (cursor) assertUuid(cursor);
+    const params: unknown[] = [context.memberId, cursor, limit + 1];
+    const where = [
+      "r.tenant_id=app.current_tenant()",
+      "$1::uuid IS NOT NULL",
+      current.scopeSql("contacts", scope, "$1"),
+      "r.archived_at IS NULL",
+      "($2::uuid IS NULL OR r.id>$2::uuid)",
+    ];
+    if (filter.q) {
+      params.push(`%${filter.q.replace(/[\\%_]/g, "\\$&")}%`);
+      where.push(`r.display_name ILIKE $${params.length} ESCAPE '\\'`);
+    }
+    if (filter.ownerMemberId) {
+      params.push(filter.ownerMemberId);
+      where.push(
+        `((r.created_by_member_id=$${params.length} AND NOT EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL)) OR EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL AND l.owner_member_id=$${params.length}))`,
+      );
+    }
+    if (filter.tagIds?.length) {
+      if (new Set(filter.tagIds).size !== filter.tagIds.length)
+        throw new AccessError(422, "tag_duplicate", "Each tag filter may appear once.");
+      const tags = await this.client.query(
+        "SELECT id FROM app.tag WHERE tenant_id=app.current_tenant() AND id=ANY($1::uuid[])",
+        [filter.tagIds],
+      );
+      if (tags.rowCount !== filter.tagIds.length)
+        throw new AccessError(422, "tag_invalid", "Tag filters must belong to this organization.");
+      params.push(filter.tagIds);
+      const tagsParam = `$${params.length}::uuid[]`;
+      where.push(
+        `EXISTS(SELECT 1 FROM app.lead l WHERE l.tenant_id=app.current_tenant() AND l.contact_id=r.id AND l.archived_at IS NULL AND ${current.scopeSql("leads", leadScope!, "$1").replaceAll("r.owner_member_id", "l.owner_member_id")} AND (SELECT count(*) FROM app.lead_tag lt WHERE lt.tenant_id=l.tenant_id AND lt.lead_id=l.id AND lt.tag_id=ANY(${tagsParam}))=cardinality(${tagsParam}))`,
+      );
+    }
+    const result = await this.client.query(
+      `SELECT ${current.select("contacts")} FROM app.contact r WHERE ${where.join(" AND ")} ORDER BY r.id LIMIT $3`,
+      params,
+    );
+    await assertAuthority();
+    await requireEntitlement(this.client, "crm.contacts.read", { lock: false });
+    const hasMore = result.rows.length > limit;
+    const rows = result.rows.slice(0, limit);
+    return {
+      items: rows.map(models.contact),
       nextCursor: hasMore ? encodeCursor(rows.at(-1)!.id, binding) : null,
       hasMore,
     };
@@ -873,7 +980,7 @@ export class CrmService {
       Reflect.ownKeys(query).length
     )
       throw new AccessError(422, "query_invalid", "Dashboard reporting has no query parameters.");
-    const context = dashboardContext(this.context);
+    const context = detachedReadContext(this.context, "reporting");
     const current = new CrmService(this.client, context, this.traceId);
     const dashboardScope = requirePermission(context, "dashboard.read");
     const leadScope = requirePermission(context, "crm.leads.read");

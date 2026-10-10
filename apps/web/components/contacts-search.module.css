@@ -1,0 +1,175 @@
+.panel {
+  padding: 24px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.header > div {
+  flex: 1 1 250px;
+  min-width: 0;
+}
+.header h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  margin: 0;
+}
+.header p,
+.channel,
+.summary,
+.version,
+.query {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+.panel button {
+  min-height: 44px;
+  font-size: 14px;
+}
+.panel button:focus-visible,
+.panel input:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.search {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+.field {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.field input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 16px;
+}
+.caption {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+.caption svg {
+  vertical-align: middle;
+  margin-right: 5px;
+}
+.message {
+  padding: 12px 0;
+  font-size: 16px;
+  line-height: 1.6;
+}
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.query span {
+  white-space: pre-wrap;
+  color: var(--color-ink);
+}
+.list {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.card {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 16px;
+}
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 14px;
+}
+.identity > div {
+  min-width: 0;
+}
+.identity h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 50%;
+  color: var(--color-primary);
+  background: var(--color-canvas);
+}
+.channel {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 7px 0;
+}
+.channel svg {
+  flex: none;
+  margin-top: 3px;
+}
+.channel span {
+  min-width: 0;
+}
+.card button {
+  margin-top: 10px;
+}
+@media (max-width: 760px) {
+  .list {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 480px) {
+  .panel {
+    padding: 16px;
+  }
+  .header button,
+  .search button {
+    width: 100%;
+    justify-content: center;
+  }
+  .field {
+    flex-basis: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
