@@ -1,3 +1,13 @@
+// A supplied PORT, even an invalid/empty one, must never fall back to local ports.
+export function hostedLaunchRequired(environment) {
+  return (
+    Object.hasOwn(environment, "PORT") ||
+    environment.NODE_ENV === "production" ||
+    environment.APP_ENV === "production" ||
+    environment.HOSTED_DEMO_ENABLED === "true"
+  );
+}
+
 // Hosted launch deliberately does not inherit local development/provider settings.
 export function launchConfiguration(environment, workspace, nodeVersion = process.version) {
   if (nodeVersion !== `v${workspace.engines.node}`) throw new Error("launch_node_version_invalid");

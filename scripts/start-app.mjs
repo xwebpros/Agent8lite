@@ -192,8 +192,11 @@ async function main() {
   if (process.connected) process.disconnect();
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((error) => {
+// Shared by npm start and the hosted npm run dev compatibility entrypoint.
+export async function runApplication() {
+  try {
+    await main();
+  } catch (error) {
     const allowed = [
       "launch_node_version_invalid",
       "launch_port_required",
@@ -209,5 +212,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     );
     process.exitCode = 1;
     if (process.connected) process.disconnect();
-  });
+  }
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)
+  await runApplication();

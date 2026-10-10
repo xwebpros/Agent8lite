@@ -53,8 +53,8 @@ function environment(port, mode) {
       : { DATABASE_URL: "postgresql://estate_runtime:local-runtime-only@127.0.0.1:55432/estate" }),
   };
 }
-function launch(env) {
-  const child = spawn(process.execPath, [path.join(root, "scripts/start-app.mjs")], {
+function launch(env, entrypoint = "start-app.mjs") {
+  const child = spawn(process.execPath, [path.join(root, "scripts", entrypoint)], {
     cwd: root,
     env,
     windowsHide: true,
@@ -123,6 +123,7 @@ async function stop(state) {
   await closed(state);
 }
 let failure;
+let phase = "application";
 try {
   const appPort = await freePort();
   const app = launch(environment(appPort, "application"));
@@ -163,11 +164,13 @@ try {
   );
   await stop(app);
 
+  phase = "child-failure";
   const failed = launch(environment(await freePort(), "application"));
   const failedReady = await deadline(failed.readiness);
   process.kill(failedReady.webPid, "SIGKILL");
   await closed(failed, 1);
 
+  phase = "demo";
   const port = await freePort();
   const demo = launch(environment(port, "demo"));
   const demoReady = await deadline(demo.readiness);
@@ -244,6 +247,59 @@ try {
     "launch_probe_demo_api_not_isolated",
   );
   await stop(demo);
+
+  // Reproduce a host selecting npm run dev: only the assigned public port is
+  // used, production guards still apply, and the production-only install works.
+  for (const mode of ["application", "demo"]) {
+    phase = `hosted-dev-${mode}`;
+    const compatiblePort = await freePort();
+    const compatible = launch(environment(compatiblePort, mode), "dev.mjs");
+    const compatibleReady = await deadline(compatible.readiness);
+    check(
+      compatibleReady.port === compatiblePort &&
+        compatibleReady.webPid &&
+        (mode === "demo" ? !compatibleReady.apiPid : !!compatibleReady.apiPid),
+      "launch_probe_dev_ports_invalid",
+    );
+    const boundary = await request(compatiblePort, "/api/v1/session");
+    check(
+      boundary.status === (mode === "demo" ? 503 : 401) &&
+        (await boundary.json()).code ===
+          (mode === "demo" ? "preview_api_isolated" : "identity_provider_unconfigured"),
+      "launch_probe_dev_identity_invalid",
+    );
+    check(
+      compatible.output.includes('"status":"hosted-launch-selected"') &&
+        !compatible.output.includes("Synthetic workspace") &&
+        !compatible.output.includes(demoPassword) &&
+        !compatible.output.includes(demoSecret),
+      "launch_probe_dev_output_invalid",
+    );
+    if (mode === "demo") {
+      const accepted = await request(compatiblePort, "/demo/session", {
+        method: "POST",
+        headers: { origin: `http://127.0.0.1:${compatiblePort}` },
+        body: new URLSearchParams({ password: demoPassword }),
+      });
+      check(
+        accepted.status === 303 && accepted.headers.get("set-cookie")?.includes("HttpOnly"),
+        "launch_probe_dev_demo_access_invalid",
+      );
+    }
+    await stop(compatible);
+  }
+
+  phase = "missing-port";
+  const noPort = environment(await freePort(), "demo");
+  delete noPort.PORT;
+  noPort.NODE_ENV = "production";
+  const invalid = launch(noPort, "dev.mjs");
+  await closed(invalid, 1);
+  check(
+    invalid.output.includes('"code":"launch_port_required"') &&
+      !invalid.output.includes("Synthetic workspace"),
+    "launch_probe_dev_local_fallback_invalid",
+  );
 } catch (error) {
   failure = /^launch_probe_[a-z_]+$/.test(error.message) ? error.message : "launch_probe_failed";
 } finally {
@@ -260,7 +316,7 @@ try {
     }
 }
 if (failure) {
-  console.error(JSON.stringify({ code: failure }));
+  console.error(JSON.stringify({ code: failure, phase }));
   process.exitCode = 1;
 } else
   console.log(
@@ -272,6 +328,7 @@ if (failure) {
       childFailure: "sibling-closed",
       demo: "web-only-no-database",
       previewAccess: "origin-password-cookie-CSRF-logout-verified",
+      hostedDevCommand: "assigned-port-production-and-demo-verified-no-local-fallback",
       ownedChildren: "closed",
       externalServices: "none",
     }),
