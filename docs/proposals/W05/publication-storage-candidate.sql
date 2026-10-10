@@ -78,6 +78,7 @@ CREATE TABLE app.cms_synthetic_namespace_permit (
   minter_role name NOT NULL DEFAULT current_user,
   hostname text NOT NULL,
   action text NOT NULL CHECK (action IN ('bind','detach','domain_write')),
+  domain_operation text CHECK (domain_operation IN ('INSERT','UPDATE','DELETE')),
   expected_generation bigint NOT NULL CHECK (expected_generation BETWEEN 0 AND 9007199254740990),
   next_generation bigint NOT NULL CHECK (next_generation=expected_generation+1),
   old_binding_id uuid,
@@ -98,6 +99,15 @@ CREATE TABLE app.cms_synthetic_namespace_permit (
   CHECK (valid_until>created_at AND valid_until<=created_at+interval '5 seconds'),
   CHECK ((action IN ('bind','detach') AND minter_role='estate_cms_namespace_owner')
     OR (action='domain_write' AND minter_role='estate_cms_domain_source_owner')),
+  CHECK ((action='domain_write' AND domain_operation IS NOT NULL AND domain_id IS NOT NULL
+      AND target_tenant_id IS NOT NULL AND target_site_id IS NOT NULL
+      AND old_binding_id IS NULL AND old_binding_generation IS NULL
+      AND old_tenant_id IS NULL AND old_site_id IS NULL AND old_enabled IS NULL
+      AND next_binding_id IS NULL AND binding_expires_at IS NULL)
+    OR (action<>'domain_write' AND domain_operation IS NULL)),
+  CHECK (action<>'domain_write'
+    OR (domain_operation='INSERT' AND domain_row_version IS NULL)
+    OR (domain_operation IN ('UPDATE','DELETE') AND domain_row_version IS NOT NULL AND domain_row_version>0)),
   CHECK (action<>'bind' OR (next_binding_id IS NOT NULL AND target_tenant_id IS NOT NULL
     AND target_site_id IS NOT NULL AND domain_id IS NOT NULL AND domain_row_version IS NOT NULL
     AND domain_row_version BETWEEN 1 AND 9007199254740991 AND binding_expires_at IS NOT NULL)),
@@ -326,6 +336,45 @@ BEGIN
 END;
 $immutable$;
 REVOKE ALL ON FUNCTION app.reject_cms_publication_history_change() FROM PUBLIC;
+-- Permit provenance is immutable after minting. Its only UPDATE is one current
+-- false -> true consumption; callers cannot extend expiry or rewrite a proof.
+-- No source/prefix lookup or lock is acquired from this private-row trigger.
+CREATE FUNCTION app.guard_cms_synthetic_namespace_permit() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $permit_provenance$
+DECLARE checked_clock timestamptz:=clock_timestamp(); expected app.cms_synthetic_namespace_permit;
+BEGIN
+  IF current_user NOT IN ('estate_cms_namespace_owner','estate_cms_domain_source_owner')
+    OR NEW.minter_role IS DISTINCT FROM current_user
+    OR NEW.backend_pid IS DISTINCT FROM pg_backend_pid()
+    OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() OR NEW.nonce IS NULL
+    OR ((current_user='estate_cms_namespace_owner' AND NEW.action IN ('bind','detach'))
+      OR (current_user='estate_cms_domain_source_owner' AND NEW.action='domain_write')) IS DISTINCT FROM true
+    OR NEW.created_at IS NULL OR NEW.created_at>checked_clock
+    OR NEW.valid_until IS NULL OR NEW.valid_until<=checked_clock THEN
+    RAISE EXCEPTION 'Synthetic namespace permit provenance unavailable' USING ERRCODE='42501';
+  END IF;
+  -- Validate timestamps before interval arithmetic; no future/expired proof.
+  IF NEW.valid_until<=NEW.created_at OR NEW.valid_until>NEW.created_at+interval '5 seconds' THEN
+    RAISE EXCEPTION 'Synthetic namespace permit provenance unavailable' USING ERRCODE='42501';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    IF NEW.consumed IS DISTINCT FROM false THEN
+      RAISE EXCEPTION 'Synthetic namespace permit provenance unavailable' USING ERRCODE='42501';
+    END IF;
+  ELSE
+    expected:=OLD;
+    expected.consumed:=true;
+    IF OLD.consumed IS DISTINCT FROM false OR NEW IS DISTINCT FROM expected THEN
+      RAISE EXCEPTION 'Synthetic namespace permit provenance is immutable' USING ERRCODE='42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$permit_provenance$;
+REVOKE ALL ON FUNCTION app.guard_cms_synthetic_namespace_permit() FROM PUBLIC;
+CREATE TRIGGER cms_synthetic_namespace_permit_guard BEFORE INSERT OR UPDATE ON app.cms_synthetic_namespace_permit
+  FOR EACH ROW EXECUTE FUNCTION app.guard_cms_synthetic_namespace_permit();
+
 -- Hosting-private receipt reader. No prefix locks here: a BEFORE row trigger
 -- already owns its statement's implicit row lock. A GUC alone is not a permit.
 CREATE FUNCTION app.cms_current_namespace_permit(p_hostname text)
@@ -478,7 +527,8 @@ BEGIN
   receipt:=app.cms_current_namespace_permit(namespace_name);
   SELECT s.last_generation INTO actual_generation FROM app.cms_synthetic_host_sequence s
     WHERE s.hostname=namespace_name;
-  IF receipt.action<>'domain_write' OR actual_generation IS DISTINCT FROM receipt.next_generation
+  IF receipt.action<>'domain_write' OR receipt.domain_operation IS DISTINCT FROM TG_OP
+    OR actual_generation IS DISTINCT FROM receipt.next_generation
     OR EXISTS (SELECT 1 FROM app.cms_synthetic_host_current h WHERE h.hostname=namespace_name) THEN
     RAISE EXCEPTION 'Synthetic domain must be detached first' USING ERRCODE='42501';
   END IF;
