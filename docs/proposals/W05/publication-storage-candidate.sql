@@ -236,12 +236,14 @@ CREATE TABLE app.cms_prepared_release (
 -- F. Current fenced claim is CMS-owned, not a second job table. The foundation
 -- port synchronizes fence=integration_job.attempt_count, state, row_version,
 -- lease_until atomically. Expiry is a CURRENT clock check, never a timeless CHECK.
+-- Retain this row after completion/expiry: DELETE/reinsert cannot reset a fence.
+-- First claim is fence1; reclaim advances exactly once after lease retirement.
 CREATE TABLE app.cms_publication_claim (
   tenant_id uuid NOT NULL,
   job_id uuid NOT NULL,
   fence integer NOT NULL CHECK (fence>0),
   lease_owner uuid NOT NULL,
-  lease_until timestamptz NOT NULL,
+  lease_until timestamptz NOT NULL CHECK (isfinite(lease_until)),
   job_row_version bigint NOT NULL CHECK (job_row_version BETWEEN 1 AND 9007199254740991),
   PRIMARY KEY (tenant_id,job_id),
   FOREIGN KEY (tenant_id,job_id) REFERENCES app.cms_publication_command(tenant_id,job_id) ON DELETE RESTRICT
@@ -386,6 +388,61 @@ BEGIN
 END;
 $immutable$;
 REVOKE ALL ON FUNCTION app.reject_cms_publication_history_change() FROM PUBLIC;
+-- Claim shape/lifecycle only. The foundation's CLOSED job ports must still
+-- authorize the holder and atomically prove actual job attempt/version/state.
+-- Inspect only this row and clock: no job/source lookup or inverted row lock.
+CREATE FUNCTION app.guard_cms_publication_claim() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $claim_lifecycle$
+DECLARE checked_clock timestamptz:=clock_timestamp(); expected app.cms_publication_claim;
+BEGIN
+  IF NEW.lease_until IS NULL OR NOT isfinite(NEW.lease_until) THEN
+    RAISE EXCEPTION 'CMS publication claim unavailable' USING ERRCODE='42501';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    IF NEW.fence IS DISTINCT FROM 1 OR NEW.lease_until<=checked_clock THEN
+      RAISE EXCEPTION 'CMS initial publication claim unavailable' USING ERRCODE='42501';
+    END IF;
+  ELSE
+    IF OLD.job_row_version>=9007199254740991 THEN
+      RAISE EXCEPTION 'CMS publication claim version exhausted' USING ERRCODE='55000';
+    END IF;
+    IF NEW.job_row_version IS NULL OR NEW.job_row_version<=OLD.job_row_version THEN
+      RAISE EXCEPTION 'CMS publication claim version changed' USING ERRCODE='40001';
+    END IF;
+    IF NEW.fence IS NOT DISTINCT FROM OLD.fence THEN
+      IF NEW.lease_owner IS DISTINCT FROM OLD.lease_owner
+        OR (NEW.lease_until>OLD.lease_until AND OLD.lease_until<=checked_clock) THEN
+        RAISE EXCEPTION 'CMS publication claim holder or lease changed' USING ERRCODE='42501';
+      END IF;
+    ELSE
+      -- A standalone check rejects integer overflow BEFORE evaluating +1.
+      IF OLD.fence>=2147483647 THEN
+        RAISE EXCEPTION 'CMS publication claim fence exhausted' USING ERRCODE='55000';
+      END IF;
+      IF NEW.fence IS DISTINCT FROM OLD.fence+1 OR OLD.lease_until>checked_clock
+        OR NEW.lease_until<=checked_clock THEN
+        RAISE EXCEPTION 'CMS publication reclaim unavailable' USING ERRCODE='42501';
+      END IF;
+    END IF;
+    expected:=OLD;
+    expected.fence:=NEW.fence;
+    expected.lease_owner:=NEW.lease_owner;
+    expected.lease_until:=NEW.lease_until;
+    expected.job_row_version:=NEW.job_row_version;
+    IF NEW IS DISTINCT FROM expected THEN
+      RAISE EXCEPTION 'CMS publication claim identity is immutable' USING ERRCODE='42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$claim_lifecycle$;
+REVOKE ALL ON FUNCTION app.guard_cms_publication_claim() FROM PUBLIC;
+CREATE TRIGGER cms_publication_claim_guard BEFORE INSERT OR UPDATE ON app.cms_publication_claim
+  FOR EACH ROW EXECUTE FUNCTION app.guard_cms_publication_claim();
+CREATE TRIGGER cms_publication_claim_retained BEFORE DELETE ON app.cms_publication_claim
+  FOR EACH ROW EXECUTE FUNCTION app.reject_cms_publication_history_change();
+CREATE TRIGGER cms_publication_claim_no_reset BEFORE TRUNCATE ON app.cms_publication_claim
+  FOR EACH STATEMENT EXECUTE FUNCTION app.reject_cms_publication_history_change();
 -- Permit provenance is immutable after minting. Its only UPDATE is one current
 -- false -> true consumption; callers cannot extend expiry or rewrite a proof.
 -- No source/prefix lookup or lock is acquired from this private-row trigger.
