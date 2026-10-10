@@ -196,7 +196,7 @@ const manifest = registeredManifest(detached(fixtureAsset));
 export const ORDERED_MOCK_SOURCE_PROFILE = manifest.profile;
 export const ORDERED_MOCK_SOURCE_GENERATION = manifest.generation;
 export const ORDERED_MOCK_SOURCE_WATERMARK = manifest.completedWatermark;
-const ajv = new Ajv2020({ strict: true, allErrors: false });
+const ajv = new Ajv2020({ strict: true, allErrors: false, ownProperties: true });
 addFormats(ajv);
 const validProof = ajv.compile<OrderedMockSourceProofV1>(proofSchema);
 
