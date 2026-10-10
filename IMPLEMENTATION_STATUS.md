@@ -1,5 +1,10 @@
 # Implementation status — 2026-10-10
 
+## Resumed implementation — M2 member notifications
+The user explicitly resumed programming after the hosted proof-of-concept checkpoint. Main publication of the launch correction is verified atdc6d810. The coordinator resumes three bounded subagents in the shared checkout for ADR-033/MOD-B-005: backend notification service, frontend notification center and independent notification tests. Shared existing public contracts/table precede consumers; no schema/dependency change is planned. The coordinator owns route integration and combined acceptance. Separate user-owned worktree chats remain idle until assigned. Earlier pause statements below are historical; this checkpoint supersedes them for the assigned work only. No live MLS, real delivery, billing or deployment is enabled.
+
+Next concrete steps: implement the frozen member-owned list/read commands and responsive UI, test actual runtime-role ownership/retry/revocation behavior, run combined checks and update evidence. No milestone completion is claimed. Browser/device, Redis recovery and production provider prerequisites remain open.
+
 ## Hosting command correction — local port EACCES
 Owner-supplied GoDaddy logs show repeated `npm run dev` / `node scripts/dev.mjs` / `Synthetic workspace` startup followed by EACCES on127.0.0.1:3000. The host selected the local development launcher instead of root start. The coordinator applied a bounded ADR-031 correction while all implementation agents remain paused: host markers select the identical production launcher before local defaults/development dependencies load. Provided empty/invalid PORT and production mode with no PORT fail closed rather than falling back. Ordinary loopback development is preserved by moving its existing launcher unchanged into dev-local.mjs. No shared contract, dependency, migration, provider or SaaS identity changes are included.
 
