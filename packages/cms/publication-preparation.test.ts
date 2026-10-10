@@ -715,12 +715,12 @@ describe("publication preparation own-data isolation", () => {
     delete (inherited.command as Partial<Fixture["command"]>).revisionId;
     rejected(inherited, "input_invalid_or_too_large");
   });
-  it("never executes inherited toJSON or optional field getters during preparation", () => {
+  it("reuses the shared boundary without executing inherited object/array toJSON getters", () => {
     const input = fixture();
     let executions = 0;
     let output: ReturnType<typeof prepareCmsPublication> | undefined;
     let failure: unknown;
-    const objectKeys = ["toJSON", "children", "action", "links", "canonicalPath", "ogAssetId"];
+    const objectKeys = ["toJSON"];
     const saved = objectKeys.map(
       (key) => [key, Object.getOwnPropertyDescriptor(Object.prototype, key)] as const,
     );
@@ -757,5 +757,76 @@ describe("publication preparation own-data isolation", () => {
     expect(executions).toBe(0);
     expect(failure).toBeUndefined();
     expect(output?.contentHash).toBe(input.revisionContentHash);
+  });
+  it.each([
+    "children",
+    "summary",
+    "action",
+    "links",
+    "canonicalPath",
+    "ogAssetId",
+    "heading",
+    "paragraphs",
+    "label",
+    "href",
+    "text",
+  ])("reuses the shared boundary without reading inherited registry field %s", (field) => {
+    const input = fixture();
+    const before = structuredClone(input);
+    const expected = prepareCmsPublication(input);
+    const descriptor = Object.getOwnPropertyDescriptor(Object.prototype, field);
+    let executions = 0;
+    let failure: unknown;
+    let output: ReturnType<typeof prepareCmsPublication> | undefined;
+    try {
+      Object.defineProperty(Object.prototype, field, {
+        configurable: true,
+        get() {
+          executions++;
+          throw new Error("Inherited registry field executed");
+        },
+      });
+      try {
+        output = prepareCmsPublication(input);
+      } catch (error) {
+        failure = error;
+      }
+    } finally {
+      if (descriptor) Object.defineProperty(Object.prototype, field, descriptor);
+      else Reflect.deleteProperty(Object.prototype, field);
+    }
+    expect(executions).toBe(0);
+    expect(failure).toBeUndefined();
+    expect(output).toEqual(expected);
+    expect(input).toEqual(before);
+  });
+  it("never lets an inherited getter supply a missing required block property", () => {
+    const input = fixture();
+    delete input.revision.blocks[0].props.heading;
+    rehash(input);
+    const descriptor = Object.getOwnPropertyDescriptor(Object.prototype, "heading");
+    let executions = 0;
+    let failure: unknown;
+    try {
+      Object.defineProperty(Object.prototype, "heading", {
+        configurable: true,
+        get() {
+          executions++;
+          return "Inherited replacement";
+        },
+      });
+      try {
+        prepareCmsPublication(input);
+      } catch (error) {
+        failure = error;
+      }
+    } finally {
+      if (descriptor) Object.defineProperty(Object.prototype, "heading", descriptor);
+      else Reflect.deleteProperty(Object.prototype, "heading");
+    }
+    expect(executions).toBe(0);
+    expect(failure).toBeInstanceOf(CmsPublicationPreparationError);
+    expect(failure).toMatchObject({ code: "content_unsupported" });
+    expect(Object.hasOwn(input.revision.blocks[0].props, "heading")).toBe(false);
   });
 });

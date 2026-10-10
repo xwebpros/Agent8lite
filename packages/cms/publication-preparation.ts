@@ -7,13 +7,13 @@ import type {
   CmsPublicationPreparationInputV1,
   PreparedCmsPublicationV1,
 } from "../contracts/internal/cms-publication-preparation";
-import propertySchemas from "../templates/block-schema-v1.json";
 import { listTemplateDefinitions } from "../templates/catalog";
-import { isApprovedLink } from "../templates/registry";
+import { serializeTemplateJson } from "../templates/json";
+import { ContentValidationError, renderRegisteredBlocks } from "../templates/registry";
+import { prepareDraft } from "./drafts";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Limits = { maxBytes: number; maxNodes: number; maxDepth: number };
-type Link = { label: string; href: string };
 type Failure =
   | "input_invalid_or_too_large"
   | "snapshot_mismatch"
@@ -28,9 +28,7 @@ type Failure =
   | "html_too_large";
 
 const envelopeLimits: Limits = { maxBytes: 1024 * 1024, maxNodes: 22_000, maxDepth: 35 };
-const bodyLimits: Limits = { maxBytes: 256 * 1024, maxNodes: 20_000, maxDepth: 32 };
 const maxHtmlBytes = 1024 * 1024;
-const kinds = ["hero", "text", "cta", "footer"] as const;
 const reservedRoutes = new Set(["api", "v1", "dev", "staff", "preview"]);
 const sha256 = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
 
@@ -87,7 +85,7 @@ function detach(value: unknown): Json {
       deny("input_invalid_or_too_large");
     ancestors.add(item);
     const detached = (array ? [] : Object.create(null)) as { [key: string]: Json };
-    Object.setPrototypeOf(detached, null);
+    if (!array) Object.setPrototypeOf(detached, null);
     budget.bytes(array ? "[]" : "{}");
     let entries = 0;
     for (const key of keys) {
@@ -99,7 +97,12 @@ function detach(value: unknown): Json {
         deny("input_invalid_or_too_large");
       if (entries++) budget.bytes(",");
       if (!array) budget.bytes(`${JSON.stringify(key)}:`);
-      detached[key] = copy(descriptor.value, depth + 1);
+      Object.defineProperty(detached, key, {
+        value: copy(descriptor.value, depth + 1),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     ancestors.delete(item);
     return detached;
@@ -107,35 +110,9 @@ function detach(value: unknown): Json {
   return copy(value, 0);
 }
 
-/** Only detached/platform-owned data reaches this serializer. Objects/arrays never go to JSON.stringify. */
-function canonicalJson(value: Json, limits: Limits = envelopeLimits): string {
-  const budget = meter(limits);
-  function serialize(item: Json, depth: number): string {
-    budget.node(depth);
-    if (item === null || typeof item !== "object") {
-      const scalar = JSON.stringify(item);
-      budget.bytes(scalar);
-      return scalar;
-    }
-    const entries: string[] = [];
-    const array = Array.isArray(item);
-    budget.bytes(array ? "[]" : "{}");
-    const keys = array ? Object.keys(item) : Object.keys(item).sort();
-    for (const key of keys) {
-      if (entries.length) budget.bytes(",");
-      const prefix = array ? "" : `${JSON.stringify(key)}:`;
-      budget.bytes(prefix);
-      entries.push(`${prefix}${serialize((item as Record<string, Json>)[key], depth + 1)}`);
-    }
-    return array ? `[${entries.join(",")}]` : `{${entries.join(",")}}`;
-  }
-  return serialize(value, 0);
-}
-
 const ajv = new Ajv2020({ strict: false, allErrors: false, ownProperties: true });
 addFormats(ajv);
 ajv.addSchema({ $id: "estate:cms-preparation-contract", components: contract.components });
-ajv.addSchema(propertySchemas);
 const frozenRef = (name: string) => ({ $ref: `estate:cms-preparation-contract#/components/schemas/${name}` });
 const inputValidator = ajv.compile({
   type: "object",
@@ -183,9 +160,6 @@ const inputValidator = ajv.compile({
     },
   },
 });
-const blockValidators = new Map(
-  kinds.map((kind) => [kind, ajv.compile({ $ref: `estate:block-props:v1#/properties/${kind}` })]),
-);
 
 function syntheticOrigin(value: string): string {
   // Requiring the original canonical spelling rejects URL-parser normalization and ambiguous authority.
@@ -219,60 +193,6 @@ function escape(value: string): string {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!;
   });
 }
-function renderLink(link: Link): string {
-  return `<a href="${escape(link.href)}" rel="noopener noreferrer">${escape(link.label)}</a>`;
-}
-function blockLinks(type: string, props: Record<string, unknown>): Link[] {
-  if (type === "hero" && props.action) return [props.action as Link];
-  if (type === "cta") return [props as Link];
-  if (type === "footer") return (props.links as Link[] | undefined) ?? [];
-  return [];
-}
-function renderBlocks(revision: CmsPublicationPreparationInputV1["revision"], origins: ReadonlySet<string>) {
-  const identifiers = new Set<string>();
-  const fragments: string[] = [];
-  for (let index = 0; index < revision.blocks.length; index++) {
-    const block = revision.blocks[index];
-    const validator = blockValidators.get(block.type as (typeof kinds)[number]);
-    const identifier = block.id.toLowerCase();
-    if (!validator || identifiers.has(identifier) || block.children?.length || !validator(block.props))
-      deny("content_unsupported");
-    identifiers.add(identifier);
-    const props = block.props;
-    const links = blockLinks(block.type, props);
-    for (let linkIndex = 0; linkIndex < links.length; linkIndex++)
-      if (!isApprovedLink(links[linkIndex].href, { approvedLinkOrigins: origins })) deny("link_denied");
-    const attributes = `id="block-${escape(block.id)}" data-block="${escape(block.type)}"`;
-    switch (block.type) {
-      case "hero":
-        fragments.push(
-          `<section ${attributes}><h1>${escape(props.heading as string)}</h1>${props.summary ? `<p>${escape(props.summary as string)}</p>` : ""}${props.action ? renderLink(props.action as Link) : ""}</section>`,
-        );
-        break;
-      case "text": {
-        const paragraphs = props.paragraphs as string[];
-        const rendered: string[] = [];
-        for (let paragraph = 0; paragraph < paragraphs.length; paragraph++)
-          rendered.push(`<p>${escape(paragraphs[paragraph])}</p>`);
-        fragments.push(`<section ${attributes}>${rendered.join("")}</section>`);
-        break;
-      }
-      case "cta":
-        fragments.push(`<section ${attributes}>${renderLink(props as Link)}</section>`);
-        break;
-      case "footer": {
-        const rendered: string[] = [];
-        for (let link = 0; link < links.length; link++) rendered.push(renderLink(links[link]));
-        fragments.push(
-          `<footer ${attributes}><p>${escape(props.text as string)}</p>${links.length ? `<nav aria-label="Footer">${rendered.join("")}</nav>` : ""}</footer>`,
-        );
-        break;
-      }
-    }
-  }
-  return fragments.join("\n");
-}
-
 // Renderer 1.0.0 owns this stylesheet. Author data cannot select styles, scripts, fonts or assets.
 const stylesheet =
   "html{font-family:system-ui,sans-serif;color:#172b3a;background:#fff}body{margin:0}header,main{max-width:64rem;margin:auto;padding:1rem}header{background:#fff4ce;font-weight:700}section,footer{margin-block:2rem}h1{font-size:clamp(1.75rem,5vw,3rem)}p{line-height:1.6;overflow-wrap:anywhere}a{color:#075d82;overflow-wrap:anywhere}a:focus-visible{outline:3px solid #075d82;outline-offset:3px}nav{display:flex;flex-wrap:wrap;gap:1rem}";
@@ -309,18 +229,35 @@ export function prepareCmsPublication(input: unknown): PreparedCmsPublicationV1 
   for (let index = 0; index < policy.approvedLinkOrigins.length; index++)
     approved.add(syntheticOrigin(policy.approvedLinkOrigins[index]));
   const canonicalPolicy = Object.freeze({
+    approvedLinkOrigins: Object.freeze([...approved].sort()),
     code: policy.code,
     rendererVersion: policy.rendererVersion,
-    approvedLinkOrigins: Object.freeze([...approved].sort()),
   });
-  const policyHash = sha256(canonicalJson(canonicalPolicy as unknown as Json));
+  const policyHash = sha256(serializeTemplateJson(canonicalPolicy));
   const route = routeFor(document.slug);
   if (revision.seo.canonicalPath !== undefined && revision.seo.canonicalPath !== route) deny("route_invalid");
   if (revision.schemaVersion !== 1 || revision.seo.ogAssetId) deny("content_unsupported");
   const body = { schemaVersion: revision.schemaVersion, blocks: revision.blocks, seo: revision.seo };
-  const contentHash = sha256(canonicalJson(body as unknown as Json, bodyLimits));
-  if (contentHash !== data.revisionContentHash) deny("content_hash_mismatch");
-  const fragment = renderBlocks(revision, approved);
+  const identifiers = new Set<string>();
+  for (let index = 0; index < revision.blocks.length; index++) {
+    const identifier = revision.blocks[index].id.toLowerCase();
+    if (identifiers.has(identifier)) deny("content_unsupported");
+    identifiers.add(identifier);
+  }
+  let contentHash: string;
+  let fragment: string;
+  try {
+    const prepared = prepareDraft(body, { approvedLinkOrigins: approved });
+    contentHash = prepared.contentHash;
+    if (contentHash !== data.revisionContentHash) deny("content_hash_mismatch");
+    fragment = renderRegisteredBlocks(prepared.document, { approvedLinkOrigins: approved });
+  } catch (error) {
+    if (!(error instanceof ContentValidationError)) throw error;
+    if (error.issues.some((issue) => issue.code === "document_invalid_or_too_large"))
+      deny("input_invalid_or_too_large");
+    if (error.issues.some((issue) => issue.code === "link_origin_denied")) deny("link_denied");
+    deny("content_unsupported");
+  }
   if (
     [document.title, revision.seo.title, revision.seo.description].some((value) =>
       /[\u0000-\u001f\u007f]/.test(value),
