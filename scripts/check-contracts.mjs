@@ -13,6 +13,12 @@ const capture = JSON.parse(
   await fs.readFile("packages/contracts/internal/native-capture-v1.schema.json", "utf8"),
 );
 ajv.compile(capture);
+const consent = JSON.parse(
+  await fs.readFile("packages/contracts/internal/synthetic-consent-v1.schema.json", "utf8"),
+);
+ajv.addSchema(consent);
+for (const definition of Object.keys(consent.$defs))
+  ajv.compile({ $ref: `${consent.$id}#/$defs/${definition}` });
 for (const [name, schema] of Object.entries(api.components.schemas)) {
   ajv.compile({ ...schema, components: api.components });
   if (!schema.type && !schema.oneOf && !schema.anyOf && !schema.allOf)
