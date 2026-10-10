@@ -17,15 +17,21 @@ Concrete seam and minimal database/grant proposal: `docs/proposals/W07/native-mo
 
 `tests/mls` derives raw canonical records through the existing mock's replication port; it introduces no second provider or remote requests. Native/mock equivalence covers the permitted numeric/type/status/keyword/spatial definition. Tests explicitly cover the stricter frozen limits and field gating absent from older mock's property-type/source-metadata projection. Owned configs compensate for root test discovery omissions pending coordinator changes.
 
+Helper implementation checkpoint: `ff5e8a16430d088657e6490ded5c82294f10aff8`.
+Review packet: `docs/proposals/W07/integration-boundary.md`, unnumbered `proposed-read-migration.sql`, closed `local-read.schema.json` and `native-rights.schema.json`. Existing foundation capability lookup maps `mls.read` to feature `mls`; proposed service will use that current entitlement guard after approval. Seed currently has no enabled MLS capability.
+
 ## Executed verification
 
 Branch/worktree clean before branching; supplied foundation commit exists. Node 24.19.0 / pnpm 11.25.0 match. `pnpm install --frozen-lockfile` passed without shared file changes.
 
 - `pnpm exec tsc --noEmit -p tests/mls/tsconfig.json`: PASS.
-- `pnpm exec vitest run --config tests/mls/vitest.config.mts`: PASS, 133/133 across four files (102 new W07 cases + 31 existing provider regressions), no failures/skips. Projection/rights/expiry/withdrawal, safe filters/native equivalence, closed query parser, all three sorts/keyset pages/tampering/revoked grants tested.
-- Owned Biome formatting: PASS after formatting. Contract consistency/full root checks pending final checkpoint.
+- `pnpm exec vitest run --config tests/mls/vitest.config.mts`: PASS, 146/146 across five files (115 new W07 cases + 31 existing provider regressions), no failures/skips. Projection/rights/expiry/withdrawal, safe filters/native equivalence, closed query parser, all three sorts/keyset pages/tampering/revoked grants tested. All proposed schema definitions compile against frozen contracts; persisted rights guard and closed schema agree on valid/invalid cases.
+- `pnpm exec tsc --noEmit -p tsconfig.json` and `pnpm --dir apps/web typecheck`: PASS.
+- `pnpm exec biome check packages/mls tests/mls --diagnostic-level=error`: PASS, 15 files, no changes needed.
+- `node scripts/check-contracts.mjs --generated`: PASS, 170 operations/169 schemas/event envelope/unchanged frozen copies/current generated types.
+- `git diff --check`: PASS.
 - No API/DB/browser/UI acceptance claim. No migration, shared estate reset, existing-port server, credential copy, browser automation, live feed or outbound delivery.
 
 ## Next concrete steps
 
-Finish source review/contract consistency checks and commit verified helpers/tests. Coordinator can review stable exports and the proposal now. API/UI implementation follows coordinator approval of the shared boundaries, current capability and rights/time representation; all integration verification uses disposable databases/private directories/ephemeral ports. Root Vitest/TypeScript/lint/isolated-batch discovery and existing API/web registration remain coordinator changes. M3/M4 prerequisites, public inquiry/organizer/alerts, lifecycle token/429/crash sync acceptance, browser/device QA and M5 completion remain pending.
+Coordinator can review stable exports and the complete proposal packet now. API/UI implementation follows coordinator approval of the shared boundaries, existing MLS capability and rights/time representation; all integration verification uses disposable databases/private directories/ephemeral ports. Root Vitest/TypeScript/lint/isolated-batch discovery and existing API/web registration remain coordinator changes. M3/M4 prerequisites, public inquiry/organizer/alerts, lifecycle token/429/crash sync acceptance, browser/device QA and M5 completion remain pending. No merge, push or other-chat messages performed.
