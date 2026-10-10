@@ -1,5 +1,5 @@
 -- PROPOSAL ONLY, 2026-10-10. Not a migration; no sequence is allocated.
--- Companion: publication-storage-review.md. Sources inspected at root b374274.
+-- Companion: publication-storage-review.md. Correction responds to root review287e9cd.
 -- Root must review ports, owners, grants, lock/fence probes and promotion first.
 -- The guard and final ROLLBACK are intentional. Never run this file against a DB.
 BEGIN;
@@ -25,7 +25,8 @@ ALTER TABLE app.integration_job ADD CONSTRAINT cms_job_requester_kind_identity
 -- a durable FK that prevents a safely detached site_domain from being replaced.
 -- Hosting port must compare the CURRENT domain ID/site/hostname/version on use.
 CREATE TABLE app.cms_synthetic_host_sequence (
-  hostname text PRIMARY KEY,
+  hostname text PRIMARY KEY CHECK (length(hostname)<=253 AND hostname=lower(hostname)
+    AND hostname ~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*example\.test$'),
   last_generation bigint NOT NULL DEFAULT 0 CHECK (last_generation BETWEEN 0 AND 9007199254740991)
 );
 CREATE TABLE app.cms_synthetic_binding_version (
@@ -44,11 +45,13 @@ CREATE TABLE app.cms_synthetic_binding_version (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL CHECK (expires_at>created_at),
   PRIMARY KEY (tenant_id,id),
+  UNIQUE (id),
   UNIQUE (hostname,binding_generation),
   UNIQUE (tenant_id,site_id,hostname,binding_generation),
   UNIQUE (tenant_id,site_id,id,binding_generation,origin),
   UNIQUE (hostname,tenant_id,site_id,id,binding_generation),
-  FOREIGN KEY (tenant_id,site_id) REFERENCES app.site(tenant_id,id) ON DELETE RESTRICT
+  FOREIGN KEY (tenant_id,site_id) REFERENCES app.site(tenant_id,id) ON DELETE RESTRICT,
+  FOREIGN KEY (hostname) REFERENCES app.cms_synthetic_host_sequence(hostname) ON DELETE RESTRICT
 );
 CREATE TABLE app.cms_synthetic_host_current (
   hostname text PRIMARY KEY,
@@ -64,6 +67,40 @@ CREATE TABLE app.cms_synthetic_host_current (
 -- The hosting owner allocates generations from a durable per-host counter under
 -- an exclusive namespace lock, across tenants and detach/reassignment. Never
 -- MAX()+1 under caller RLS, reuse a generation, or delete evidence to reset it.
+-- Head DELETE also consumes a generation. No disabled historical head is restored.
+-- A separate owner-only permit proves that this transaction has acquired the
+-- namespace/counter -> head -> domain prefix. Triggers must NEVER acquire that
+-- prefix backwards after their statement has implicitly locked a row.
+CREATE TABLE app.cms_synthetic_namespace_permit (
+  backend_pid integer NOT NULL,
+  transaction_id xid8 NOT NULL,
+  nonce uuid NOT NULL DEFAULT gen_random_uuid(),
+  minter_role name NOT NULL DEFAULT current_user,
+  hostname text NOT NULL,
+  action text NOT NULL CHECK (action IN ('bind','detach','domain_write')),
+  expected_generation bigint NOT NULL CHECK (expected_generation BETWEEN 0 AND 9007199254740990),
+  next_generation bigint NOT NULL CHECK (next_generation=expected_generation+1),
+  old_binding_id uuid,
+  old_binding_generation bigint,
+  old_tenant_id uuid,
+  old_site_id uuid,
+  old_enabled boolean,
+  next_binding_id uuid,
+  target_tenant_id uuid,
+  target_site_id uuid,
+  domain_id uuid,
+  domain_row_version bigint,
+  binding_expires_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  valid_until timestamptz NOT NULL,
+  consumed boolean NOT NULL DEFAULT false,
+  PRIMARY KEY (backend_pid,transaction_id,nonce),
+  CHECK (valid_until>created_at AND valid_until<=created_at+interval '5 seconds'),
+  CHECK (action<>'bind' OR (next_binding_id IS NOT NULL AND target_tenant_id IS NOT NULL
+    AND target_site_id IS NOT NULL AND domain_id IS NOT NULL AND domain_row_version IS NOT NULL
+    AND domain_row_version BETWEEN 1 AND 9007199254740991 AND binding_expires_at IS NOT NULL)),
+  CHECK (action<>'detach' OR old_binding_id IS NOT NULL)
+);
 
 -- C. Platform policy versions. Actual origin/schema/theme validation stays in
 -- the reviewed own-data preparation/policy port. jsonb::text is NOT canonical.
@@ -287,12 +324,313 @@ BEGIN
 END;
 $immutable$;
 REVOKE ALL ON FUNCTION app.reject_cms_publication_history_change() FROM PUBLIC;
+-- Hosting-private receipt reader. No prefix locks here: a BEFORE row trigger
+-- already owns its statement's implicit row lock. A GUC alone is not a permit.
+CREATE FUNCTION app.cms_current_namespace_permit(p_hostname text)
+RETURNS app.cms_synthetic_namespace_permit LANGUAGE plpgsql VOLATILE
+SET search_path=pg_catalog,app,pg_temp AS $permit$
+DECLARE receipt app.cms_synthetic_namespace_permit; selector uuid;
+BEGIN
+  IF current_user NOT IN ('estate_cms_namespace_owner','estate_cms_domain_source_owner') THEN
+    RAISE EXCEPTION 'Synthetic namespace command required' USING ERRCODE='42501';
+  END IF;
+  BEGIN
+    selector:=NULLIF(current_setting('app.cms_namespace_nonce',true),'')::uuid;
+  EXCEPTION WHEN invalid_text_representation THEN
+    RAISE EXCEPTION 'Synthetic namespace command required' USING ERRCODE='42501';
+  END;
+  SELECT p.* INTO receipt FROM app.cms_synthetic_namespace_permit p
+    WHERE p.backend_pid=pg_backend_pid() AND p.transaction_id=pg_current_xact_id()
+      AND p.nonce=selector AND p.hostname=p_hostname AND p.minter_role=current_user
+      AND NOT p.consumed AND p.valid_until>clock_timestamp();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Synthetic namespace command required' USING ERRCODE='42501';
+  END IF;
+  RETURN receipt;
+END;
+$permit$;
+REVOKE ALL ON FUNCTION app.cms_current_namespace_permit(text) FROM PUBLIC;
+
+CREATE FUNCTION app.guard_cms_synthetic_binding_insert() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $binding_insert$
+DECLARE receipt app.cms_synthetic_namespace_permit; actual_generation bigint;
+BEGIN
+  receipt:=app.cms_current_namespace_permit(NEW.hostname);
+  SELECT s.last_generation INTO actual_generation FROM app.cms_synthetic_host_sequence s
+    WHERE s.hostname=NEW.hostname;
+  IF receipt.action<>'bind' OR actual_generation IS DISTINCT FROM receipt.next_generation
+    OR (NEW.id,NEW.tenant_id,NEW.site_id,NEW.binding_generation,NEW.domain_id,NEW.domain_row_version,
+      NEW.created_at,NEW.expires_at)
+      IS DISTINCT FROM (receipt.next_binding_id,receipt.target_tenant_id,receipt.target_site_id,
+        receipt.next_generation,receipt.domain_id,receipt.domain_row_version,receipt.created_at,receipt.binding_expires_at)
+    OR NEW.expires_at<=clock_timestamp()
+    OR NOT EXISTS (SELECT 1 FROM app.site_domain d WHERE d.id=NEW.domain_id AND d.tenant_id=NEW.tenant_id
+      AND d.site_id=NEW.site_id AND d.hostname=NEW.hostname AND d.row_version=NEW.domain_row_version) THEN
+    RAISE EXCEPTION 'Current synthetic binding source unavailable' USING ERRCODE='40001';
+  END IF;
+  RETURN NEW;
+END;
+$binding_insert$;
+REVOKE ALL ON FUNCTION app.guard_cms_synthetic_binding_insert() FROM PUBLIC;
+CREATE TRIGGER cms_synthetic_binding_insert_guard BEFORE INSERT ON app.cms_synthetic_binding_version
+  FOR EACH ROW EXECUTE FUNCTION app.guard_cms_synthetic_binding_insert();
+
+CREATE FUNCTION app.guard_cms_synthetic_head_change() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $head$
+DECLARE receipt app.cms_synthetic_namespace_permit; actual_generation bigint; matched boolean;
+BEGIN
+  IF TG_OP='TRUNCATE' THEN
+    RAISE EXCEPTION 'Synthetic namespace command required' USING ERRCODE='42501';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    receipt:=app.cms_current_namespace_permit(NEW.hostname);
+    IF receipt.old_binding_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Synthetic namespace changed' USING ERRCODE='40001';
+    END IF;
+  ELSE
+    receipt:=app.cms_current_namespace_permit(OLD.hostname);
+    IF (OLD.tenant_id,OLD.site_id,OLD.binding_id,OLD.binding_generation,OLD.enabled)
+      IS DISTINCT FROM (receipt.old_tenant_id,receipt.old_site_id,receipt.old_binding_id,
+        receipt.old_binding_generation,receipt.old_enabled)
+      OR OLD.binding_generation<>receipt.expected_generation THEN
+      RAISE EXCEPTION 'Synthetic namespace changed' USING ERRCODE='40001';
+    END IF;
+  END IF;
+  -- Plain reads only. The command already holds counter/head/domain locks.
+  SELECT s.last_generation INTO actual_generation FROM app.cms_synthetic_host_sequence s
+    WHERE s.hostname=receipt.hostname;
+  IF actual_generation IS DISTINCT FROM receipt.next_generation THEN
+    RAISE EXCEPTION 'Synthetic namespace changed' USING ERRCODE='40001';
+  END IF;
+  IF receipt.action='detach' AND TG_OP='DELETE' THEN
+    UPDATE app.cms_synthetic_namespace_permit SET consumed=true
+      WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+    RETURN OLD;
+  END IF;
+  IF receipt.action<>'bind' OR TG_OP NOT IN ('INSERT','UPDATE') THEN
+    RAISE EXCEPTION 'Synthetic namespace command required' USING ERRCODE='42501';
+  END IF;
+  IF (NEW.hostname,NEW.tenant_id,NEW.site_id,NEW.binding_id,NEW.binding_generation,NEW.enabled)
+    IS DISTINCT FROM (receipt.hostname,receipt.target_tenant_id,receipt.target_site_id,
+      receipt.next_binding_id,receipt.next_generation,true) THEN
+    RAISE EXCEPTION 'Synthetic namespace changed' USING ERRCODE='40001';
+  END IF;
+  SELECT EXISTS (SELECT 1 FROM app.cms_synthetic_binding_version b
+    JOIN app.site_domain d ON d.id=b.domain_id AND d.tenant_id=b.tenant_id AND d.site_id=b.site_id
+      AND d.hostname=b.hostname AND d.row_version=b.domain_row_version
+    WHERE b.id=receipt.next_binding_id AND b.hostname=receipt.hostname
+      AND b.tenant_id=receipt.target_tenant_id AND b.site_id=receipt.target_site_id
+      AND b.binding_generation=receipt.next_generation AND b.domain_id=receipt.domain_id
+      AND b.domain_row_version=receipt.domain_row_version AND b.origin='https://' || receipt.hostname
+      AND b.mode='synthetic' AND b.evidence_code='synthetic-fixture-v1'
+      AND b.expires_at=receipt.binding_expires_at AND b.expires_at>clock_timestamp()) INTO matched;
+  IF NOT matched THEN
+    RAISE EXCEPTION 'Current synthetic domain unavailable' USING ERRCODE='40001';
+  END IF;
+  UPDATE app.cms_synthetic_namespace_permit SET consumed=true
+    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+  RETURN NEW;
+END;
+$head$;
+REVOKE ALL ON FUNCTION app.guard_cms_synthetic_head_change() FROM PUBLIC;
+CREATE TRIGGER cms_synthetic_head_guard BEFORE INSERT OR UPDATE OR DELETE ON app.cms_synthetic_host_current
+  FOR EACH ROW EXECUTE FUNCTION app.guard_cms_synthetic_head_change();
+CREATE TRIGGER cms_synthetic_head_no_reset BEFORE TRUNCATE ON app.cms_synthetic_host_current
+  FOR EACH STATEMENT EXECUTE FUNCTION app.guard_cms_synthetic_head_change();
+
+-- Existing domain-source writes touching ANY reserved example.test hostname must
+-- join the SAME prefix before their implicit domain row lock. This trigger only
+-- validates an already minted domain_write permit; it never locks the counter.
+-- Root's domain owner command/minting port is not implemented by this candidate.
+-- Recognize the reserved suffix directly, BEFORE consulting RLS-hidden rows.
+-- Even unregistered fixture domains require the owner to bootstrap/lock a counter
+-- before source DML. Missing visibility/permit cannot mean "not registered".
+CREATE FUNCTION app.guard_cms_synthetic_domain_change() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $domain_guard$
+DECLARE old_name text; new_name text; namespace_name text; receipt app.cms_synthetic_namespace_permit;
+  actual_generation bigint;
+BEGIN
+  IF TG_OP<>'INSERT' THEN old_name:=OLD.hostname; END IF;
+  IF TG_OP<>'DELETE' THEN new_name:=NEW.hostname; END IF;
+  IF lower(old_name)='example.test' OR lower(old_name) LIKE '%.example.test' THEN
+    namespace_name:=lower(old_name);
+  ELSIF lower(new_name)='example.test' OR lower(new_name) LIKE '%.example.test' THEN
+    namespace_name:=lower(new_name);
+  END IF;
+  IF namespace_name IS NULL THEN
+    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+  END IF;
+  IF TG_OP='UPDATE' AND old_name IS DISTINCT FROM new_name THEN
+    RAISE EXCEPTION 'Fixture hostname rename requires separate commands' USING ERRCODE='55000';
+  END IF;
+  receipt:=app.cms_current_namespace_permit(namespace_name);
+  SELECT s.last_generation INTO actual_generation FROM app.cms_synthetic_host_sequence s
+    WHERE s.hostname=namespace_name;
+  IF receipt.action<>'domain_write' OR actual_generation IS DISTINCT FROM receipt.next_generation
+    OR EXISTS (SELECT 1 FROM app.cms_synthetic_host_current h WHERE h.hostname=namespace_name) THEN
+    RAISE EXCEPTION 'Synthetic domain must be detached first' USING ERRCODE='42501';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    IF (NEW.id,NEW.tenant_id,NEW.site_id,NEW.hostname,NEW.row_version)
+      IS DISTINCT FROM (receipt.domain_id,receipt.target_tenant_id,receipt.target_site_id,namespace_name,1::bigint) THEN
+      RAISE EXCEPTION 'Synthetic domain source changed' USING ERRCODE='40001';
+    END IF;
+  ELSE
+    IF (OLD.id,OLD.tenant_id,OLD.site_id,OLD.hostname,OLD.row_version)
+      IS DISTINCT FROM (receipt.domain_id,receipt.target_tenant_id,receipt.target_site_id,
+        namespace_name,receipt.domain_row_version) THEN
+      RAISE EXCEPTION 'Synthetic domain source changed' USING ERRCODE='40001';
+    END IF;
+    IF TG_OP='UPDATE' THEN
+      -- Separate statements reject even a legacy bigint maximum BEFORE +1;
+      -- Boolean expression evaluation order is not an overflow safeguard.
+      IF OLD.row_version>=9007199254740991 THEN
+        RAISE EXCEPTION 'Synthetic domain source version exhausted' USING ERRCODE='55000';
+      END IF;
+      IF (NEW.id,NEW.tenant_id,NEW.site_id,NEW.hostname,NEW.row_version)
+        IS DISTINCT FROM (OLD.id,OLD.tenant_id,OLD.site_id,OLD.hostname,OLD.row_version+1) THEN
+        RAISE EXCEPTION 'Synthetic domain source version unavailable' USING ERRCODE='40001';
+      END IF;
+    END IF;
+  END IF;
+  UPDATE app.cms_synthetic_namespace_permit SET consumed=true
+    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+$domain_guard$;
+REVOKE ALL ON FUNCTION app.guard_cms_synthetic_domain_change() FROM PUBLIC;
+CREATE TRIGGER cms_synthetic_domain_guard BEFORE INSERT OR UPDATE OR DELETE ON app.site_domain
+  FOR EACH ROW EXECUTE FUNCTION app.guard_cms_synthetic_domain_change();
+CREATE TRIGGER cms_synthetic_domain_no_reset BEFORE TRUNCATE ON app.site_domain
+  FOR EACH STATEMENT EXECUTE FUNCTION app.reject_cms_publication_history_change();
+
+-- Exact proposed bind/detach command. Source/fixture authorization remains an
+-- UNIMPLEMENTED shared prerequisite; false means this cannot change a namespace.
+-- Domain-write permit minting stays with root's separately reviewed domain owner.
+CREATE FUNCTION app.cms_synthetic_namespace_source_allowed(
+  p_hostname text,p_action text,p_domain_id uuid,p_domain_version bigint
+) RETURNS boolean LANGUAGE sql VOLATILE SET search_path=pg_catalog,app,pg_temp
+AS $namespace_source_closed$ SELECT false $namespace_source_closed$;
+REVOKE ALL ON FUNCTION app.cms_synthetic_namespace_source_allowed(text,text,uuid,bigint) FROM PUBLIC;
+CREATE FUNCTION app.cms_synthetic_namespace_command(
+  p_hostname text,p_action text,p_expected_generation bigint,
+  p_domain_id uuid DEFAULT NULL,p_expected_domain_version bigint DEFAULT NULL,
+  p_valid_for_seconds integer DEFAULT 30
+) RETURNS TABLE (generation bigint,binding_id uuid,enabled boolean)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog,app,pg_temp
+AS $namespace_command$
+DECLARE counter_value bigint; next_value bigint; old_head app.cms_synthetic_host_current;
+  domain_source record; selected_domain uuid; selected_version bigint;
+  next_binding uuid; selector uuid; proof_expires timestamptz; checked_clock timestamptz;
+BEGIN
+  IF current_user<>'estate_cms_namespace_owner' THEN
+    RAISE EXCEPTION 'Synthetic namespace unavailable' USING ERRCODE='42501';
+  END IF;
+  IF p_hostname IS NULL OR length(p_hostname)>253 OR p_hostname<>lower(p_hostname)
+    OR p_hostname !~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*example\.test$'
+    OR p_action IS NULL OR p_action NOT IN ('bind','detach')
+    OR p_expected_generation IS NULL OR p_expected_generation NOT BETWEEN 0 AND 9007199254740991
+    OR p_valid_for_seconds IS NULL OR p_valid_for_seconds NOT BETWEEN 1 AND 300
+    OR (p_action='bind' AND (p_domain_id IS NULL OR p_expected_domain_version IS NULL
+      OR p_expected_domain_version NOT BETWEEN 1 AND 9007199254740991))
+    OR (p_action='detach' AND (p_domain_id IS NOT NULL OR p_expected_domain_version IS NOT NULL)) THEN
+    RAISE EXCEPTION 'Invalid synthetic namespace command' USING ERRCODE='22023';
+  END IF;
+  PERFORM set_config('app.cms_namespace_nonce','',true);
+  -- Fixed platform advisory key, independent of tenant. Hash collisions only
+  -- serialize unrelated hosts. Bootstrap INSERT/uniqueness locks are inside it.
+  PERFORM pg_advisory_xact_lock(hashtextextended('cms-synthetic-v1:' || p_hostname,0));
+  INSERT INTO app.cms_synthetic_host_sequence(hostname,last_generation)
+    VALUES(p_hostname,0) ON CONFLICT(hostname) DO NOTHING;
+  SELECT s.last_generation INTO counter_value FROM app.cms_synthetic_host_sequence s
+    WHERE s.hostname=p_hostname FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Synthetic namespace unavailable' USING ERRCODE='42501';
+  END IF;
+  SELECT h.* INTO old_head FROM app.cms_synthetic_host_current h
+    WHERE h.hostname=p_hostname FOR UPDATE;
+  IF p_action='bind' THEN selected_domain:=p_domain_id;
+  ELSE
+    SELECT b.domain_id INTO selected_domain FROM app.cms_synthetic_binding_version b
+      WHERE b.id=old_head.binding_id AND b.hostname=p_hostname;
+  END IF;
+  -- Source tuple lock comes LAST in the host prefix. No tenant ID is an argument.
+  SELECT d.id,d.tenant_id,d.site_id,d.hostname,d.row_version INTO domain_source
+    FROM app.site_domain d WHERE d.id=selected_domain AND d.hostname=p_hostname FOR SHARE;
+  IF FOUND THEN selected_version:=domain_source.row_version; END IF;
+  -- Shared source owner must hold/recheck current operator/configuration rights
+  -- after this prefix, and deny unknown fixture/TLS/environment interpretation.
+  IF app.cms_synthetic_namespace_source_allowed(p_hostname,p_action,selected_domain,selected_version) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'Synthetic namespace unavailable' USING ERRCODE='42501';
+  END IF;
+  IF counter_value<>p_expected_generation OR
+    (old_head.binding_id IS NOT NULL AND old_head.binding_generation<>counter_value) THEN
+    RAISE EXCEPTION 'Synthetic namespace changed' USING ERRCODE='40001';
+  END IF;
+  IF counter_value>=9007199254740991 THEN
+    RAISE EXCEPTION 'Synthetic namespace generation exhausted' USING ERRCODE='55000';
+  END IF;
+  IF p_action='bind' AND (selected_version IS NULL OR selected_version<>p_expected_domain_version) THEN
+    RAISE EXCEPTION 'Current synthetic domain unavailable' USING ERRCODE='40001';
+  END IF;
+  IF p_action='detach' AND old_head.binding_id IS NULL THEN
+    RAISE EXCEPTION 'Current synthetic head unavailable' USING ERRCODE='40001';
+  END IF;
+  next_value:=counter_value+1;
+  checked_clock:=clock_timestamp();
+  IF p_action='bind' THEN next_binding:=gen_random_uuid();
+    proof_expires:=checked_clock+make_interval(secs=>p_valid_for_seconds);
+  END IF;
+  selector:=gen_random_uuid();
+  INSERT INTO app.cms_synthetic_namespace_permit(backend_pid,transaction_id,nonce,hostname,action,
+    expected_generation,next_generation,old_binding_id,old_binding_generation,old_tenant_id,old_site_id,old_enabled,
+    next_binding_id,target_tenant_id,target_site_id,domain_id,domain_row_version,binding_expires_at,created_at,valid_until)
+  VALUES(pg_backend_pid(),pg_current_xact_id(),selector,p_hostname,p_action,counter_value,next_value,
+    old_head.binding_id,old_head.binding_generation,old_head.tenant_id,old_head.site_id,old_head.enabled,
+    next_binding,domain_source.tenant_id,domain_source.site_id,selected_domain,selected_version,proof_expires,
+    checked_clock,checked_clock+interval '5 seconds');
+  PERFORM set_config('app.cms_namespace_nonce',selector::text,true);
+  UPDATE app.cms_synthetic_host_sequence SET last_generation=next_value
+    WHERE hostname=p_hostname AND last_generation=counter_value;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Synthetic namespace changed' USING ERRCODE='40001'; END IF;
+  IF p_action='bind' THEN
+    INSERT INTO app.cms_synthetic_binding_version(tenant_id,id,site_id,binding_generation,domain_id,
+      domain_row_version,hostname,origin,evidence_code,created_at,expires_at)
+    VALUES(domain_source.tenant_id,next_binding,domain_source.site_id,next_value,selected_domain,
+      selected_version,p_hostname,'https://' || p_hostname,'synthetic-fixture-v1',checked_clock,proof_expires);
+    IF old_head.binding_id IS NULL THEN
+      INSERT INTO app.cms_synthetic_host_current(hostname,tenant_id,site_id,binding_id,binding_generation,enabled)
+        VALUES(p_hostname,domain_source.tenant_id,domain_source.site_id,next_binding,next_value,true);
+    ELSE
+      UPDATE app.cms_synthetic_host_current SET tenant_id=domain_source.tenant_id,site_id=domain_source.site_id,
+        binding_id=next_binding,binding_generation=next_value,enabled=true WHERE hostname=p_hostname;
+    END IF;
+  ELSE
+    DELETE FROM app.cms_synthetic_host_current WHERE hostname=p_hostname;
+  END IF;
+  IF app.cms_synthetic_namespace_source_allowed(p_hostname,p_action,selected_domain,selected_version) IS DISTINCT FROM true
+    OR (p_action='bind' AND proof_expires<=clock_timestamp()) THEN
+    RAISE EXCEPTION 'Current synthetic source unavailable' USING ERRCODE='42501';
+  END IF;
+  DELETE FROM app.cms_synthetic_namespace_permit
+    WHERE backend_pid=pg_backend_pid() AND transaction_id=pg_current_xact_id() AND nonce=selector;
+  PERFORM set_config('app.cms_namespace_nonce','',true);
+  RETURN QUERY SELECT next_value,next_binding,p_action='bind';
+  -- Errors abort the statement: no counter-only/head-only success or TTL reset.
+END;
+$namespace_command$;
+REVOKE ALL ON FUNCTION app.cms_synthetic_namespace_command(text,text,bigint,uuid,bigint,integer) FROM PUBLIC;
+
 CREATE FUNCTION app.guard_cms_publication_counter_change() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $counter$
+DECLARE receipt app.cms_synthetic_namespace_permit;
 BEGIN
   IF TG_TABLE_NAME='cms_synthetic_host_sequence' THEN
+    receipt:=app.cms_current_namespace_permit(OLD.hostname);
     IF NEW.hostname IS DISTINCT FROM OLD.hostname
-      OR NEW.last_generation IS DISTINCT FROM OLD.last_generation+1 THEN
+      OR NEW.last_generation IS DISTINCT FROM OLD.last_generation+1
+      OR OLD.last_generation IS DISTINCT FROM receipt.expected_generation
+      OR NEW.last_generation IS DISTINCT FROM receipt.next_generation THEN
       RAISE EXCEPTION 'Invalid host generation transition' USING ERRCODE='55000';
     END IF;
   ELSE
@@ -336,7 +674,7 @@ DO $rls$
 DECLARE relation_name text;
 BEGIN
   FOREACH relation_name IN ARRAY ARRAY['cms_synthetic_host_sequence','cms_synthetic_binding_version','cms_synthetic_host_current',
-    'cms_render_policy_version','cms_site_publication_state','cms_publication_command',
+    'cms_synthetic_namespace_permit','cms_render_policy_version','cms_site_publication_state','cms_publication_command',
     'cms_prepared_release','cms_publication_claim','cms_publication_release','cms_public_route',
     'cms_publication_context'] LOOP
     EXECUTE format('ALTER TABLE app.%I ENABLE ROW LEVEL SECURITY',relation_name);
