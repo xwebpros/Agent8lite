@@ -677,6 +677,72 @@ describe("unregistered native CMS API against a disposable real-role database", 
     );
   });
 
+  it.each(["read", "save", "replay", "advisory"])(
+    "denies %s after the websites clock expires while a source or advisory lock blocks",
+    async (mode) => {
+      const { document } = await createPair(editor);
+      const key = randomUUID();
+      const body = draft();
+      if (mode === "replay")
+        await success(
+          await request(editor, "POST", draftPath(document.id, editor), body, { key, ifMatch: '"1"' }),
+          "Revision",
+          201,
+        );
+      const before = await counts(document.id);
+      const blocker = await environment.admin.connect();
+      let pending: Promise<Response> | undefined;
+      let released = false;
+      try {
+        await blocker.query("BEGIN");
+        if (mode === "advisory") {
+          await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+            `${fixtures.orgA}:${fixtures.agentUser}:cms:cms:save-draft:${document.id}:${key}`,
+          ]);
+        } else {
+          await blocker.query("SELECT id FROM app.content_document WHERE id=$1 FOR UPDATE", [document.id]);
+        }
+        await environment.admin.query(
+          "UPDATE app.entitlement SET effective_until=clock_timestamp()+interval '1 second' WHERE tenant_id=$1 AND feature='websites'",
+          [fixtures.orgA],
+        );
+        pending =
+          mode === "read"
+            ? request(editor, "GET", `${base(editor)}/documents/${document.id}`)
+            : request(editor, "POST", draftPath(document.id, editor), body, { key, ifMatch: '"1"' });
+        let blocked = false;
+        const deadline = Date.now() + 3000;
+        while (!blocked && Date.now() < deadline) {
+          const state = await environment.admin.query(
+            "SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=$1 AND usename='estate_runtime' AND wait_event_type='Lock' AND query LIKE $2",
+            [environment.database, mode === "advisory" ? "%pg_advisory_xact_lock%" : "%content_document%"],
+          );
+          blocked = state.rows[0].count > 0;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(blocked).toBe(true);
+        let expired = false;
+        while (!expired && Date.now() < deadline) {
+          const time = await environment.admin.query(
+            "SELECT clock_timestamp()>=effective_until AS expired FROM app.entitlement WHERE tenant_id=$1 AND feature='websites'",
+            [fixtures.orgA],
+          );
+          expired = time.rows[0].expired;
+          if (!expired) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(expired).toBe(true);
+        await blocker.query("ROLLBACK");
+        released = true;
+        expect(await assertProblem(await pending, 403)).toMatchObject({ code: "entitlement_disabled" });
+        expect(await counts(document.id)).toEqual(before);
+      } finally {
+        if (!released) await blocker.query("ROLLBACK");
+        if (pending) await pending;
+        blocker.release();
+      }
+    },
+  );
+
   it("an expired historical key cannot append a second revision with a stale precondition", async () => {
     const { document } = await createPair();
     const key = randomUUID();

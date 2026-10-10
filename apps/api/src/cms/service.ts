@@ -134,6 +134,7 @@ export class CmsService {
   /** Current authorization precedes lookup; historical replay precedes the old version precondition. */
   private async idempotent<T>(
     route: string,
+    permission: "sites.write" | "content.write",
     schema: keyof Schemas,
     body: unknown,
     headers: CommandHeaders,
@@ -149,6 +150,8 @@ export class CmsService {
     await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
       `${this.context.organizationId}:${this.context.userId}:cms:${route}:${key}`,
     ]);
+    // Row locks protect state, not the passing of effective_until while source/advisory locks wait.
+    await this.authorize(permission);
     const existing = await this.client.query(
       "SELECT request_hash,response_body,status_code,response_etag FROM app.idempotency_record WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3 AND expires_at>now()",
       [this.context.userId, route, key],
@@ -158,6 +161,7 @@ export class CmsService {
       if (row.request_hash !== hash)
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       await reauthorizeReplay(row.response_body);
+      await this.authorize(permission);
       validateSchema(schema, row.response_body, true);
       if (
         !/^"[1-9][0-9]*"$/.test(row.response_etag ?? "") ||
@@ -171,10 +175,12 @@ export class CmsService {
       return { body: row.response_body, status: row.status_code, etag: row.response_etag };
     }
     const result = await command();
+    await this.authorize(permission);
     await this.client.query(
       "INSERT INTO app.idempotency_record(tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at) VALUES(app.current_tenant(),$1,$2,$3,$4,$5,$6,$7,now()+interval '1 day')",
       [this.context.userId, route, key, hash, JSON.stringify(result.body), result.status, result.etag],
     );
+    await this.authorize(permission);
     return result;
   }
 
@@ -186,6 +192,7 @@ export class CmsService {
     const name = nonempty(body.name);
     return this.idempotent(
       "cms:create-site",
+      "sites.write",
       "Site",
       body,
       headers,
@@ -208,6 +215,7 @@ export class CmsService {
     await this.authorize("sites.read");
     const body = siteModel(await this.site(id));
     validateSchema("Site", body, true);
+    await this.authorize("sites.read");
     return body;
   }
 
@@ -246,6 +254,7 @@ export class CmsService {
     const page = this.page(query, "cms:sites");
     const rows = await this.repository.listSites(page.after, page.limit + 1);
     for (const row of rows) await this.profile(row.business_profile_id);
+    await this.authorize("sites.read");
     return this.pageResponse("PageSite", rows.map(siteModel), page.limit, page.binding, (row) => row.id);
   }
 
@@ -259,6 +268,7 @@ export class CmsService {
     const input = documentInput(body);
     return this.idempotent(
       `cms:create-document:${siteId}`,
+      "content.write",
       "Document",
       body,
       headers,
@@ -278,6 +288,7 @@ export class CmsService {
     await this.authorize("content.read");
     const body = documentModel(await this.document(id, false));
     validateSchema("Document", body, true);
+    await this.authorize("content.read");
     return body;
   }
 
@@ -286,6 +297,7 @@ export class CmsService {
     await this.site(siteId);
     const page = this.page(query, `cms:documents:${siteId}`);
     const rows = await this.repository.listDocuments(siteId, page.after, page.limit + 1);
+    await this.authorize("content.read");
     return this.pageResponse(
       "PageDocument",
       rows.map(documentModel),
@@ -305,6 +317,7 @@ export class CmsService {
     const input = documentInput(body);
     return this.idempotent(
       `cms:update-document:${id}`,
+      "content.write",
       "Document",
       body,
       headers,
@@ -330,6 +343,7 @@ export class CmsService {
     validateSchema("RevisionWrite", body);
     return this.idempotent(
       `cms:save-draft:${id}`,
+      "content.write",
       "Revision",
       body,
       headers,
@@ -366,6 +380,7 @@ export class CmsService {
     await this.document(documentId, false);
     const page = this.page(query, `cms:revisions:${documentId}`);
     const rows = await this.repository.listRevisions(documentId, page.after, page.limit + 1);
+    await this.authorize("content.read");
     return this.pageResponse(
       "PageRevision",
       rows.map(revisionModel),
@@ -381,6 +396,7 @@ export class CmsService {
     const row = await this.repository.revision(id);
     if (!row) unavailable();
     await this.document(row.document_id, false);
+    await this.authorize("content.read");
     return revisionModel(row);
   }
 
@@ -391,6 +407,7 @@ export class CmsService {
     const row = await this.repository.revision(id);
     if (!row) unavailable();
     await this.document(row.document_id, false);
+    await this.authorize("content.read");
     return {
       id: row.id,
       documentId: row.document_id,
