@@ -12,7 +12,14 @@ import catalog from "../contracts/permission-catalog.json";
 
 export const staffSessionCookie = "estate_staff_session";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
-export type StaffSession = VerifiedStaffContext & { readonly csrfToken: string; readonly expiresAt: string };
+export type StaffSession = VerifiedStaffContext & {
+  readonly csrfToken: string;
+  readonly expiresAt: string;
+  readonly selectedTenantId: string | null;
+  readonly selectedGrantId: string | null;
+  readonly intent: StaffTransactionIntent;
+};
+export type StaffTransactionIntent = "provisioning" | "identity" | "context-mutation" | "support-read";
 export class StaffSessionIssuer implements StaffSessionIssuerPort {
   constructor(private readonly pool: Pool) {}
   async issueVerifiedIdentity(identity: VerifiedOidcIdentity) {
@@ -92,7 +99,7 @@ export async function withStaffTransaction<T>(
   pool: Pool,
   token: string | undefined,
   operation: (client: PoolClient, session: StaffSession) => Promise<T>,
-  options: { readonly logout?: boolean } = {},
+  options: { readonly logout?: boolean; readonly intent?: StaffTransactionIntent } = {},
 ) {
   requireSyntheticStaffMode();
   if (!token || !/^[0-9a-f]{64}$/.test(token))
@@ -116,20 +123,26 @@ export async function withStaffTransaction<T>(
     if (principal.rowCount !== 1)
       throw new AccessError(403, "staff_principal_required", "Active staff principal required.");
     const current = await client.query(
-      "SELECT csrf_token,expires_at,selected_tenant_id FROM app.staff_session WHERE token_hash=$1 AND staff_user_id=$2 AND expires_at>clock_timestamp()FOR SHARE",
+      `SELECT csrf_token,expires_at,selected_tenant_id,selected_grant_id FROM app.staff_session WHERE token_hash=$1 AND staff_user_id=$2 AND expires_at>clock_timestamp()FOR ${options.logout || options.intent === "context-mutation" ? "UPDATE" : "SHARE"}`,
       [tokenHash, initial.rows[0].staff_user_id],
     );
     if (current.rowCount !== 1)
       throw new AccessError(401, "staff_session_expired", "Staff session expired. Sign in again.");
-    if (current.rows[0].selected_tenant_id)
+    if (
+      current.rows[0].selected_tenant_id &&
+      !options.logout &&
+      (options.intent ?? "provisioning") === "provisioning"
+    )
       throw new AccessError(
-        503,
-        "staff_support_unavailable",
-        "Support selection is not enabled in this adapter.",
+        403,
+        "staff_context_selected",
+        "Clear the selected support context before provisioning.",
       );
     const codes = principal.rows[0].permission_codes as string[];
     if (
       !Array.isArray(codes) ||
+      codes.length > 20 ||
+      new Set(codes).size !== codes.length ||
       codes.some((code) => !catalog.codes.some((entry) => entry.code === code && entry.boundary === "staff"))
     )
       throw new AccessError(403, "staff_permission_invalid", "Staff permissions require review.");
@@ -142,7 +155,13 @@ export async function withStaffTransaction<T>(
       provenance: "synthetic-local",
       csrfToken: current.rows[0].csrf_token,
       expiresAt: new Date(current.rows[0].expires_at).toISOString(),
+      selectedTenantId: current.rows[0].selected_tenant_id,
+      selectedGrantId: current.rows[0].selected_grant_id,
+      intent: options.logout ? "context-mutation" : (options.intent ?? "provisioning"),
     };
+    // An unchanged tuple can satisfy a WHERE evaluated before a row-lock wait.
+    // Recompute DB-clock identity eligibility after both locks before invoking commands.
+    await assertStaffPermission(client, session);
     const result = await operation(client, session);
     await assertStaffPermission(client, session);
     if (options.logout)

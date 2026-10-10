@@ -84,6 +84,13 @@
 .field textarea {
   resize: vertical;
 }
+.field [aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+.fieldError {
+  color: var(--color-danger);
+  font-size: 0.875rem;
+}
 .link {
   display: grid;
   gap: 12px;
@@ -121,6 +128,18 @@
 }
 .issues {
   color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+.issues ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+}
+.issues button {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  text-align: left;
   overflow-wrap: anywhere;
 }
 .editor :is(button, input, textarea, select, pre, h3):focus-visible {

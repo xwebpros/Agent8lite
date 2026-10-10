@@ -4,12 +4,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { tryNativeMockRead } from "../../apps/api/src/mls";
 import {
   createSyntheticSession,
+  hashToken,
   readSession,
   revokeSession,
   sessionCookie,
+  switchOrganization,
 } from "../../packages/auth/sessions";
 import { fixtures } from "../../packages/db/fixtures";
 import { AccessError } from "../../packages/db/tenant-transaction";
+import type { PageListing } from "../../packages/mls";
 import { assertContract, assertProblem } from "../helpers/api";
 import {
   admin,
@@ -23,6 +26,7 @@ import {
   runtime,
   signingKey,
 } from "./database";
+import { nativeRights, syntheticAttributionContacts } from "./fixtures";
 
 let server: Server;
 let origin: string;
@@ -35,6 +39,32 @@ const request = (path: string, token: string | null = ownerToken, headers: Recor
   fetch(`${origin}${path}`, {
     headers: { ...headers, ...(token ? { cookie: `${sessionCookie}=${token}` } : {}) },
   });
+
+async function waitForRuntimeLock(fragment: string) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const waiting = await admin.query(
+      "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND usename='estate_runtime' AND wait_event_type='Lock' AND query LIKE $1",
+      [`%${fragment}%`],
+    );
+    if (waiting.rowCount) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("Expected current-session/source lock wait was not observed.");
+}
+
+async function waitForSessionExpiry(token: string) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const expired = await admin.query<{ expired: boolean }>(
+      "SELECT expires_at<=clock_timestamp() AS expired FROM app.login_session WHERE token_hash=$1",
+      [hashToken(token)],
+    );
+    if (expired.rows[0]?.expired) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("The disposable session did not reach its database expiry.");
+}
 
 beforeAll(async () => {
   await prepareDatabase();
@@ -129,6 +159,36 @@ describe("W07 unregistered dev handler — real sessions, HTTP and PostgreSQL ro
     }
   });
 
+  it("serves supplied email/phone and omits contact after current field-right revocation", async () => {
+    const response = await request(base + query({ feedIds: [feedA] }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    const page: PageListing = await response.json();
+    assertContract("PageListing", page);
+    for (const [index, contact] of syntheticAttributionContacts.entries()) {
+      const id = nativeId(`SYNTHETIC-VEGAS-${String(index + 1).padStart(3, "0")}`);
+      expect(page.items.find((item) => item.id === id)?.attribution.contact).toEqual(contact);
+      const details = await request(`${base}/${id}`);
+      expect(details.status).toBe(200);
+      expect((await details.json()).attribution.contact).toEqual(contact);
+    }
+    await admin.query("UPDATE app.mls_feed SET native_rights=$2 WHERE id=$1", [
+      feedA,
+      {
+        ...nativeRights,
+        allowedFields: nativeRights.allowedFields.filter((field) => field !== "attribution.contact"),
+      },
+    ]);
+    const revoked = await request(base + query({ feedIds: [feedA] }));
+    expect(revoked.status).toBe(200);
+    expect(revoked.headers.get("cache-control")).toContain("no-store");
+    const body: PageListing = await revoked.json();
+    expect(body.items.length).toBeGreaterThan(0);
+    expect(body.items.every((item) => !Object.hasOwn(item.attribution, "contact"))).toBe(true);
+    for (const contact of syntheticAttributionContacts)
+      expect(JSON.stringify(body)).not.toContain(contact.value);
+  });
+
   it("denies missing/expired/revoked sessions and inactive membership", async () => {
     await assertProblem(await request(base, null), 401);
     await assertProblem(await request(base, "invalid"), 401);
@@ -140,6 +200,162 @@ describe("W07 unregistered dev handler — real sessions, HTTP and PostgreSQL ro
       fixtures.ownerUser,
     ]);
     await assertProblem(await request(base), 403);
+  });
+
+  it("rejects retained verified session values after revocation or active-organization switching", async () => {
+    for (const change of ["revoke", "switch", "actor", "hash"]) {
+      const token = (await createSyntheticSession(runtime, fixtures.ownerUser, fixtures.orgA)).token;
+      const session = await readSession(runtime, token);
+      if (change === "revoke") await revokeSession(runtime, session);
+      if (change === "switch") await switchOrganization(runtime, session, fixtures.orgB);
+      const retained =
+        change === "actor"
+          ? { ...session, userId: fixtures.agentUser }
+          : change === "hash"
+            ? { ...session, tokenHash: "malformed" }
+            : session;
+      await expect(
+        tryNativeMockRead(
+          { path: base, method: "GET", query: {}, remoteAddress: "127.0.0.1" },
+          retained,
+          runtime,
+          { signingKey },
+        ),
+      ).rejects.toMatchObject({ status: 401, code: "session_expired" });
+    }
+    const reused = await runtime.query("SELECT current_setting('app.session_hash',true) AS session");
+    expect(reused.rows[0].session ?? "").toBe("");
+    expect((await runtime.query("SELECT token_hash FROM app.login_session")).rowCount).toBe(0);
+  });
+
+  it.each(["list", "detail"])(
+    "denies %s when its session expires while blocked on a source lock",
+    async (kind) => {
+      const token = (await createSyntheticSession(runtime, fixtures.ownerUser, fixtures.orgA)).token;
+      await admin.query(
+        "UPDATE app.login_session SET expires_at=clock_timestamp()+interval '1 second' WHERE token_hash=$1",
+        [hashToken(token)],
+      );
+      const writer = await admin.connect();
+      let pending: Promise<Response> | undefined;
+      try {
+        await writer.query("BEGIN");
+        await writer.query("SELECT id FROM app.listing WHERE id=$1 FOR UPDATE", [
+          nativeId("SYNTHETIC-VEGAS-001"),
+        ]);
+        pending = request(kind === "list" ? base : `${base}/${nativeId("SYNTHETIC-VEGAS-001")}`, token);
+        await waitForRuntimeLock("FROM app.listing l");
+        await waitForSessionExpiry(token);
+        await writer.query("COMMIT");
+        const response = await pending;
+        const problem = await assertProblem(response, 401);
+        expect(problem.code).toBe("session_expired");
+        expect(response.headers.get("cache-control")).toContain("no-store");
+        expect(JSON.stringify(problem)).not.toMatch(/Juniper|sourceListingKey|listPrice|Example Only/);
+      } finally {
+        await writer.query("ROLLBACK");
+        writer.release();
+        await pending;
+      }
+    },
+  );
+
+  it("evaluates session time after a blocked SHARE lock even when the writer never updates the tuple", async () => {
+    const token = (await createSyntheticSession(runtime, fixtures.ownerUser, fixtures.orgA)).token;
+    await admin.query(
+      "UPDATE app.login_session SET expires_at=clock_timestamp()+interval '1 second' WHERE token_hash=$1",
+      [hashToken(token)],
+    );
+    const writer = await admin.connect();
+    let pending: Promise<Response> | undefined;
+    try {
+      await writer.query("BEGIN");
+      await writer.query("SELECT token_hash FROM app.login_session WHERE token_hash=$1 FOR UPDATE", [
+        hashToken(token),
+      ]);
+      pending = request(base, token);
+      await waitForRuntimeLock("FROM app.login_session");
+      await waitForSessionExpiry(token);
+      await writer.query("COMMIT");
+      const problem = await assertProblem(await pending, 401);
+      expect(problem.code).toBe("session_expired");
+    } finally {
+      await writer.query("ROLLBACK");
+      writer.release();
+      await pending;
+    }
+  });
+
+  it.each(["revoke", "switch"])("holds session %s until a valid in-flight read commits", async (change) => {
+    const token = (await createSyntheticSession(runtime, fixtures.ownerUser, fixtures.orgA)).token;
+    const session = await readSession(runtime, token);
+    const writer = await admin.connect();
+    const additionalFeed = change === "switch" ? randomUUID() : null;
+    let pending: Promise<Response> | undefined;
+    let revoked: Promise<void> | undefined;
+    try {
+      await writer.query("BEGIN");
+      await writer.query("SELECT id FROM app.listing WHERE id=$1 FOR UPDATE", [
+        nativeId("SYNTHETIC-VEGAS-001"),
+      ]);
+      pending = request(base, token);
+      await waitForRuntimeLock("FROM app.listing l");
+      revoked =
+        change === "revoke"
+          ? revokeSession(runtime, session)
+          : switchOrganization(runtime, session, fixtures.orgB);
+      await waitForRuntimeLock(`${change === "revoke" ? "DELETE FROM" : "UPDATE"} app.login_session`);
+      await writer.query("COMMIT");
+      const response = await pending;
+      expect(response.status).toBe(200);
+      assertContract("PageListing", await response.json());
+      await revoked;
+      const problem = await assertProblem(await request(base, token), change === "revoke" ? 401 : 403);
+      expect(problem.code).toBe(change === "revoke" ? "session_expired" : "active_organization_mismatch");
+      if (change === "switch") {
+        // Registered seeds can have other legitimate B feeds. Reproduce that without changing shared seeds.
+        await admin.query(
+          `INSERT INTO app.mls_feed SELECT (jsonb_populate_record(NULL::app.mls_feed,
+          to_jsonb(f) || jsonb_build_object('id',$1::uuid))).* FROM app.mls_feed f WHERE tenant_id=$2 AND id=$3`,
+          [additionalFeed, fixtures.orgB, feedB],
+        );
+        await admin.query(
+          `INSERT INTO app.listing SELECT (jsonb_populate_record(NULL::app.listing,
+          to_jsonb(l) || jsonb_build_object('id',$1::uuid,'feed_id',$2::uuid))).* FROM app.listing l WHERE tenant_id=$3 AND id=$4`,
+          [randomUUID(), additionalFeed, fixtures.orgB, nativeId("SYNTHETIC-VEGAS-001", feedB)],
+        );
+        const current = await request(`/dev/orgs/${fixtures.orgB}/mls/listings`, token);
+        expect(current.status).toBe(200);
+        const page: PageListing = await current.json();
+        assertContract("PageListing", page);
+        expect(page.items.some((item) => item.feedId === feedB)).toBe(true);
+        expect(page.items.some((item) => item.feedId === additionalFeed)).toBe(true);
+        const stored = await admin.query<{ id: string; feed_id: string; tenant_id: string }>(
+          "SELECT id,feed_id,tenant_id FROM app.listing WHERE id=ANY($1::uuid[])",
+          [page.items.map((item) => item.id)],
+        );
+        expect(stored.rows).toHaveLength(page.items.length);
+        expect(new Set(stored.rows.map((row) => row.tenant_id))).toEqual(new Set([fixtures.orgB]));
+        for (const item of page.items)
+          expect(stored.rows.find((row) => row.id === item.id)?.feed_id).toBe(item.feedId);
+      }
+      expect((await runtime.query("SELECT token_hash FROM app.login_session")).rowCount).toBe(0);
+    } finally {
+      await writer.query("ROLLBACK");
+      writer.release();
+      await pending;
+      await revoked;
+      if (additionalFeed) {
+        await admin.query("DELETE FROM app.listing WHERE tenant_id=$1 AND feed_id=$2", [
+          fixtures.orgB,
+          additionalFeed,
+        ]);
+        await admin.query("DELETE FROM app.mls_feed WHERE tenant_id=$1 AND id=$2", [
+          fixtures.orgB,
+          additionalFeed,
+        ]);
+      }
+    }
   });
 
   it("denies tenant substitution, non-MLS members, forwarded remote clients and disabled capability", async () => {

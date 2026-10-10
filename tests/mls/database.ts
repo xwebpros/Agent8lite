@@ -4,7 +4,7 @@ import pg from "pg";
 import { fixtures } from "../../packages/db/fixtures";
 import { MOCK_CLOCK, MockMlsAdapter } from "../../packages/providers/mls/mock";
 import type { CanonicalListing } from "../../packages/providers/mls/port";
-import { displayPolicy, nativeRights } from "./fixtures";
+import { displayPolicy, nativeRights, syntheticAttributionContacts } from "./fixtures";
 
 function isolatedUrl(name: "TEST_MIGRATION_DATABASE_URL" | "TEST_DATABASE_URL") {
   const value = process.env[name];
@@ -60,7 +60,21 @@ export async function prepareDatabase() {
     { organizationId: fixtures.orgA, feedId: feedA, policyVersion: "synthetic-v1" },
     { cursor: null, watermark: null, overlapSeconds: 0, limit: 100 },
   );
-  canonical = changes.changes.flatMap((change) => (change.listing ? [change.listing] : []));
+  canonical = changes.changes.flatMap((change, index) =>
+    change.listing
+      ? [
+          {
+            ...change.listing,
+            attribution: {
+              ...change.listing.attribution,
+              ...(syntheticAttributionContacts[index]
+                ? { contact: structuredClone(syntheticAttributionContacts[index]) }
+                : {}),
+            },
+          },
+        ]
+      : [],
+  );
   await resetDatabase();
 }
 

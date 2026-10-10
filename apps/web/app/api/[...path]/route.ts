@@ -183,6 +183,21 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     }
     for (const cookie of response.headers.getSetCookie()) returned.append("set-cookie", cookie);
     if (
+      staffRoute &&
+      ["development", "test"].includes(process.env.APP_ENV || "") &&
+      process.env.DEV_AUTH_ENABLED === "true" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(authority.hostname) &&
+      response.ok
+    )
+      for (const name of [
+        "x-synthetic-support-state",
+        "x-synthetic-support-grant-id",
+        "x-synthetic-support-grant-etag",
+      ]) {
+        const value = response.headers.get(name);
+        if (value) returned.set(name, value);
+      }
+    if (
       request.method === "GET" &&
       path.length === 2 &&
       path[0] === "v1" &&

@@ -514,4 +514,46 @@ describe("web BFF private transport boundary — actual NextRequest handlers, no
       expect(response.headers.get("x-synthetic-identity")).toBe(expected);
     }
   });
+
+  it("keeps support metadata in successful explicitly enabled local staff responses", async () => {
+    const metadata = {
+      "x-synthetic-support-state": "active",
+      "x-synthetic-support-grant-id": randomUUID(),
+      "x-synthetic-support-grant-etag": '"2"',
+    };
+    for (const [path, mode, enabled, base, upstreamStatus, allowed] of [
+      [["dev", "staff", "session"], "test", "true", origin, 200, true],
+      [["dev", "staff", "support", "select"], "development", "true", origin, 200, true],
+      [
+        ["dev", "staff", "support", "organizations", org, "crm", "contacts"],
+        "test",
+        "true",
+        origin,
+        200,
+        true,
+      ],
+      [["v1", "platform", "organizations", org, "access-grants"], "test", "true", origin, 202, true],
+      [contactPath, "test", "true", origin, 200, false],
+      [["v1", "session"], "test", "true", origin, 200, false],
+      [["v1", "platform", "organizations"], "production", "true", origin, 200, false],
+      [["v1", "platform", "organizations"], "test", "false", origin, 200, false],
+      [["v1", "platform", "organizations"], "test", "true", "https://public.example", 200, false],
+      [["dev", "staff", "session"], "test", "true", origin, 403, false],
+    ] as const) {
+      vi.stubEnv("APP_ENV", mode);
+      vi.stubEnv("DEV_AUTH_ENABLED", enabled);
+      network.mockReset();
+      network.mockResolvedValueOnce(
+        Response.json(
+          { synthetic: true },
+          { status: upstreamStatus, headers: { ...metadata, etag: '"job-revision"' } },
+        ),
+      );
+      const response = await invoke(request("GET", null, {}, base), [...path]);
+      privateResponse(response, upstreamStatus);
+      for (const [name, value] of Object.entries(metadata))
+        expect(response.headers.get(name)).toBe(allowed ? value : null);
+      expect(response.headers.get("etag")).toBe('"job-revision"');
+    }
+  });
 });

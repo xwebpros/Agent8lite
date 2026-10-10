@@ -5,8 +5,10 @@ import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { FormEvent } from "react";
-import { browserDocumentVersion, requireBrowserShape } from "../../../packages/cms/browser";
+import { browserDocumentVersion, copyBrowserJson, requireBrowserShape } from "../../../packages/cms/browser";
+import { requireRevisionRecovery } from "../../../packages/cms/recovery";
 import contract from "../../../packages/contracts/openapi.json";
+import revisionHistorySchema from "../../../packages/contracts/internal/native-cms-revision-history-v1.schema.json";
 import { Badge, Button, Empty } from "../../../packages/ui/components";
 import { CmsDraftController } from "../features/cms/draft-controller";
 import type { CmsDraftClient } from "../features/cms/draft-controller";
@@ -30,6 +32,16 @@ type CreateAttempt = { context: string; key: string } & (
   | { kind: "document"; siteId: string; body: Schema<"DocumentWrite"> }
 );
 const emptyHistory: Schema<"PageRevision"> = { items: [], nextCursor: null, hasMore: false };
+export type CmsRevisionMetadata = Pick<
+  Schema<"Revision">,
+  "id" | "documentId" | "schemaVersion" | "createdAt"
+>;
+export type CmsRevisionHistory = Pick<Schema<"PageRevision">, "hasMore" | "nextCursor"> & {
+  items: CmsRevisionMetadata[];
+};
+const emptyRevisionIndex: CmsRevisionHistory = { items: [], nextCursor: null, hasMore: false };
+const historyByteLimit = 64 * 1024;
+const recoveryByteLimit = 1024 * 1024;
 const emptyFlags = { sites: false, templates: false, profiles: false };
 const emptyMessages = { sites: "", templates: "", profiles: "" };
 const emptyCursors = { sites: null, templates: null, profiles: null } as Record<Collection, string | null>;
@@ -54,6 +66,314 @@ const pageValidators = new Map(
     (name) => [name, ajv.compile({ $ref: `estate:cms-workspace#/components/schemas/${name}` })],
   ),
 );
+const historyValidator = ajv.compile(revisionHistorySchema);
+const problemCodeValidator = ajv.compile(contract.components.schemas.Problem.properties.code);
+
+/** The approved metadata index is separate from the frozen content-bearing PageRevision. */
+export function requireCmsRevisionHistory(value: unknown, documentId: string): CmsRevisionHistory {
+  const detached = copyBrowserJson(value);
+  if (
+    new TextEncoder().encode(JSON.stringify(detached)).byteLength > historyByteLimit ||
+    !historyValidator(detached)
+  )
+    throw new Error(
+      "The revision index exceeds its limits or could not be verified. No metadata was changed.",
+    );
+  const response = detached as CmsRevisionHistory;
+  const ids = new Set<string>();
+  for (const item of response.items) {
+    const identity = item.id.toLowerCase();
+    if (item.documentId !== documentId || ids.has(identity))
+      throw new Error("The revision index contains a mismatched document or repeated revision identity.");
+    ids.add(identity);
+  }
+  return response;
+}
+
+/** Immutable revision IDs may repeat across pages; their metadata must not change. */
+export function mergeCmsRevisionMetadata(
+  previous: CmsRevisionMetadata[],
+  next: CmsRevisionMetadata[],
+): CmsRevisionMetadata[] {
+  const byId = new Map(previous.map((item) => [item.id.toLowerCase(), item]));
+  for (const item of next) {
+    const identity = item.id.toLowerCase();
+    const old = byId.get(identity);
+    if (
+      old &&
+      (old.id !== item.id ||
+        old.documentId !== item.documentId ||
+        old.schemaVersion !== item.schemaVersion ||
+        old.createdAt !== item.createdAt)
+    )
+      throw new Error("An immutable revision's metadata changed. Refresh the index before continuing.");
+    if (!old) byId.set(identity, item);
+  }
+  return [...byId.values()];
+}
+
+/** Bound the actual UTF-8 transport before parsing, including whitespace and malformed UTF-8. */
+async function readBoundedCmsJsonResponse(
+  response: Response,
+  maxBytes: number,
+  label: string,
+  limitDescription: string,
+): Promise<unknown> {
+  // Problem responses contain no original content and need no larger recovery allowance.
+  const byteLimit = response.ok ? maxBytes : Math.min(maxBytes, historyByteLimit);
+  const reader = response.body?.getReader();
+  if (!reader) {
+    if (!response.ok) throw new ApiError(response.status, `The ${label} could not be read.`);
+    throw new Error(`The ${label} response is unavailable.`);
+  }
+  let bytes = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) break;
+      bytes += result.value.byteLength;
+      if (bytes > byteLimit) {
+        await reader.cancel();
+        throw new Error(`The ${label} exceeds its ${limitDescription} transport limit.`);
+      }
+      chunks.push(result.value);
+    }
+  } catch (failure) {
+    if (!response.ok) throw new ApiError(response.status, `The ${label} could not be read.`);
+    throw failure;
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+  } catch {
+    if (!response.ok) throw new ApiError(response.status, `The ${label} could not be read.`);
+    throw new Error(`The ${label} is not valid UTF-8 JSON.`);
+  }
+  if (!response.ok) {
+    const code =
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.hasOwn(value, "code") &&
+      "code" in value &&
+      typeof value.code === "string" &&
+      problemCodeValidator(value.code)
+        ? value.code
+        : undefined;
+    throw new ApiError(response.status, `The ${label} could not be read. Verify access or try again.`, code);
+  }
+  return value;
+}
+
+export async function readCmsRevisionHistoryResponse(
+  response: Response,
+  documentId: string,
+): Promise<CmsRevisionHistory> {
+  return requireCmsRevisionHistory(
+    await readBoundedCmsJsonResponse(response, historyByteLimit, "revision index", "64 KiB"),
+    documentId,
+  );
+}
+
+/** Recovery preserves original JSON only after both transport bounds and the shared closed reader pass. */
+export async function readCmsRevisionRecoveryResponse(
+  response: Response,
+  metadata: CmsRevisionMetadata,
+): Promise<ReturnType<typeof requireRevisionRecovery>> {
+  const value = requireRevisionRecovery(
+    await readBoundedCmsJsonResponse(response, recoveryByteLimit, "original recovery", "1 MiB"),
+  );
+  if (
+    value.id !== metadata.id ||
+    value.documentId !== metadata.documentId ||
+    value.data.schemaVersion !== metadata.schemaVersion
+  )
+    throw new Error("Original recovery does not match the explicitly selected revision metadata.");
+  return value;
+}
+
+/** Metadata does not turn future content into an editable Revision or bypass the controller's draft lock. */
+export function applyCmsRevisionResponse(
+  controller: CmsDraftController,
+  metadata: CmsRevisionMetadata,
+  value: unknown,
+  recovery: boolean,
+): void {
+  if (!controller.getSnapshot().online || controller.getSnapshot().phase === "denied")
+    throw new Error("Connect and verify the original document context before reading its revision.");
+  if (metadata.documentId !== controller.getSnapshot().document.id)
+    throw new Error("Revision metadata does not match the selected document.");
+  if (recovery) {
+    const response = requireRevisionRecovery(value);
+    if (
+      response.id !== metadata.id ||
+      response.documentId !== metadata.documentId ||
+      response.data.schemaVersion !== metadata.schemaVersion
+    )
+      throw new Error("Original recovery does not match the explicitly selected revision metadata.");
+    if (!controller.openRecoveryResponse(metadata.id, response))
+      throw new Error("The editor is protected. Original recovery did not replace its current work.");
+    return;
+  }
+  const revision = requireBrowserShape<Schema<"Revision">>("Revision", value as Schema<"Revision">);
+  if (
+    revision.id !== metadata.id ||
+    revision.documentId !== metadata.documentId ||
+    revision.schemaVersion !== metadata.schemaVersion
+  )
+    throw new Error("Content does not match the explicitly selected revision metadata.");
+  if (!controller.selectRevision(revision))
+    throw new Error("The editor is protected. The revision did not replace its current work.");
+}
+
+/** Superseded success and failure both belong to the old request, including definite access denials. */
+export async function readCmsSelectedRevision(options: {
+  controller: CmsDraftController;
+  metadata: CmsRevisionMetadata;
+  recovery: boolean;
+  read(): Promise<unknown>;
+  isCurrent(): boolean;
+}): Promise<"loaded" | "recovery_required" | "superseded"> {
+  if (!options.isCurrent()) return "superseded";
+  try {
+    const value = await options.read();
+    if (!options.isCurrent()) return "superseded";
+    applyCmsRevisionResponse(options.controller, options.metadata, value, options.recovery);
+    return "loaded";
+  } catch (failure) {
+    if (!options.isCurrent()) return "superseded";
+    if (
+      !options.recovery &&
+      failure instanceof ApiError &&
+      failure.status === 409 &&
+      failure.code === "revision_recovery_required"
+    )
+      return "recovery_required";
+    throw failure;
+  }
+}
+
+type RevisionHistoryControlsProps = {
+  history: CmsRevisionHistory;
+  loaded: boolean;
+  online: boolean;
+  locked: boolean;
+  loading: boolean;
+  reading: boolean;
+  selectedId: string;
+  recoveryRequired: boolean;
+  error: string;
+  onSelect(id: string): void;
+  onRead(): void;
+  onRecover(): void;
+  onRefresh(): void;
+  onMore(cursor: string): void;
+};
+/** Metadata alone never authorizes editing, selects the newest revision, or exposes original JSON. */
+export function CmsRevisionHistoryControls({
+  history,
+  loaded,
+  online,
+  locked,
+  loading,
+  reading,
+  selectedId,
+  recoveryRequired,
+  error,
+  onSelect,
+  onRead,
+  onRecover,
+  onRefresh,
+  onMore,
+}: RevisionHistoryControlsProps) {
+  const disabled = !online || locked || reading;
+  const items = online ? history.items : [];
+  const selected = items.find((item) => item.id === selectedId);
+  return (
+    <section aria-label="Authorized revision index" className={styles.revisionIndex}>
+      <div className={styles.heading}>
+        <p>
+          <FileText size={18} aria-hidden="true" /> Explicit revision history
+        </p>
+        <Button variant="secondary" disabled={!online || loading || reading} onClick={onRefresh}>
+          Refresh history
+        </Button>
+      </div>
+      <p className={styles.help}>
+        This index includes supported and unsupported revisions. Its ID order does not identify the latest
+        draft. Choose an exact revision, then read its content explicitly.
+      </p>
+      {!online ? (
+        <p role="status">
+          Revision metadata and original recovery JSON are cleared while offline. Reconnect and refresh
+          history before selecting a revision.
+        </p>
+      ) : (
+        <>
+          {error && (
+            <p className={styles.error} role="alert">
+              {error}
+            </p>
+          )}
+          {loading && <p role="status">Reading authorized revision metadata…</p>}
+          {loaded && !items.length && <p>No revisions are present in this index read.</p>}
+          <label>
+            Revision from the authorized index
+            <select
+              value={selected?.id ?? ""}
+              disabled={disabled || loading || !items.length}
+              onChange={(event) => onSelect(event.target.value)}
+            >
+              <option value="">Choose an explicit revision</option>
+              {items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  Schema {item.schemaVersion} · {item.createdAt} · {item.id}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className={styles.actions}>
+            <Button variant="secondary" disabled={disabled || !selected} onClick={onRead}>
+              Read selected revision
+            </Button>
+            {history.hasMore && history.nextCursor && (
+              <Button
+                variant="secondary"
+                disabled={loading || reading}
+                onClick={() => onMore(history.nextCursor!)}
+              >
+                Load more revision metadata
+              </Button>
+            )}
+          </div>
+          {reading && <p role="status">Reading the explicitly selected revision…</p>}
+          {recoveryRequired && selected && (
+            <div className={styles.warning}>
+              <div>
+                <p>
+                  This revision cannot be read by the supported editor. Its original JSON is available only
+                  through a separate authorized, read-only recovery read. Recovery cannot save or publish.
+                </p>
+                <Button variant="secondary" disabled={disabled} onClick={onRecover}>
+                  Read original JSON in recovery
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 function page<T>(
   name: PageName,
   value: { items: T[]; nextCursor: string | null; hasMore: boolean },
@@ -112,9 +432,15 @@ export default function CmsWorkspace({
   const [documentError, setDocumentError] = useState("");
   const [editorLoading, setEditorLoading] = useState(false);
   const [controller, setController] = useState<CmsDraftController | null>(null);
-  const [history, setHistory] = useState(emptyHistory);
+  const [history, setHistory] = useState(emptyRevisionIndex);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+  const [selectedRevisionId, setSelectedRevisionId] = useState("");
+  const [recoveryRevisionId, setRecoveryRevisionId] = useState("");
+  const [revisionLoading, setRevisionLoading] = useState(false);
+  const [historyBinding, setHistoryBinding] = useState("");
+  const [contentReadCsrf, setContentReadCsrf] = useState("");
   const [form, setForm] = useState<"site" | "document" | null>(null);
   const [siteName, setSiteName] = useState("");
   const [profileId, setProfileId] = useState("");
@@ -131,10 +457,19 @@ export default function CmsWorkspace({
   const [notice, setNotice] = useState("");
   const [editorBinding, setEditorBinding] = useState("");
   const lifetime = useRef(0);
-  const epochs = useRef({ sites: 0, templates: 0, profiles: 0, documents: 0, editor: 0, history: 0 });
+  const epochs = useRef({
+    sites: 0,
+    templates: 0,
+    profiles: 0,
+    documents: 0,
+    editor: 0,
+    history: 0,
+    revision: 0,
+  });
   const controllerRef = useRef<CmsDraftController | null>(null);
   const createSnapshot = useRef<CreateAttempt | null>(null);
   const inFlight = useRef(false);
+  const revisionInFlight = useRef(false);
   const formDirtyRef = useRef(false);
   const callbacks = useRef({ onDirty, onAccessRevoked });
   callbacks.current = { onDirty, onAccessRevoked };
@@ -150,6 +485,7 @@ export default function CmsWorkspace({
       formDirtyRef.current ||
       Boolean(createSnapshot.current) ||
       inFlight.current ||
+      revisionInFlight.current ||
       Boolean(
         controllerRef.current &&
           (controllerRef.current.getSnapshot().dirty ||
@@ -162,11 +498,14 @@ export default function CmsWorkspace({
     formDirty ||
     Boolean(attempt) ||
     working ||
+    revisionLoading ||
     Boolean(state?.dirty) ||
     ["saving", "uncertain"].includes(state?.phase ?? "");
   const currentData = dataContext === context && available;
   const currentController =
     currentData && editorBinding === `${context}:${siteId}:${documentId}` ? controller : null;
+  const metadataBinding = `${context}:${siteId}:${documentId}:${csrf}`;
+  const currentHistory = online && historyBinding === metadataBinding ? history : emptyRevisionIndex;
 
   const clearPrivate = useCallback(() => {
     ++lifetime.current;
@@ -177,6 +516,7 @@ export default function CmsWorkspace({
     createSnapshot.current = null;
     formDirtyRef.current = false;
     inFlight.current = false;
+    revisionInFlight.current = false;
     setController(null);
     setEditorBinding("");
     setSites([]);
@@ -194,9 +534,15 @@ export default function CmsWorkspace({
     setDocumentsLoading(false);
     setDocumentError("");
     setEditorLoading(false);
-    setHistory(emptyHistory);
+    setHistory(emptyRevisionIndex);
+    setHistoryLoaded(false);
     setHistoryLoading(false);
     setHistoryError("");
+    setSelectedRevisionId("");
+    setRecoveryRevisionId("");
+    setRevisionLoading(false);
+    setHistoryBinding("");
+    setContentReadCsrf("");
     setForm(null);
     setSiteName("");
     setProfileId("");
@@ -236,6 +582,43 @@ export default function CmsWorkspace({
     if (!controller) return;
     controller.setOnline(online);
   }, [controller, online]);
+  useEffect(() => {
+    if (online) return;
+    ++epochs.current.history;
+    ++epochs.current.revision;
+    revisionInFlight.current = false;
+    setHistory(emptyRevisionIndex);
+    setHistoryLoaded(false);
+    setHistoryLoading(false);
+    setHistoryError("");
+    setSelectedRevisionId("");
+    setRecoveryRevisionId("");
+    setRevisionLoading(false);
+    setHistoryBinding("");
+    reportDirty();
+  }, [online, reportDirty]);
+  const previousCsrf = useRef(csrf);
+  useEffect(() => {
+    if (previousCsrf.current === csrf) return;
+    previousCsrf.current = csrf;
+    ++epochs.current.history;
+    ++epochs.current.revision;
+    revisionInFlight.current = false;
+    setHistory(emptyRevisionIndex);
+    setHistoryBinding("");
+    setHistoryLoaded(false);
+    setHistoryLoading(false);
+    setHistoryError("");
+    setSelectedRevisionId("");
+    setRecoveryRevisionId("");
+    setRevisionLoading(false);
+    // Re-verification clears read-only recovery, without replacing a draft or uncertain save command.
+    if (controllerRef.current?.getSnapshot().recovery) {
+      controllerRef.current.setOnline(false);
+      controllerRef.current.setOnline(live.current.online);
+    }
+    reportDirty();
+  }, [csrf, reportDirty]);
   useEffect(() => {
     if (!controller) return;
     const unsubscribe = controller.subscribe(() => {
@@ -395,53 +778,63 @@ export default function CmsWorkspace({
         !live.current.available ||
         !live.current.online ||
         live.current.context !== context ||
-        live.current.documentId !== selectedDocument
+        live.current.documentId !== selectedDocument ||
+        !canReadContent
       )
         return;
       const epoch = ++epochs.current.history;
+      const generation = lifetime.current;
+      const currentCsrf = live.current.csrf;
+      const selectedSite = live.current.siteId;
       setHistoryLoading(true);
       setHistoryError("");
       try {
         const query = new URLSearchParams({ limit: "25", ...(cursor ? { cursor } : {}) });
-        const response = page(
-          "PageRevision",
-          (await api<Schema<"PageRevision">>(`${base}/documents/${selectedDocument}/revisions?${query}`))
-            .data,
-          (item) => {
-            const revision = requireBrowserShape("Revision", item);
-            if (revision.documentId !== selectedDocument)
-              throw new Error("Revision history belongs to a different document.");
-            return revision;
-          },
+        const response = await readCmsRevisionHistoryResponse(
+          await fetch(
+            `/api/dev/orgs/${session.activeOrgId}/cms/documents/${selectedDocument}/revision-history?${query}`,
+            {
+              credentials: "same-origin",
+              cache: "no-store",
+            },
+          ),
+          selectedDocument,
         );
         if (
           live.current.context !== context ||
           live.current.documentId !== selectedDocument ||
+          live.current.siteId !== selectedSite ||
+          live.current.csrf !== currentCsrf ||
+          lifetime.current !== generation ||
           epochs.current.history !== epoch ||
-          !live.current.available
+          !live.current.available ||
+          !live.current.online
         )
           return;
-        setHistory((old) => ({
+        // Verify the immutable merge before committing any new page or cursor.
+        const items = cursor ? mergeCmsRevisionMetadata(history.items, response.items) : response.items;
+        setHistory({
           ...response,
-          items: cursor ? merge(old.items, response.items, (item) => item.id) : response.items,
-        }));
+          items,
+        });
+        setHistoryBinding(`${context}:${selectedSite}:${selectedDocument}:${currentCsrf}`);
+        setHistoryLoaded(true);
       } catch (failure) {
         if (
           live.current.context === context &&
           live.current.documentId === selectedDocument &&
+          live.current.csrf === currentCsrf &&
+          lifetime.current === generation &&
+          live.current.online &&
           epochs.current.history === epoch
         ) {
-          setHistoryError(
-            failure instanceof ApiError && failure.code === "revision_recovery_required"
-              ? "Stored content requires an authorized recovery reader, which is unavailable. Existing history and draft fields are retained; no revision was dropped or truncated."
-              : fail(failure),
-          );
+          setHistoryError(fail(failure));
         }
       } finally {
         if (live.current.context === context && epochs.current.history === epoch) setHistoryLoading(false);
       }
     },
-    [context, base, fail],
+    [context, session.activeOrgId, canReadContent, history.items, fail],
   );
 
   function chooseSite(value: string) {
@@ -462,7 +855,13 @@ export default function CmsWorkspace({
     setDocumentsLoaded(false);
     setDocumentCursor(null);
     setDocumentError("");
-    setHistory(emptyHistory);
+    setHistory(emptyRevisionIndex);
+    setHistoryLoaded(false);
+    setHistoryBinding("");
+    setSelectedRevisionId("");
+    setRecoveryRevisionId("");
+    setContentReadCsrf("");
+    ++epochs.current.revision;
     setHistoryError("");
     setHistoryLoading(false);
     setEditorLoading(false);
@@ -477,7 +876,13 @@ export default function CmsWorkspace({
     setEditorBinding("");
     live.current.documentId = value;
     setDocumentId(value);
-    setHistory(emptyHistory);
+    setHistory(emptyRevisionIndex);
+    setHistoryLoaded(false);
+    setHistoryBinding("");
+    setSelectedRevisionId("");
+    setRecoveryRevisionId("");
+    setContentReadCsrf("");
+    ++epochs.current.revision;
     setHistoryError("");
     ++epochs.current.history;
     const epoch = ++epochs.current.editor,
@@ -561,6 +966,83 @@ export default function CmsWorkspace({
         setError(fail(failure));
     } finally {
       if (live.current.context === context && epochs.current.editor === epoch) setEditorLoading(false);
+    }
+  }
+  function chooseRevision(value: string) {
+    if (isProtected() || !live.current.online || !live.current.available) return;
+    if (value && !currentHistory.items.some((item) => item.id === value)) return;
+    setSelectedRevisionId(value);
+    setRecoveryRevisionId("");
+    setHistoryError("");
+  }
+  async function readRevision(recovery = false) {
+    const activeController = controllerRef.current;
+    const metadata = currentHistory.items.find((item) => item.id === selectedRevisionId);
+    if (
+      !activeController ||
+      activeController !== currentController ||
+      !metadata ||
+      isProtected() ||
+      !live.current.available ||
+      !live.current.online ||
+      !canReadContent ||
+      (recovery && recoveryRevisionId !== metadata.id)
+    )
+      return;
+    const selectedDocument = live.current.documentId;
+    const selectedSite = live.current.siteId;
+    const currentCsrf = live.current.csrf;
+    const generation = lifetime.current;
+    const epoch = ++epochs.current.revision;
+    const stillCurrent = () =>
+      live.current.available &&
+      live.current.online &&
+      live.current.context === context &&
+      live.current.documentId === selectedDocument &&
+      live.current.siteId === selectedSite &&
+      live.current.csrf === currentCsrf &&
+      lifetime.current === generation &&
+      epochs.current.revision === epoch &&
+      controllerRef.current === activeController;
+    revisionInFlight.current = true;
+    setRevisionLoading(true);
+    setHistoryError("");
+    reportDirty();
+    try {
+      const outcome = await readCmsSelectedRevision({
+        controller: activeController,
+        metadata,
+        recovery,
+        read: async () => {
+          if (!recovery) return (await api<Schema<"Revision">>(`${base}/revisions/${metadata.id}`)).data;
+          return readCmsRevisionRecoveryResponse(
+            await fetch(
+              `/api/dev/orgs/${session.activeOrgId}/cms/documents/${selectedDocument}/revisions/${metadata.id}/recovery`,
+              { credentials: "same-origin", cache: "no-store" },
+            ),
+            metadata,
+          );
+        },
+        isCurrent: stillCurrent,
+      });
+      if (outcome === "superseded") return;
+      if (outcome === "recovery_required") {
+        setRecoveryRevisionId(metadata.id);
+        setHistoryError(
+          "This exact revision requires read-only recovery. No draft was replaced or content discarded.",
+        );
+      } else {
+        if (!recovery) setRecoveryRevisionId("");
+        setContentReadCsrf(currentCsrf);
+      }
+    } catch (failure) {
+      if (stillCurrent()) setHistoryError(fail(failure));
+    } finally {
+      if (epochs.current.revision === epoch && lifetime.current === generation) {
+        revisionInFlight.current = false;
+        setRevisionLoading(false);
+        reportDirty();
+      }
     }
   }
   function changeForm(change: () => void) {
@@ -1094,37 +1576,38 @@ export default function CmsWorkspace({
       {editorLoading && <p role="status">Reading the selected document and its exact version…</p>}
       {currentController && (
         <section className={styles.card}>
-          <div className={styles.heading}>
-            <p>
-              <FileText size={18} aria-hidden="true" /> Explicit revision history
-            </p>
-            <Button
-              variant="secondary"
-              disabled={!online || historyLoading || working}
-              onClick={() => void loadHistory(documentId)}
-            >
-              Refresh history
-            </Button>
-          </div>
-          {historyError && (
-            <p className={styles.error} role="alert">
-              {historyError}
-            </p>
-          )}
-          <CmsDraftEditor
-            controller={currentController}
-            history={history}
-            historyLoading={historyLoading}
-            historyError={historyError}
-            onLoadMore={(cursor) => {
-              if (!online)
-                setHistoryError(
-                  "Connect before reading additional history. Existing revisions stay only in this tab.",
-                );
-              else void loadHistory(documentId, cursor);
-            }}
-            onDirty={reportDirty}
+          <CmsRevisionHistoryControls
+            history={currentHistory}
+            loaded={historyLoaded && historyBinding === metadataBinding}
+            online={online}
+            locked={protectedState}
+            loading={historyLoading}
+            reading={revisionLoading}
+            selectedId={selectedRevisionId}
+            recoveryRequired={recoveryRevisionId === selectedRevisionId}
+            error={historyError}
+            onSelect={chooseRevision}
+            onRead={() => void readRevision()}
+            onRecover={() => void readRevision(true)}
+            onRefresh={() => void loadHistory(documentId)}
+            onMore={(cursor) => void loadHistory(documentId, cursor)}
           />
+          {!online && state?.recovery ? (
+            <p role="status">Original recovery JSON is unavailable offline.</p>
+          ) : state?.recovery && contentReadCsrf !== csrf ? (
+            <p role="status">Recovery access changed. Refresh history and read the original again.</p>
+          ) : (
+            <fieldset disabled={revisionLoading} aria-busy={revisionLoading}>
+              <CmsDraftEditor
+                controller={currentController}
+                history={emptyHistory}
+                historyLoading={false}
+                historyError=""
+                onLoadMore={() => {}}
+                onDirty={reportDirty}
+              />
+            </fieldset>
+          )}
         </section>
       )}
       {!currentController && !editorLoading && (

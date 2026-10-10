@@ -9,6 +9,8 @@ import {
   templateThemeVersion,
 } from "../../../../packages/cms";
 import type { CmsProfileReferencePort } from "../../../../packages/cms/ports";
+import { revisionRecovery } from "../../../../packages/cms/recovery";
+import { requireRevisionHistory } from "../../../../packages/cms/history";
 import type { components } from "../../../../packages/contracts/generated/api";
 import { requireEntitlement } from "../../../../packages/auth/entitlements";
 import {
@@ -219,10 +221,10 @@ export class CmsService {
     return body;
   }
 
-  private page(query: Query, resource: string) {
+  private page(query: Query, resource: string, defaultLimit = 25) {
     if (Object.keys(query).some((key) => !["cursor", "limit"].includes(key)))
       throw new AccessError(422, "query_invalid", "Unsupported pagination query.");
-    const limit = query.limit === undefined ? 25 : Number(query.limit);
+    const limit = query.limit === undefined ? defaultLimit : Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new AccessError(422, "limit_invalid", "Limit must be between 1 and 100.");
     const binding = cursorBinding(this.context, resource, "organization", {});
@@ -399,23 +401,51 @@ export class CmsService {
     await this.authorize("content.read");
     return revisionModel(row);
   }
-
-  /** Explicit authorized recovery helper; future block kinds cannot fit the frozen Revision envelope. */
-  async getRevisionRecovery(id: string) {
+  async listRevisionHistory(documentId: string, query: Query = {}) {
     await this.authorize("content.read");
-    assertUuid(id);
-    const row = await this.repository.revision(id);
-    if (!row) unavailable();
-    await this.document(row.document_id, false);
-    await this.authorize("content.read");
-    return {
+    await this.document(documentId, false);
+    if (
+      query.limit !== undefined &&
+      ((typeof query.limit !== "number" && typeof query.limit !== "string") ||
+        (typeof query.limit === "string" && !/^[1-9][0-9]{0,2}$/.test(query.limit)))
+    )
+      throw new AccessError(422, "limit_invalid", "Limit must be an integer between 1 and 100.");
+    const page = this.page(query, `cms:revision-history:${documentId}`, 50);
+    const rows = await this.repository.listRevisionMetadata(documentId, page.after, page.limit + 1);
+    const items = rows.slice(0, page.limit).map((row) => ({
       id: row.id,
       documentId: row.document_id,
-      ...recoverDraft(
-        { schemaVersion: row.schema_version, blocks: row.block_data, seo: row.seo },
-        this.dependencies.trustedLinkPolicy,
-      ),
-    };
+      schemaVersion: row.schema_version,
+      createdAt: row.created_at.toISOString(),
+    }));
+    const hasMore = rows.length > page.limit;
+    const body = requireRevisionHistory(
+      {
+        items,
+        hasMore,
+        nextCursor: hasMore ? encodeCursor(items.at(-1)!.id, page.binding) : null,
+      },
+      documentId,
+    );
+    await this.authorize("content.read");
+    return body;
+  }
+
+  /** Explicit authorized recovery helper; future block kinds cannot fit the frozen Revision envelope. */
+  async getRevisionRecovery(documentId: string, id: string) {
+    await this.authorize("content.read");
+    assertUuid(id);
+    await this.document(documentId, false);
+    const row = await this.repository.revision(id);
+    if (!row || row.document_id !== documentId) unavailable();
+    await this.authorize("content.read");
+    const inspected = recoverDraft(
+      { schemaVersion: row.schema_version, blocks: row.block_data, seo: row.seo },
+      this.dependencies.trustedLinkPolicy,
+    );
+    const body = revisionRecovery(row.id, documentId, inspected.data, inspected.issues);
+    await this.authorize("content.read");
+    return body;
   }
 
   async listTemplates(query: Query = {}): Promise<Schemas["PageTemplate"]> {

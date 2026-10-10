@@ -8,7 +8,7 @@ addFormats(ajv);
 ajv.addSchema(schema);
 const eventValidator = ajv.compile(events);
 export function validateStaff(
-  name: "SessionRequest" | "SessionResponse" | "EmptyCommand",
+  name: "SessionRequest" | "SessionResponse" | "EmptyCommand" | "SupportSelection",
   value: unknown,
   response = false,
 ) {

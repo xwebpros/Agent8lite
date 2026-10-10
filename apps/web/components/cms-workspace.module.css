@@ -5,6 +5,11 @@
   color: var(--color-ink);
   font-size: 16px;
 }
+.revisionIndex {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
 .header,
 .heading {
   display: flex;

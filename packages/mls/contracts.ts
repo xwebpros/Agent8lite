@@ -7,6 +7,7 @@ export type Listing = components["schemas"]["Listing"];
 export type ListingCriteria = components["schemas"]["ListingCriteria"];
 export type DisplayPolicy = components["schemas"]["DisplayPolicy"];
 export type PageListing = components["schemas"]["PageListing"];
+export type AttributionContact = components["schemas"]["Attribution"]["contact"];
 export type ListingSort = NonNullable<
   NonNullable<operations["searchPublicListings"]["parameters"]["query"]>["sort"]
 >;
@@ -15,6 +16,9 @@ const ajv = new Ajv({ strict: false, allErrors: false });
 addFormats(ajv);
 ajv.addSchema({ $id: "mls-v1", components: contract.components });
 export const isListing = ajv.compile<Listing>({ $ref: "mls-v1#/components/schemas/Listing" });
+export const isAttributionContact = ajv.compile<AttributionContact>(
+  contract.components.schemas.Attribution.properties.contact,
+);
 export const isDisplayPolicy = ajv.compile<DisplayPolicy>({
   $ref: "mls-v1#/components/schemas/DisplayPolicy",
 });

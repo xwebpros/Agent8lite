@@ -11,3 +11,5 @@ This correction does not activate the feed or establish current full MLS rules, 
 Acceptance covers amendment-only contract drift, closed email/phone shape and invalid values, generated types, source and field-right denial, no inferred contact fallback, escaped prominent list/detail presentation, and continued tenant/policy/withdrawal/expiry separation. Source/static tests do not establish browser or device accessibility.
 
 The bounded phone pattern requires at least seven digits in the base number; extension digits cannot satisfy that minimum. This validation correction was verified against the exact amendment and generated types before consumer integration.
+
+Coordinator-reviewed native seed fixtures grant attribution.contact and supply a reserved fictional email/phone only when inserting new synthetic feeds/listings. Existing ON CONFLICT DO NOTHING behavior remains: reseeding never alters existing rights, withdrawal, original ingestion/expiry or prior contact. Older interactive fixtures can therefore omit contact; they do not imply permission or valid live IDX attribution. Synthetic projection requires both current native and display field rights.

@@ -1,4 +1,8 @@
-# Proposed local recovery read — awaiting coordinator review
+# Reviewed local recovery read
+
+Coordinator commit `3aaf9d6` approved `packages/contracts/internal/native-cms-recovery-v1.schema.json` and ADR-020. W05 adopted the exact schema and ADR at `6ee168c`, with only the CMS additions resolved into older shared checker/ADR-011 context. The owned service/adapter implements the approved document-bound reader and false write flags; root registration remains coordinator-owned. See service-integration-notes.md for limits, browser injection and acceptance evidence. The original proposal below is retained as its prior review record. Unknown-history metadata discovery still requires separate approval before consumers.
+
+## Original proposal
 
 The frozen Revision schema cannot represent future block kinds. Its existing get/list operations must retain `409 revision_recovery_required`; the editor must not widen that envelope, drop unknown blocks or infer the latest revision from UUID pagination.
 

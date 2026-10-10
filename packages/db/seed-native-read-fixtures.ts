@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { components } from "../contracts/generated/api";
 import { MOCK_CLOCK, MockMlsAdapter, mockPolicy } from "../providers/mls/mock";
-import type { MlsPolicy } from "../providers/mls/port";
+import type { MlsAttributionContact, MlsPolicy } from "../providers/mls/port";
 import { fixtures } from "./fixtures";
 
 const rights: MlsPolicy = {
@@ -15,6 +15,7 @@ const rights: MlsPolicy = {
     "attribution.brokerage",
     "attribution.agent",
     "attribution.disclaimer",
+    "attribution.contact",
   ],
 };
 const policy: components["schemas"]["DisplayPolicy"] = {
@@ -35,6 +36,10 @@ function stableId(value: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 export const syntheticFeedId = (tenant: string) => stableId(`native-synthetic-feed-v1:${tenant}`);
+const fixtureContacts: Readonly<Record<string, MlsAttributionContact>> = {
+  "SYNTHETIC-VEGAS-001": { kind: "email", value: "attribution@fictional-brokerage.example.invalid" },
+  "SYNTHETIC-VEGAS-002": { kind: "phone", value: "+1 702 555 0100" },
+};
 
 /** Called only inside the explicitly enabled loopback synthetic seed transaction. */
 export async function seedNativeReadFixtures(client: PoolClient) {
@@ -70,9 +75,14 @@ export async function seedNativeReadFixtures(client: PoolClient) {
       { cursor: null, watermark: null, overlapSeconds: 0, limit: 100 },
     );
     for (const change of changes.changes) {
-      const item = change.listing;
-      if (!item) continue;
-      if (!item.synthetic) throw new Error("Synthetic seed rejects non-synthetic listings.");
+      const source = change.listing;
+      if (!source) continue;
+      if (!source.synthetic) throw new Error("Synthetic seed rejects non-synthetic listings.");
+      const contact = fixtureContacts[source.sourceListingKey];
+      const item = {
+        ...source,
+        attribution: { ...source.attribution, ...(contact ? { contact: { ...contact } } : {}) },
+      };
       await client.query(
         `INSERT INTO app.listing(tenant_id,id,feed_id,source_listing_key,source_listing_id,source_status,status,list_price,currency,address,location,bedrooms,bathrooms,living_area_sqft,property_type,public_remarks,brokerage_attribution,display_allowed,address_display_allowed,synthetic,source_modified_at,content_hash,expires_at,ingested_at)
         VALUES($1,$2,$3,$4,$4,$5,$6,$7,'USD',$8,CASE WHEN $9::float8 IS NULL THEN NULL ELSE ST_SetSRID(ST_MakePoint($9,$10),4326)::geography END,$11,$12,$13,$14,$15,$16,$17,$18,true,$19,$20,$21,$22)ON CONFLICT DO NOTHING`,

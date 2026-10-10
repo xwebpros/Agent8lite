@@ -24,7 +24,7 @@ const result = await build({
       buildEnd() {
         for (const id of this.getModuleIds())
           assert(
-            !/\/packages\/(?:cms\/(?:index|drafts)\.ts|templates\/registry\.ts)$/.test(
+            !/\/packages\/(?:cms\/(?:index|drafts)\.ts$|templates\/registry\.ts$|providers\/mls\/trestle\/)/.test(
               id.replaceAll("\\", "/"),
             ),
             `Server module entered browser graph: ${id}`,
@@ -39,6 +39,7 @@ const result = await build({
       entry: {
         editor: "apps/web/features/cms/draft-editor.tsx",
         controller: "apps/web/features/cms/draft-controller.ts",
+        history: "packages/cms/history.ts",
       },
       formats: ["es"],
     },
@@ -54,5 +55,5 @@ for (const output of outputs) {
   );
 }
 console.log(
-  `CMS browser bundle verified: ${outputs.length} in-memory outputs; no Node imports, Buffer, server CMS index or renderer.`,
+  `CMS browser bundle verified: ${outputs.length} in-memory outputs; no Node imports, Buffer, server CMS renderer or Trestle provider.`,
 );

@@ -136,6 +136,9 @@ export function projectNativeMockListing(
     attribution: {
       brokerageName: has("attribution.brokerage") ? (listing.attribution.brokerage ?? "") : "",
       agentName: has("attribution.agent") ? listing.attribution.agent : null,
+      ...(has("attribution.contact") && listing.attribution.contact !== undefined
+        ? { contact: listing.attribution.contact === null ? null : { ...listing.attribution.contact } }
+        : {}),
       disclaimer: [...new Set(disclaimer.filter(Boolean))].join(" | "),
       logoUrl: null,
     },

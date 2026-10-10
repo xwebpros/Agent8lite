@@ -4,7 +4,6 @@ import type { Pool } from "pg";
 import {
   StaffSessionIssuer,
   staffSessionCookie,
-  staffSessionResponse,
   verifyStaffCsrf,
   withStaffTransaction,
 } from "../../../../packages/auth/staff-sessions";
@@ -17,6 +16,12 @@ import {
   type BootstrapPortFactory,
 } from "./provisioning-service";
 import { validateStaff } from "./validation";
+import { SupportService, type StaffSessionView } from "./support-service";
+import { SupportCrmReader } from "./support-crm-read";
+import type {
+  SupportGrantReference,
+  SupportResource,
+} from "../../../../packages/contracts/internal/control-plane-port";
 
 export interface StaffAdapterOptions {
   readonly control: Pool;
@@ -111,6 +116,15 @@ function respond(response: ServerResponse, status: number, result?: unknown, pro
 function cookie(opaque: string, expiresAt: string) {
   return `${staffSessionCookie}=${opaque}; Path=/; HttpOnly; SameSite=Strict; Expires=${new Date(expiresAt).toUTCString()}`;
 }
+function grantHeaders(response: ServerResponse, reference: SupportGrantReference) {
+  response.setHeader("X-Synthetic-Support-Grant-Id", reference.accessGrantId);
+  response.setHeader("X-Synthetic-Support-Grant-ETag", `"${reference.grantVersion}"`);
+}
+function sessionHeaders(response: ServerResponse, view: StaffSessionView, csrf: string) {
+  response.setHeader("X-CSRF-Token", csrf);
+  response.setHeader("X-Synthetic-Support-State", view.state);
+  if (view.grant) grantHeaders(response, view.grant);
+}
 
 /** Intentionally unregistered. Root must review the adapter before adding it to the shared router. */
 export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
@@ -145,11 +159,21 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
     const path = (request.url ?? "").split("?")[0],
       method = request.method ?? "GET";
     const jobRoute = new RegExp(`^/dev/staff/jobs/(${uuid})(/run)?$`).exec(path);
+    const createGrant = new RegExp(`^/v1/platform/organizations/(${uuid})/access-grants$`).exec(path);
+    const revokeGrant = new RegExp(
+      `^/dev/staff/support/organizations/(${uuid})/access-grants/(${uuid})/revoke$`,
+    ).exec(path);
+    const supportJob = new RegExp(`^/dev/staff/support/jobs/(${uuid})$`).exec(path);
+    const supportRead = new RegExp(
+      `^/dev/staff/support/organizations/(${uuid})/crm/(contacts|leads|tasks|deals|pipeline-stages|lead-sources|tags)(?:/(${uuid}))?$`,
+    ).exec(path);
+    const contextCommand = path === "/dev/staff/support/select" || path === "/dev/staff/support/clear";
     const owned =
       path === "/dev/staff/session" ||
       path === "/dev/staff/logout" ||
       path === "/v1/platform/organizations" ||
-      Boolean(jobRoute);
+      path.startsWith("/dev/staff/support/") ||
+      Boolean(jobRoute || createGrant || revokeGrant || supportJob || supportRead || contextCommand);
     if (!owned) return false;
     const traceId = randomUUID();
     response.setHeader("Cache-Control", "private, no-store");
@@ -196,27 +220,156 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
         );
         const issued = await issuer.issueVerifiedIdentity(verified);
         response.setHeader("Set-Cookie", cookie(issued.opaqueToken, issued.expiresAt));
-        const result = await withStaffTransaction(
+        const receipt = await withStaffTransaction(
           options.control,
           issued.opaqueToken,
-          async (_client, session) => {
-            response.setHeader("X-CSRF-Token", session.csrfToken);
-            return staffSessionResponse(session);
+          async (client, session) => {
+            return {
+              view: await new SupportService(client, session, traceId).sessionView(),
+              csrf: session.csrfToken,
+            };
           },
+          { intent: "identity" },
         );
-        validateStaff("SessionResponse", result, true);
-        respond(response, 200, result);
+        sessionHeaders(response, receipt.view, receipt.csrf);
+        validateStaff("SessionResponse", receipt.view.body, true);
+        respond(response, 200, receipt.view.body);
         return true;
       }
       const opaque = token(request);
+      if (
+        path.startsWith("/dev/staff/support/") &&
+        !revokeGrant &&
+        !supportJob &&
+        !supportRead &&
+        !contextCommand
+      ) {
+        await withStaffTransaction(options.control, opaque, async () => undefined, { intent: "identity" });
+        throw new AccessError(404, "route_unavailable", "Support route unavailable.");
+      }
       if (path === "/dev/staff/session" && method === "GET") {
-        const result = await withStaffTransaction(options.control, opaque, async (_client, session) => {
-          response.setHeader("X-CSRF-Token", session.csrfToken);
-          return staffSessionResponse(session);
-        });
-        validateStaff("SessionResponse", result, true);
-        respond(response, 200, result);
+        const receipt = await withStaffTransaction(
+          options.control,
+          opaque,
+          async (client, session) => ({
+            view: await new SupportService(client, session, traceId).sessionView(),
+            csrf: session.csrfToken,
+          }),
+          { intent: "identity" },
+        );
+        sessionHeaders(response, receipt.view, receipt.csrf);
+        validateStaff("SessionResponse", receipt.view.body, true);
+        respond(response, 200, receipt.view.body);
         return true;
+      }
+      if (createGrant || revokeGrant || supportJob || supportRead || contextCommand) {
+        const url = new URL(request.url!, options.allowedOrigins[0]);
+        const allowed = supportRead && !supportRead[3] ? ["limit", "cursor", "filter"] : [];
+        if (
+          [...url.searchParams.keys()].some((key) => !allowed.includes(key)) ||
+          [...new Set(url.searchParams.keys())].some((key) => url.searchParams.getAll(key).length !== 1)
+        )
+          throw new AccessError(422, "query_invalid", "Unsupported or duplicate query parameter.");
+        if (contextCommand && method === "POST") {
+          const input = await body(request);
+          validateStaff(path.endsWith("/select") ? "SupportSelection" : "EmptyCommand", input);
+          const receipt = await withStaffTransaction(
+            options.control,
+            opaque,
+            async (client, session) => {
+              verifyStaffCsrf(session, value(request, "x-csrf-token"));
+              const support = new SupportService(client, session, traceId);
+              if (path.endsWith("/select"))
+                await support.select(
+                  input as Parameters<SupportService["select"]>[0],
+                  value(request, "idempotency-key") ?? "",
+                );
+              else await support.clear(value(request, "idempotency-key") ?? "");
+              return { view: await support.sessionView(), csrf: session.csrfToken };
+            },
+            { intent: "context-mutation" },
+          );
+          sessionHeaders(response, receipt.view, receipt.csrf);
+          respond(response, 200, receipt.view.body);
+          return true;
+        }
+        if ((createGrant || revokeGrant) && method === "POST") {
+          const input = await body(request);
+          if (revokeGrant) validateStaff("EmptyCommand", input);
+          const receipt = await withStaffTransaction(
+            options.control,
+            opaque,
+            async (client, session) => {
+              verifyStaffCsrf(session, value(request, "x-csrf-token"));
+              const support = new SupportService(client, session, traceId);
+              const job = createGrant
+                ? await support.createGrant(
+                    createGrant[1],
+                    input as Parameters<SupportService["createGrant"]>[1],
+                    value(request, "idempotency-key") ?? "",
+                  )
+                : await support.revoke(
+                    revokeGrant![1],
+                    revokeGrant![2],
+                    value(request, "idempotency-key") ?? "",
+                    value(request, "if-match") ?? "",
+                  );
+              return support.readCommand(job.id);
+            },
+            { intent: "identity" },
+          );
+          grantHeaders(response, receipt.grant);
+          respond(response, 202, receipt.job);
+          return true;
+        }
+        if (supportJob && method === "GET") {
+          const receipt = await withStaffTransaction(
+            options.control,
+            opaque,
+            (client, session) => new SupportService(client, session, traceId).readCommand(supportJob[1]),
+            { intent: "identity" },
+          );
+          grantHeaders(response, receipt.grant);
+          respond(response, 200, receipt.job);
+          return true;
+        }
+        if (supportRead && method === "GET") {
+          const result = await withStaffTransaction(
+            options.control,
+            opaque,
+            async (client, session) => {
+              const support = new SupportService(client, session, traceId),
+                context = await support.resolveCurrent("");
+              if (context.organizationId !== supportRead[1])
+                throw new AccessError(
+                  403,
+                  "support_context_mismatch",
+                  "Select the requested support organization.",
+                );
+              const reader = new SupportCrmReader(client, context, support, session),
+                resource = supportRead[2] as SupportResource;
+              const body = supportRead[3]
+                ? await reader.detail(resource, supportRead[3])
+                : await reader.list(resource, {
+                    cursor: url.searchParams.get("cursor") ?? undefined,
+                    limit: url.searchParams.get("limit") ?? undefined,
+                    filter: url.searchParams.get("filter") ?? undefined,
+                  });
+              const finalContext = await support.assertCurrent(context, "");
+              return {
+                body,
+                grant: { accessGrantId: finalContext.accessGrantId, grantVersion: finalContext.grantVersion },
+              };
+            },
+            { intent: "support-read" },
+          );
+          grantHeaders(response, result.grant);
+          if (supportRead[3] && "version" in result.body)
+            response.setHeader("ETag", `"${result.body.version}"`);
+          respond(response, 200, result.body);
+          return true;
+        }
+        throw new AccessError(405, "method_unavailable", "Method unavailable.");
       }
       if (path === "/dev/staff/logout" && method === "POST") {
         validateStaff("EmptyCommand", await body(request));
@@ -286,6 +439,8 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
       }
       throw new AccessError(404, "route_unavailable", "Route unavailable.");
     } catch (error) {
+      response.removeHeader("X-Synthetic-Support-Grant-Id");
+      response.removeHeader("X-Synthetic-Support-Grant-ETag");
       const safe =
         error instanceof AccessError
           ? error

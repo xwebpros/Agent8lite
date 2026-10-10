@@ -2,14 +2,11 @@
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { components } from "../../../../packages/contracts/generated/api";
-import {
-  fieldBlockKinds,
-  type BrowserDraft,
-  type BrowserIssue,
-  type FieldBlockKind,
-} from "../../../../packages/cms/browser";
+import { fieldBlockKinds, type BrowserDraft, type FieldBlockKind } from "../../../../packages/cms/browser";
 import { Button } from "../../../../packages/ui/components";
 import { CmsDraftController } from "./draft-controller";
+import { CmsDraftPreview } from "./draft-preview";
+import { describeDraftIssues, focusDraftFeedback, type DraftFeedback } from "./draft-validation";
 import styles from "./draft-editor.module.css";
 
 type Block = BrowserDraft["blocks"][number];
@@ -28,50 +25,47 @@ const labels: Record<FieldBlockKind, string> = {
   cta: "Call to action",
   footer: "Footer",
 };
-function issueDescription(issue: BrowserIssue) {
-  const messages: Record<string, string> = {
-    schema_version_unsupported: "This revision needs an editor that supports its content format.",
-    document_schema_invalid: "Check the field format and length.",
-    block_properties_invalid: "Check the required fields, format and length.",
-    block_id_duplicate: "This draft has repeated block identifiers.",
-    block_not_registered: "This block requires a supported editor before it can be changed.",
-    nested_blocks_unsupported: "Nested content requires read-only recovery.",
-    link_origin_denied: "Use a local path or an approved HTTPS link.",
-    canonical_path_invalid: "Use a local canonical path beginning with a single slash.",
-    media_publication_unavailable: "Image attachments are unavailable in this editor.",
-  };
-  const block = /^\/blocks\/(\d+)/.exec(issue.path);
-  const location = block
-    ? `Block ${Number(block[1]) + 1}`
-    : issue.path.startsWith("/seo")
-      ? "Search metadata"
-      : "Revision content";
-  return `${location}: ${messages[issue.code] ?? "This content needs review before it can be edited safely."}`;
-}
-
 function TextField({
   label,
   value,
   onChange,
   maxLength,
   multiline = false,
+  path,
+  feedback,
 }: {
   label: string;
   value: string;
   onChange(value: string): void;
   maxLength: number;
   multiline?: boolean;
+  path: string;
+  feedback: DraftFeedback[];
 }) {
   const id = useId();
+  const errorId = `${id}-error`;
+  const errors = [
+    ...new Set(
+      feedback
+        .filter((item) => item.target.kind === "field" && item.target.path === path)
+        .map((item) => item.description),
+    ),
+  ];
+  const validation = {
+    "data-cms-field": path,
+    "aria-invalid": errors.length ? true : undefined,
+    "aria-describedby": errors.length ? errorId : undefined,
+  } as const;
   return (
-    <label htmlFor={id} className={styles.field}>
-      <span>{label}</span>
+    <div className={styles.field}>
+      <label htmlFor={id}>{label}</label>
       {multiline ? (
         <textarea
           id={id}
           rows={3}
           value={value}
           maxLength={maxLength}
+          {...validation}
           onChange={(event) => onChange(event.target.value)}
         />
       ) : (
@@ -79,23 +73,45 @@ function TextField({
           id={id}
           value={value}
           maxLength={maxLength}
+          {...validation}
           onChange={(event) => onChange(event.target.value)}
         />
       )}
-    </label>
+      {errors.length > 0 && (
+        <span id={errorId} className={styles.fieldError}>
+          {errors.join(" ")}
+        </span>
+      )}
+    </div>
   );
 }
-function LinkFields({ value, onChange, label }: { value: Link; onChange(value: Link): void; label: string }) {
+function LinkFields({
+  value,
+  onChange,
+  label,
+  path,
+  feedback,
+}: {
+  value: Link;
+  onChange(value: Link): void;
+  label: string;
+  path: string;
+  feedback: DraftFeedback[];
+}) {
   return (
     <div className={styles.link}>
       <TextField
         label={`${label} label`}
+        path={`${path}/label`}
+        feedback={feedback}
         value={value.label}
         maxLength={200}
         onChange={(text) => onChange({ ...value, label: text })}
       />
       <TextField
         label={`${label} path or approved HTTPS link`}
+        path={`${path}/href`}
+        feedback={feedback}
         value={value.href}
         maxLength={500}
         onChange={(text) => onChange({ ...value, href: text })}
@@ -103,7 +119,17 @@ function LinkFields({ value, onChange, label }: { value: Link; onChange(value: L
     </div>
   );
 }
-function BlockFields({ block, change }: { block: Block; change(change: (block: Block) => void): void }) {
+function BlockFields({
+  block,
+  change,
+  path,
+  feedback,
+}: {
+  block: Block;
+  change(change: (block: Block) => void): void;
+  path: string;
+  feedback: DraftFeedback[];
+}) {
   const props = block.props;
   switch (block.type) {
     case "hero": {
@@ -112,6 +138,8 @@ function BlockFields({ block, change }: { block: Block; change(change: (block: B
         <>
           <TextField
             label="Heading"
+            path={`${path}/heading`}
+            feedback={feedback}
             value={props.heading as string}
             maxLength={200}
             onChange={(value) =>
@@ -122,6 +150,8 @@ function BlockFields({ block, change }: { block: Block; change(change: (block: B
           />
           <TextField
             label="Summary"
+            path={`${path}/summary`}
+            feedback={feedback}
             multiline
             value={(props.summary as string | undefined) ?? ""}
             maxLength={4000}
@@ -136,6 +166,8 @@ function BlockFields({ block, change }: { block: Block; change(change: (block: B
               <LinkFields
                 value={action}
                 label="Hero action"
+                path={`${path}/action`}
+                feedback={feedback}
                 onChange={(value) =>
                   change((block) => {
                     block.props.action = value;
@@ -178,6 +210,8 @@ function BlockFields({ block, change }: { block: Block; change(change: (block: B
             <div key={index} className={styles.stack}>
               <TextField
                 label={`Paragraph ${index + 1}`}
+                path={`${path}/paragraphs/${index}`}
+                feedback={feedback}
                 multiline
                 value={paragraph}
                 maxLength={4000}
@@ -220,6 +254,8 @@ function BlockFields({ block, change }: { block: Block; change(change: (block: B
       return (
         <LinkFields
           label="Action"
+          path={path}
+          feedback={feedback}
           value={props as unknown as Link}
           onChange={(value) =>
             change((block) => {
@@ -234,6 +270,8 @@ function BlockFields({ block, change }: { block: Block; change(change: (block: B
         <>
           <TextField
             label="Footer text"
+            path={`${path}/text`}
+            feedback={feedback}
             multiline
             value={props.text as string}
             maxLength={4000}
@@ -247,6 +285,8 @@ function BlockFields({ block, change }: { block: Block; change(change: (block: B
             <div key={index} className={styles.stack}>
               <LinkFields
                 label={`Footer link ${index + 1}`}
+                path={`${path}/links/${index}`}
+                feedback={feedback}
                 value={link}
                 onChange={(value) =>
                   change((block) => {
@@ -302,10 +342,15 @@ export function CmsDraftEditor({
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [newKind, setNewKind] = useState<FieldBlockKind>("text");
   const [reorderMessage, setReorderMessage] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
   const pickerId = useId();
   const kindId = useId();
+  const previewId = useId();
+  const issuesHeadingId = useId();
+  const editor = useRef<HTMLElement>(null);
   const blockList = useRef<HTMLOListElement>(null);
   const editable = controller.canEdit();
+  const feedback = describeDraftIssues(state.draft, state.issues);
   const locked = state.dirty || ["saving", "uncertain", "denied"].includes(state.phase);
   useEffect(() => {
     onDirty(state.dirty);
@@ -333,7 +378,7 @@ export function CmsDraftEditor({
   }
 
   return (
-    <section className={styles.editor} aria-label="Private CMS draft editor">
+    <section ref={editor} className={styles.editor} aria-label="Private CMS draft editor">
       <div className={styles.heading}>
         <div>
           <h2>{state.document.title}</h2>
@@ -405,6 +450,36 @@ export function CmsDraftEditor({
               </Button>
             )}
           </div>
+          {feedback.length > 0 && (
+            <section aria-labelledby={issuesHeadingId} className={styles.issues}>
+              <h3 id={issuesHeadingId} tabIndex={-1} data-cms-issue-summary>
+                Content needs review
+              </h3>
+              <p role="status" aria-live="polite">
+                {feedback.length} {feedback.length === 1 ? "issue needs" : "issues need"} review before
+                saving.
+              </p>
+              <ul>
+                {feedback.map((item, index) => (
+                  <li key={`${item.issue.path}:${item.issue.code}:${index}`}>
+                    {editable && item.target.kind !== "summary" ? (
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        onClick={() => {
+                          if (editor.current) focusDraftFeedback(editor.current, item);
+                        }}
+                      >
+                        {item.message}
+                      </Button>
+                    ) : (
+                      item.message
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {state.recovery ? (
             <section className={styles.recovery} aria-label="Read-only revision recovery">
               <h3>Original revision JSON</h3>
@@ -416,13 +491,47 @@ export function CmsDraftEditor({
           ) : (
             state.draft && (
               <>
+                <div className={styles.actions}>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={!state.canUndo}
+                    onClick={() => controller.undo()}
+                  >
+                    Undo local edit
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={!state.canRedo}
+                    onClick={() => controller.redo()}
+                  >
+                    Redo local edit
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    aria-expanded={showPreview}
+                    aria-controls={previewId}
+                    onClick={() => setShowPreview((shown) => !shown)}
+                  >
+                    {showPreview ? "Hide local preview" : "Show local preview"}
+                  </Button>
+                </div>
+                <p className={styles.help}>
+                  Undo and redo cover recent local edits in this tab. Saved revisions remain in the history
+                  picker.
+                </p>
+                <div id={previewId} hidden={!showPreview}>
+                  {showPreview && <CmsDraftPreview controller={controller} />}
+                </div>
                 <fieldset disabled={!editable} className={styles.fields}>
                   <legend>Draft content</legend>
                   <ol ref={blockList} className={styles.blocks}>
                     {state.draft.blocks.map((block, index) => (
                       <li key={block.id} className={styles.block}>
                         <div className={styles.blockHeading}>
-                          <h3 tabIndex={-1} data-focus-block={block.id}>
+                          <h3 tabIndex={-1} data-focus-block={block.id} data-cms-block={`/blocks/${index}`}>
                             {index + 1}. {labels[block.type as FieldBlockKind]}
                           </h3>
                           <div className={styles.actions}>
@@ -460,6 +569,8 @@ export function CmsDraftEditor({
                         </div>
                         <BlockFields
                           block={block}
+                          path={`/blocks/${index}/props`}
+                          feedback={feedback}
                           change={(change) =>
                             controller.edit((draft) => {
                               const target = draft.blocks.find((item) => item.id === block.id);
@@ -495,6 +606,8 @@ export function CmsDraftEditor({
                   <h3>Search metadata</h3>
                   <TextField
                     label="Search title"
+                    path="/seo/title"
+                    feedback={feedback}
                     value={state.draft.seo.title}
                     maxLength={70}
                     onChange={(value) =>
@@ -505,6 +618,8 @@ export function CmsDraftEditor({
                   />
                   <TextField
                     label="Search description"
+                    path="/seo/description"
+                    feedback={feedback}
                     multiline
                     value={state.draft.seo.description}
                     maxLength={170}
@@ -516,6 +631,8 @@ export function CmsDraftEditor({
                   />
                   <TextField
                     label="Canonical local path (optional)"
+                    path="/seo/canonicalPath"
+                    feedback={feedback}
                     value={state.draft.seo.canonicalPath ?? ""}
                     maxLength={200}
                     onChange={(value) =>
@@ -542,6 +659,17 @@ export function CmsDraftEditor({
                   {reorderMessage}
                 </p>
                 <div className={styles.actions}>
+                  {editable && feedback.length > 0 && (
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      onClick={() => {
+                        if (editor.current) focusDraftFeedback(editor.current, feedback[0]);
+                      }}
+                    >
+                      Review invalid fields
+                    </Button>
+                  )}
                   {state.phase === "conflict" ? (
                     <Button
                       type="button"
@@ -580,16 +708,6 @@ export function CmsDraftEditor({
                 </div>
               </>
             )
-          )}
-          {state.issues.length > 0 && (
-            <section role="alert" className={styles.issues}>
-              <h3>Content needs review</h3>
-              <ul>
-                {state.issues.map((issue, index) => (
-                  <li key={`${issue.path}:${issue.code}:${index}`}>{issueDescription(issue)}</li>
-                ))}
-              </ul>
-            </section>
           )}
         </>
       )}

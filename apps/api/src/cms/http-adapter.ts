@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { CmsProfileReferencePort } from "../../../../packages/cms/ports";
 import { DraftConflictError, TemplateUnavailableError } from "../../../../packages/cms";
+import { RecoveryEnvelopeError } from "../../../../packages/cms/recovery";
+import { HistoryEnvelopeError } from "../../../../packages/cms/history";
 import type { components } from "../../../../packages/contracts/generated/api";
 import { readSession, sessionCookie, verifyCsrf } from "../../../../packages/auth/sessions";
 import {
@@ -29,6 +31,10 @@ function failure(error: unknown): AccessError {
     return new AccessError(error.status, error.code, error.message);
   if (error instanceof ContentValidationError)
     return new AccessError(422, "draft_invalid", "The draft contains unsupported or unsafe content.");
+  if (error instanceof RecoveryEnvelopeError)
+    return new AccessError(422, "revision_recovery_unavailable", error.message);
+  if (error instanceof HistoryEnvelopeError)
+    return new AccessError(503, "revision_history_unavailable", error.message);
   const code = (error as { code?: string })?.code;
   if (code && ["23505", "40001", "40P01"].includes(code))
     return new AccessError(409, "command_conflict", "A conflicting operation occurred. Reload and retry.");
@@ -98,7 +104,7 @@ export class CmsHttpAdapter {
           "organization_mismatch",
           "Select the organization before accessing its resources.",
         );
-      const query: Record<string, string> = {};
+      const query: Record<string, string> = Object.create(null);
       for (const [key, value] of url.searchParams) {
         if (Object.hasOwn(query, key))
           throw new AccessError(422, "query_invalid", "Repeated pagination query.");
@@ -150,6 +156,19 @@ export class CmsHttpAdapter {
               request.body as Schemas["DocumentWrite"],
               commandHeaders,
             );
+        }
+        const history = new RegExp(
+          `^/dev/orgs/${context.organizationId}/cms/documents/([^/]+)/revision-history$`,
+        ).exec(path);
+        if (history && method === "GET")
+          return { body: await service.listRevisionHistory(history[1], query), status: 200 };
+        const recovery = new RegExp(
+          `^/dev/orgs/${context.organizationId}/cms/documents/([^/]+)/revisions/([^/]+)/recovery$`,
+        ).exec(path);
+        if (recovery && method === "GET") {
+          if (Object.keys(query).length)
+            throw new AccessError(422, "query_invalid", "Recovery reads do not accept query parameters.");
+          return { body: await service.getRevisionRecovery(recovery[1], recovery[2]), status: 200 };
         }
         const draft = new RegExp(`^/dev/orgs/${context.organizationId}/cms/documents/([^/]+)/drafts$`).exec(
           path,

@@ -50,6 +50,7 @@ import { createCmsProfileReferencePort } from "./admin-profile-reference";
 import { createStaffPools } from "../../../packages/db/staff-pools";
 import { createStaffHttpAdapter } from "./control/http-adapter";
 import { withStaffTransaction } from "../../../packages/auth/staff-sessions";
+import { CampaignDraftService, campaignEtag } from "./marketing";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -67,6 +68,14 @@ const loopback = (address: string | undefined) =>
   !!address && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address);
 const loginAttempts = new Map<string, { count: number; resets: number }>();
 const requestRates = new Map<string, { count: number; resets: number }>();
+type ApiCommandResponse = {
+  body: unknown;
+  status: number;
+  etag?: string;
+  syntheticToken?: string;
+  termsVersion?: string;
+  routingCanReplace?: boolean;
+};
 function rate(map: typeof requestRates, key: string, maximum: number) {
   const now = Date.now();
   const old = map.get(key);
@@ -283,7 +292,9 @@ class ApiController {
       if (
         req.path === "/v1/templates" ||
         /^\/v1\/orgs\/[^/]+\/(?:sites|documents|revisions)(?:\/|$)/.test(req.path) ||
-        /^\/dev\/orgs\/[^/]+\/cms\/documents\/[^/]+\/drafts$/.test(req.path)
+        /^\/dev\/orgs\/[^/]+\/cms\/documents\/[^/]+\/(?:drafts|revision-history|revisions\/[^/]+\/recovery)$/.test(
+          req.path,
+        )
       ) {
         const headers: Record<string, string | undefined> = {};
         for (const [key, value] of Object.entries(req.headers))
@@ -539,6 +550,7 @@ class ApiController {
         tickets: "ticketId",
         "pipeline-stages": "pipelineStageId",
         "lead-sources": "leadSourceId",
+        campaigns: "campaignId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
@@ -562,6 +574,31 @@ class ApiController {
             return { body, status: 202 };
           }
           await requireEntitlement(client, spec["x-permission"]);
+          if (resource === "campaigns") {
+            localAccess(req);
+            if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            const campaigns = new CampaignDraftService(client, context, traceId);
+            let response: ApiCommandResponse;
+            if (req.method === "GET") {
+              const body = id ? await campaigns.get(id) : await campaigns.list(req.query);
+              response = {
+                body,
+                status: 200,
+                etag: id ? campaignEtag((body as { version: number }).version) : undefined,
+              };
+            } else if (req.method === "POST" && !id) {
+              response = await campaigns.create(req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+            } else if (req.method === "PATCH" && id) {
+              response = await campaigns.update(id, req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+                ifMatch: revision(req),
+              });
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
           const crm = new CrmService(client, context, traceId);
           const admin = new AdminService(client, context, traceId);
           const support = new SupportService(client, context, traceId);
@@ -571,14 +608,7 @@ class ApiController {
           const deals = new DealService(client, context, traceId);
           const configuration = new CrmConfigurationService(client, context, traceId);
           const routing = new RoutingService(client, context, traceId);
-          let response: {
-            body: unknown;
-            status: number;
-            etag?: string;
-            syntheticToken?: string;
-            termsVersion?: string;
-            routingCanReplace?: boolean;
-          };
+          let response: ApiCommandResponse;
           if (req.method === "GET") {
             let body: unknown;
             if (resource === "routing" && !id) {
@@ -753,6 +783,8 @@ export async function createApplication() {
     logger: ["error", "warn"],
     bodyParser: false,
   });
+  // Only module-authored revision ETags are meaningful. Never hash private bodies automatically.
+  app.set("etag", false);
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("X-Trace-Id", randomUUID());
@@ -766,7 +798,9 @@ export async function createApplication() {
       const owned =
         req.path === "/dev/staff/session" ||
         req.path === "/dev/staff/logout" ||
+        req.path.startsWith("/dev/staff/support/") ||
         req.path === "/v1/platform/organizations" ||
+        /^\/v1\/platform\/organizations\/[0-9a-f-]{36}\/access-grants$/.test(req.path) ||
         /^\/dev\/staff\/jobs\/[0-9a-f-]{36}(?:\/run)?$/.test(req.path);
       if (!owned) {
         next();
@@ -806,6 +840,7 @@ export async function createApplication() {
                 reading ? 300 : 120,
               );
             },
+            { intent: "identity" },
           );
         else
           rate(
@@ -813,7 +848,8 @@ export async function createApplication() {
             `staff-anonymous:${req.socket.remoteAddress}:${reading ? "read" : "mutation"}`,
             reading ? 300 : 120,
           );
-        if (!(await staffAdapter!(req, res))) next();
+        if (!(await staffAdapter!(req, res)))
+          throw new AccessError(404, "route_unavailable", "Route unavailable.");
       })().catch((error) => {
         const failure = problem(error, String(res.getHeader("X-Trace-Id")), req.path);
         if (failure.status === 429) res.setHeader("Retry-After", "60");

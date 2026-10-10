@@ -1,7 +1,12 @@
 import { fixtures } from "../../packages/db/fixtures";
 import type { DisplayPolicy, ListingReadContext, NativeMockSnapshot } from "../../packages/mls";
 import { MOCK_CLOCK, MockMlsAdapter, mockPolicy } from "../../packages/providers/mls/mock";
-import type { FeedContext, MlsPolicy } from "../../packages/providers/mls/port";
+import type { FeedContext, MlsAttributionContact, MlsPolicy } from "../../packages/providers/mls/port";
+
+export const syntheticAttributionContacts: readonly MlsAttributionContact[] = [
+  { kind: "email", value: "attribution@fictional-brokerage.example.invalid" },
+  { kind: "phone", value: "+1 702 555 0100" },
+];
 
 export const feedId = "a0000000-0000-4000-8000-000000000001";
 export const context: ListingReadContext = {
@@ -26,6 +31,7 @@ export const nativeRights: MlsPolicy = {
     "attribution.brokerage",
     "attribution.agent",
     "attribution.disclaimer",
+    "attribution.contact",
   ],
 };
 export const displayPolicy: DisplayPolicy = {
@@ -84,7 +90,15 @@ export async function mockSnapshot(
               currency: "USD",
               revision: 1,
               withdrawnAt: null,
-              canonical: structuredClone(change.listing),
+              canonical: {
+                ...structuredClone(change.listing),
+                attribution: {
+                  ...structuredClone(change.listing.attribution),
+                  ...(syntheticAttributionContacts[index]
+                    ? { contact: structuredClone(syntheticAttributionContacts[index]) }
+                    : {}),
+                },
+              },
             },
           ]
         : [],

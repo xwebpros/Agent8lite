@@ -53,6 +53,7 @@ import SyntheticCapture from "./synthetic-capture";
 import ConsentPanel from "./consent-panel";
 import { PropertiesFeature } from "../features/properties";
 import CmsWorkspace from "./cms-workspace";
+import CampaignWorkspace from "./campaign-workspace";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -60,7 +61,15 @@ type Lead = Schema<"Lead">;
 type Task = Schema<"Task">;
 type Stage = Schema<"PipelineStage">;
 type Source = Schema<"LeadSource">;
-type View = "dashboard" | "contacts" | "pipeline" | "tasks" | "properties" | "websites" | "settings";
+type View =
+  | "dashboard"
+  | "contacts"
+  | "pipeline"
+  | "tasks"
+  | "properties"
+  | "websites"
+  | "campaigns"
+  | "settings";
 type InstallEvent = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> };
 const navigation = [
   { id: "dashboard", name: "Dashboard", icon: LayoutDashboard },
@@ -69,6 +78,7 @@ const navigation = [
   { id: "tasks", name: "Tasks", icon: ListTodo },
   { id: "properties", name: "Properties", icon: House },
   { id: "websites", name: "Websites", icon: Layers3 },
+  { id: "campaigns", name: "Campaigns", icon: Mail },
   { id: "settings", name: "Settings", icon: Settings2 },
 ] as const;
 const emptyData = {
@@ -133,8 +143,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const [tagDirty, setTagDirty] = useState(false);
   const [cmsDirty, setCmsDirty] = useState(false);
   const cmsProtected = useRef(false);
+  const [campaignDirty, setCampaignDirty] = useState(false);
+  const campaignProtected = useRef(false);
   const [invitationTransfer, setInvitationTransfer] = useState<InvitationTransfer | null>(null);
-  const unsaved = dirty || noteDirty || tagDirty || cmsDirty || Boolean(invitationTransfer);
+  const unsaved = dirty || noteDirty || tagDirty || cmsDirty || campaignDirty || Boolean(invitationTransfer);
   const [search, setSearch] = useState("");
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
@@ -163,11 +175,16 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const capturedContact = useRef<Contact | null>(null);
   const updateAccepted = useRef(false);
   const reloadProtected = useRef(false);
-  reloadProtected.current = unsaved || busy || cmsProtected.current;
+  reloadProtected.current = unsaved || busy || cmsProtected.current || campaignProtected.current;
   const protectCms = useCallback((value: boolean) => {
     cmsProtected.current = value;
     if (value) reloadProtected.current = true;
     setCmsDirty(value);
+  }, []);
+  const protectCampaign = useCallback((value: boolean) => {
+    campaignProtected.current = value;
+    if (value) reloadProtected.current = true;
+    setCampaignDirty(value);
   }, []);
   const dialog = useRef<HTMLDialogElement>(null);
   const detailDialog = useRef<HTMLDialogElement>(null);
@@ -186,6 +203,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (item.id === "properties") return syntheticEnabled && permission("mls.read");
     if (item.id === "websites")
       return syntheticEnabled && permission("sites.read") && permission("content.read");
+    if (item.id === "campaigns") return syntheticEnabled && permission("campaigns.read");
     return true;
   });
   const settingsPanel = [
@@ -218,7 +236,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     async (active: Session) => {
       if (!active.activeOrgId) return;
       const epoch = ++refreshEpoch.current;
-      if (cmsProtected.current) {
+      if (cmsProtected.current || campaignProtected.current) {
         setLoading(false);
         return;
       }
@@ -278,7 +296,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         setRefreshed(null);
         setError(err instanceof Error ? err.message : "Workspace could not refresh.");
         const unrelatedCrmDenial =
-          cmsProtected.current &&
+          (cmsProtected.current || campaignProtected.current) &&
           err instanceof ApiError &&
           err.status === 403 &&
           ["permission_denied", "entitlement_disabled"].includes(err.code ?? "");
@@ -793,8 +811,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function switchOrganization(id: string) {
-    if (cmsProtected.current) {
-      setError("Resolve or discard the website draft in the editor before switching organizations.");
+    if (cmsProtected.current || campaignProtected.current) {
+      setError("Resolve or discard the current draft in its editor before switching organizations.");
       return;
     }
     if (unsaved && !window.confirm("Discard your draft and switch organizations?")) return;
@@ -845,8 +863,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function logout() {
-    if (cmsProtected.current) {
-      setError("Resolve or discard the website draft in the editor before signing out.");
+    if (cmsProtected.current || campaignProtected.current) {
+      setError("Resolve or discard the current draft in its editor before signing out.");
       return;
     }
     if (unsaved && !window.confirm("Discard your draft and sign out?")) return;
@@ -1054,9 +1072,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               aria-current={view === id ? "page" : undefined}
               className={`nav-link ${view === id ? "active" : ""}`}
               onClick={(event) => {
-                if (cmsProtected.current) {
+                if (cmsProtected.current || campaignProtected.current) {
                   event.preventDefault();
-                  setError("Resolve or discard the website draft in the editor before leaving this view.");
+                  setError("Resolve or discard the current draft in its editor before leaving this view.");
                   return;
                 }
                 if (busy) {
@@ -1224,15 +1242,17 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               >
                 <RefreshCw size={18} className={loading ? "spinning" : ""} />
               </button>
-              {!["settings", "properties", "websites"].includes(view) && !dealsTab && !captureTab && (
-                <Button
-                  disabled={busy || !online || (view === "tasks" ? !canTask : !canCapture) || !member}
-                  onClick={() => openModal(view === "tasks" ? "task" : "lead")}
-                >
-                  <Plus size={18} />
-                  {view === "tasks" ? "Add task" : "Add lead"}
-                </Button>
-              )}
+              {!["settings", "properties", "websites", "campaigns"].includes(view) &&
+                !dealsTab &&
+                !captureTab && (
+                  <Button
+                    disabled={busy || !online || (view === "tasks" ? !canTask : !canCapture) || !member}
+                    onClick={() => openModal(view === "tasks" ? "task" : "lead")}
+                  >
+                    <Plus size={18} />
+                    {view === "tasks" ? "Add task" : "Add lead"}
+                  </Button>
+                )}
             </div>
           </div>
           {error && !modal && (
@@ -1246,7 +1266,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               {notice}
             </div>
           )}
-          {view !== "properties" && view !== "websites" && (
+          {view !== "properties" && view !== "websites" && view !== "campaigns" && (
             <div className="scope-line">
               <span>
                 <ShieldCheck size={14} /> {organization?.name}
@@ -1300,6 +1320,21 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               onAccessRevoked={() => {
                 router.replace("/dashboard");
                 setError("Website access changed. Refresh workspace access before reopening Websites.");
+              }}
+            />
+          )}
+          {view === "campaigns" && (
+            <CampaignWorkspace
+              key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+              session={session}
+              csrf={csrf}
+              online={online}
+              syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
+              accessRevision={accessRevision}
+              onDirty={protectCampaign}
+              onAccessRevoked={() => {
+                router.replace("/dashboard");
+                setError("Campaign access changed. Refresh workspace access before reopening Campaigns.");
               }}
             />
           )}
@@ -2115,7 +2150,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             href={`/${id}`}
             aria-current={view === id ? "page" : undefined}
             onClick={(event) => {
-              if (cmsProtected.current || unsaved || busy) {
+              if (cmsProtected.current || campaignProtected.current || unsaved || busy) {
                 event.preventDefault();
                 setError("Resolve or discard the current draft before leaving this view.");
                 return;

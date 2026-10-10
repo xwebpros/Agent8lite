@@ -1,6 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import Ajv2020 from "ajv/dist/2020";
+import addFormats from "ajv-formats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prepareTemplateDraft } from "../../packages/cms";
+import type { RevisionRecovery } from "../../packages/cms/recovery";
+import recoverySchema from "../../packages/contracts/internal/native-cms-recovery-v1.schema.json";
+import historySchema from "../../packages/contracts/internal/native-cms-revision-history-v1.schema.json";
 import { fixtures } from "../../packages/db/fixtures";
 import { assertRuntimeRole } from "../../packages/db/runtime-role";
 import { ApiSession, assertContract, assertProblem, type Schemas } from "../helpers/api";
@@ -26,8 +31,52 @@ let template: Schemas["Template"];
 const base = (session = owner) => `/v1/orgs/${session.orgId}`;
 const listings = (session = owner) => `/dev/orgs/${session.orgId}/mls/listings`;
 const drafts = (id: string, session = owner) => `/dev/orgs/${session.orgId}/cms/documents/${id}/drafts`;
+const recoveryPath = (documentId: string, revisionId: string, session = owner) =>
+  `/dev/orgs/${session.orgId}/cms/documents/${documentId}/revisions/${revisionId}/recovery`;
 const starter = () =>
   prepareTemplateDraft(template.code, template.version, { approvedLinkOrigins: new Set() }).document;
+const recoveryAjv = new Ajv2020({ strict: false, allErrors: true });
+addFormats(recoveryAjv);
+const validateRecovery = recoveryAjv.compile(recoverySchema);
+const validateHistory = recoveryAjv.compile(historySchema);
+const historyPath = (documentId: string, session = owner) =>
+  `/dev/orgs/${session.orgId}/cms/documents/${documentId}/revision-history`;
+type RevisionMetadata = Pick<Schemas["Revision"], "id" | "documentId" | "schemaVersion" | "createdAt">;
+type RevisionIndex = { items: RevisionMetadata[]; hasMore: boolean; nextCursor: string | null };
+
+function privateRecoveryResponse(response: Response) {
+  expect(response.headers.get("cache-control")).toContain("private");
+  expect(response.headers.get("cache-control")).toContain("no-store");
+  expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(response.headers.get("x-trace-id")).toBeTruthy();
+  expect(response.headers.get("etag")).toBeNull();
+}
+
+async function recoveryResponse(response: Response) {
+  expect(response.status).toBe(200);
+  privateRecoveryResponse(response);
+  const body: unknown = await response.json();
+  expect(validateRecovery(body), JSON.stringify(validateRecovery.errors)).toBe(true);
+  return body as RevisionRecovery;
+}
+
+async function historyResponse(response: Response): Promise<RevisionIndex> {
+  expect(response.status).toBe(200);
+  privateRecoveryResponse(response);
+  const bytes = await response.text();
+  expect(Buffer.byteLength(bytes)).toBeLessThanOrEqual(64 * 1024);
+  expect(bytes).not.toContain("PRIVATE_UNSUPPORTED_SYNTHETIC");
+  const body: unknown = JSON.parse(bytes);
+  expect(validateHistory(body), JSON.stringify(validateHistory.errors)).toBe(true);
+  return body as RevisionIndex;
+}
+
+async function unavailableRecovery(response: Response, status: number) {
+  privateRecoveryResponse(response);
+  const problem = await assertProblem(response, status);
+  expect(JSON.stringify(problem)).not.toContain("PRIVATE_UNSUPPORTED_SYNTHETIC");
+  return problem;
+}
 
 async function success<T extends keyof Schemas>(response: Response, schema: T, status = 200) {
   const body: unknown = await response.json();
@@ -57,6 +106,38 @@ async function createPair() {
     201,
   );
   return { site, document };
+}
+
+async function unsupportedRevision() {
+  const pair = await createPair();
+  const id = randomUUID();
+  const data = {
+    schemaVersion: 7,
+    blocks: [
+      {
+        id: randomUUID(),
+        type: "future_recovery_block",
+        props: { original: ["<script>PRIVATE_UNSUPPORTED_SYNTHETIC()</script>", { keep: [0, false, null] }] },
+      },
+    ],
+    seo: { title: "Synthetic original recovery", future: { preserve: true } },
+  };
+  const contentHash = createHash("sha256").update(JSON.stringify(data)).digest("hex");
+  // An owned migration fixture represents a preserved revision from a future writer.
+  await admin.query(
+    "INSERT INTO app.content_revision(tenant_id,id,document_id,author_member_id,schema_version,block_data,seo,content_hash)VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+    [
+      owner.orgId,
+      id,
+      pair.document.body.id,
+      owner.memberId,
+      data.schemaVersion,
+      JSON.stringify(data.blocks),
+      JSON.stringify(data.seo),
+      contentHash,
+    ],
+  );
+  return { ...pair, id, data, contentHash };
 }
 
 beforeAll(async () => {
@@ -90,6 +171,116 @@ afterAll(async () => {
 });
 
 describe("registered synthetic MLS and CMS application boundaries", () => {
+  it("discovers mixed revision metadata through the registered index without reading content or changing documents", async () => {
+    const fixture = await unsupportedRevision();
+    const supported = await success(
+      await owner.command(drafts(fixture.document.body.id), starter(), { revision: '"1"' }),
+      "Revision",
+      201,
+    );
+    const before = (await owner.read(`${base()}/documents/${fixture.document.body.id}`, "Document")).body;
+    const first = await historyResponse(
+      await owner.request(historyPath(fixture.document.body.id) + "?limit=1"),
+    );
+    expect(first.items).toHaveLength(1);
+    expect(first.hasMore).toBe(true);
+    const second = await historyResponse(
+      await owner.request(
+        historyPath(fixture.document.body.id) +
+          "?" +
+          new URLSearchParams({ limit: "1", cursor: first.nextCursor! }),
+      ),
+    );
+    expect(second.items).toHaveLength(1);
+    expect(second.hasMore).toBe(false);
+    expect(second.nextCursor).toBeNull();
+    const items = [...first.items, ...second.items];
+    expect(items.map((item) => item.id)).toEqual([fixture.id, supported.body.id].sort());
+    expect(items.every((item) => item.documentId === fixture.document.body.id)).toBe(true);
+    expect(items.find((item) => item.id === fixture.id)?.schemaVersion).toBe(7);
+    expect(items.find((item) => item.id === supported.body.id)?.schemaVersion).toBe(1);
+    expect((await owner.read(`${base()}/revisions/${supported.body.id}`, "Revision")).body).toEqual(
+      supported.body,
+    );
+    await unavailableRecovery(await owner.request(`${base()}/revisions/${fixture.id}`), 409);
+    expect(
+      (await recoveryResponse(await owner.request(recoveryPath(fixture.document.body.id, fixture.id)))).data,
+    ).toEqual(fixture.data);
+    expect((await owner.read(`${base()}/documents/${fixture.document.body.id}`, "Document")).body).toEqual(
+      before,
+    );
+    expect((await owner.read(`${base()}/sites/${fixture.site.body.id}`, "Site")).body).toEqual(
+      fixture.site.body,
+    );
+  });
+
+  it("binds registered history cursors to document and actor and rejects ambiguous queries", async () => {
+    const fixture = await unsupportedRevision();
+    await success(
+      await owner.command(drafts(fixture.document.body.id), starter(), { revision: '"1"' }),
+      "Revision",
+      201,
+    );
+    const page = await historyResponse(
+      await owner.request(historyPath(fixture.document.body.id) + "?limit=1"),
+    );
+    const other = await createPair();
+    for (const [session, id, limit] of [
+      [owner, other.document.body.id, "1"],
+      [agent, fixture.document.body.id, "1"],
+    ] as const) {
+      await unavailableRecovery(
+        await session.request(
+          historyPath(id, session) + "?" + new URLSearchParams({ limit, cursor: page.nextCursor! }),
+        ),
+        422,
+      );
+    }
+    for (const query of ["unexpected=true", "limit=0", "limit=101", "limit=1&limit=2", "cursor=x&cursor=y"])
+      await unavailableRecovery(
+        await owner.request(historyPath(fixture.document.body.id) + "?" + query),
+        422,
+      );
+    await unavailableRecovery(await owner.command(historyPath(fixture.document.body.id), {}), 404);
+    await unavailableRecovery(await owner.request(historyPath(fixture.document.body.id) + "/extra"), 404);
+  });
+
+  it("requires current member and loopback authority for registered history without exposing content", async () => {
+    const fixture = await unsupportedRevision();
+    const path = historyPath(fixture.document.body.id);
+    await unavailableRecovery(await new ApiSession().request(path), 401);
+    await unavailableRecovery(
+      await owner.request(path, { headers: { "x-forwarded-for": "198.51.100.19" } }),
+      403,
+    );
+    await unavailableRecovery(await owner.request(historyPath(randomUUID())), 404);
+    const switched = await new ApiSession().signIn("owner");
+    expect((await switched.switchOrganization(fixtures.orgB)).status).toBe(200);
+    await unavailableRecovery(await switched.request(path), 403);
+    await unavailableRecovery(await switched.request(historyPath(fixture.document.body.id, switched)), 404);
+    const priorStatus = (
+      await admin.query("SELECT status FROM app.membership WHERE tenant_id=$1 AND id=$2", [
+        fixtures.orgA,
+        fixtures.agentMemberA,
+      ])
+    ).rows[0].status;
+    try {
+      await admin.query("UPDATE app.membership SET status='disabled' WHERE tenant_id=$1 AND id=$2", [
+        fixtures.orgA,
+        fixtures.agentMemberA,
+      ]);
+      await unavailableRecovery(await agent.request(path), 403);
+      expect((await historyResponse(await owner.request(path))).items.map((item) => item.id)).toEqual([
+        fixture.id,
+      ]);
+    } finally {
+      await admin.query("UPDATE app.membership SET status=$3 WHERE tenant_id=$1 AND id=$2", [
+        fixtures.orgA,
+        fixtures.agentMemberA,
+        priorStatus,
+      ]);
+    }
+  });
   it("returns frozen synthetic listing pages and freshly authorized details without private metadata", async () => {
     const page = await owner.read(`${listings()}?limit=1`, "PageListing");
     expect(page.body.items).toHaveLength(1);
@@ -283,5 +474,118 @@ describe("registered synthetic MLS and CMS application boundaries", () => {
       await switched.command(drafts(document.body.id, switched), starter(), { revision: '"1"' }),
       404,
     );
+  });
+
+  it("preserves one unsupported original revision through the registered closed read-only recovery route", async () => {
+    const fixture = await unsupportedRevision();
+    const path = recoveryPath(fixture.document.body.id, fixture.id);
+    const recovered = await recoveryResponse(await owner.request(path));
+    const normal = await unavailableRecovery(await owner.request(`${base()}/revisions/${fixture.id}`), 409);
+    expect(normal.code).toBe("revision_recovery_required");
+    expect(
+      (
+        await unavailableRecovery(
+          await owner.request(`${base()}/documents/${fixture.document.body.id}/revisions`),
+          409,
+        )
+      ).code,
+    ).toBe("revision_recovery_required");
+    expect(recovered).toEqual({
+      id: fixture.id,
+      documentId: fixture.document.body.id,
+      data: fixture.data,
+      issues: expect.any(Array),
+      canSave: false,
+      canPublish: false,
+    });
+    expect(recovered.issues.length).toBeGreaterThan(0);
+    expect(await recoveryResponse(await owner.request(path))).toEqual(recovered);
+    expect((await owner.read(`${base()}/documents/${fixture.document.body.id}`, "Document")).body).toEqual(
+      fixture.document.body,
+    );
+    expect((await owner.read(`${base()}/sites/${fixture.site.body.id}`, "Site")).body).toEqual(
+      fixture.site.body,
+    );
+    const stored = await admin.query(
+      "SELECT schema_version,block_data,seo,content_hash,(SELECT count(*)::int FROM app.content_revision WHERE tenant_id=$1 AND document_id=$2)AS total FROM app.content_revision WHERE tenant_id=$1 AND id=$3",
+      [owner.orgId, fixture.document.body.id, fixture.id],
+    );
+    expect(stored.rows).toEqual([
+      {
+        schema_version: 7,
+        block_data: fixture.data.blocks,
+        seo: fixture.data.seo,
+        content_hash: fixture.contentHash,
+        total: 1,
+      },
+    ]);
+  });
+
+  it("denies wrong recovery bindings and unregistered paths without revealing the stored original", async () => {
+    const fixture = await unsupportedRevision();
+    const other = await createPair();
+    const wrong = await unavailableRecovery(
+      await owner.request(recoveryPath(other.document.body.id, fixture.id)),
+      404,
+    );
+    const missing = await unavailableRecovery(
+      await owner.request(recoveryPath(fixture.document.body.id, randomUUID())),
+      404,
+    );
+    expect({ code: wrong.code, title: wrong.title }).toEqual({ code: missing.code, title: missing.title });
+    await unavailableRecovery(await owner.request(recoveryPath(randomUUID(), fixture.id)), 404);
+    const switched = await new ApiSession().signIn("owner");
+    expect((await switched.switchOrganization(fixtures.orgB)).status).toBe(200);
+    await unavailableRecovery(
+      await switched.request(recoveryPath(fixture.document.body.id, fixture.id)),
+      403,
+    );
+    await unavailableRecovery(
+      await switched.request(recoveryPath(fixture.document.body.id, fixture.id, switched)),
+      404,
+    );
+    await unavailableRecovery(await owner.request(recoveryPath(fixture.document.body.id, "invalid")), 422);
+    const path = recoveryPath(fixture.document.body.id, fixture.id);
+    await unavailableRecovery(await owner.request(path + "?unexpected=true"), 422);
+    for (const unknown of [
+      path + "/extra",
+      path.replace(/recovery$/, "recover"),
+      `${base()}/revisions/${fixture.id}/recovery`,
+    ])
+      await unavailableRecovery(await owner.request(unknown), 404);
+    await unavailableRecovery(await owner.command(path, {}), 404);
+  });
+
+  it("requires current member and loopback authority for retained recovery reads", async () => {
+    const fixture = await unsupportedRevision();
+    const path = recoveryPath(fixture.document.body.id, fixture.id);
+    await unavailableRecovery(await new ApiSession().request(path), 401);
+    await unavailableRecovery(
+      await owner.request(path, { headers: { "x-forwarded-for": "127.0.0.1, 198.51.100.19" } }),
+      403,
+    );
+    const initial = await recoveryResponse(await agent.request(path));
+    expect(initial.data).toEqual(fixture.data);
+    const priorStatus = (
+      await admin.query("SELECT status FROM app.membership WHERE tenant_id=$1 AND id=$2", [
+        fixtures.orgA,
+        fixtures.agentMemberA,
+      ])
+    ).rows[0].status;
+    try {
+      await admin.query("UPDATE app.membership SET status='disabled' WHERE tenant_id=$1 AND id=$2", [
+        fixtures.orgA,
+        fixtures.agentMemberA,
+      ]);
+      await unavailableRecovery(await agent.request(path), 403);
+      expect((await recoveryResponse(await owner.request(path))).data).toEqual(fixture.data);
+    } finally {
+      await admin.query("UPDATE app.membership SET status=$3 WHERE tenant_id=$1 AND id=$2", [
+        fixtures.orgA,
+        fixtures.agentMemberA,
+        priorStatus,
+      ]);
+    }
+    expect((await recoveryResponse(await agent.request(path))).data).toEqual(fixture.data);
   });
 });

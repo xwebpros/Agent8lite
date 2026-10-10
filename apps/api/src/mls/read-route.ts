@@ -3,6 +3,7 @@ import type { ServerSession } from "../../../../packages/auth/sessions";
 import { AccessError, withTenantTransaction } from "../../../../packages/db/tenant-transaction";
 import { isUuid } from "../../../../packages/mls/contracts";
 import { assertNativeMockMode, NativeMockReadService } from "./service";
+import { requireCurrentNativeSession } from "./read-session";
 
 export interface NativeMockReadRequest {
   path: string;
@@ -45,9 +46,12 @@ export async function tryNativeMockRead(
   if (request.body !== undefined)
     throw new AccessError(422, "query_invalid", "Property reads do not accept a request body.");
   return withTenantTransaction(pool, session, async (client, context) => {
+    await requireCurrentNativeSession(client, session);
     const service = new NativeMockReadService(client, context, options);
-    return listingId
+    const response = listingId
       ? { schema: "Listing" as const, body: await service.detail(listingId, request.query) }
       : { schema: "PageListing" as const, body: await service.list(request.query) };
+    await requireCurrentNativeSession(client, session);
+    return response;
   });
 }

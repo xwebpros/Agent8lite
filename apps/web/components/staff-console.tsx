@@ -16,9 +16,10 @@ import {
   validStaffJobId,
   verifyOrganizationPage,
   verifyStaffJob,
-  verifyStaffSession,
 } from "./staff-console-protocol";
 import styles from "./staff-console.module.css";
+import StaffSupportPanel from "./staff-support-panel";
+import { StaffSupportLifetime, type StaffSupportSessionView } from "./staff-support-protocol";
 
 export type StaffConsoleProps = {
   /** Server-derived explicit development/test enablement; never a public environment flag. */
@@ -32,6 +33,11 @@ const unknownResult = (err: unknown) => !(err instanceof ApiError) || err.status
 
 export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequired }: StaffConsoleProps) {
   const [staff, setStaff] = useState<SyntheticStaffSessionResponse | null>(null);
+  const [supportView, setSupportView] = useState<StaffSupportSessionView | null>(null);
+  const [supportRecovery, setSupportRecovery] = useState(false);
+  const supportLifetime = useRef(new StaffSupportLifetime());
+  const supportGeneration = useRef(supportLifetime.current.generation);
+  const supportProtected = useRef(false);
   const [identity, setIdentity] = useState<SyntheticStaffSessionRequest["identity"]>("administrator");
   const [online, setOnline] = useState(true);
   const [booting, setBooting] = useState(true);
@@ -71,8 +77,10 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
   const firstField = useRef<HTMLInputElement>(null);
   const recoveryInput = useRef("");
   recoveryInput.current = recoverId.trim();
-  const canRead = staff?.permissions.includes("platform.orgs.read") === true;
-  const canProvision = staff?.permissions.includes("platform.orgs.provision") === true;
+  const unselected = supportView?.supportState === "none";
+  const canRead = unselected && staff?.permissions.includes("platform.orgs.read") === true;
+  const canProvision =
+    unselected && !supportRecovery && staff?.permissions.includes("platform.orgs.provision") === true;
   const pending = operations.some((item) => pendingStaffJob(item.job));
   const recoveryRequired =
     dirty ||
@@ -81,15 +89,23 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
     authUnknown ||
     unknownRuns.length > 0 ||
     pending ||
-    working;
+    working ||
+    supportRecovery;
   const recoveryRef = useRef(false);
   recoveryRef.current = recoveryRequired;
   const recoveryCallback = useRef(onRecoveryRequired);
   recoveryCallback.current = onRecoveryRequired;
 
-  const clearPrivate = useCallback(() => {
+  const clearPrivate = useCallback((preserveSupport = false) => {
     ++lifetime.current;
     ++listEpoch.current;
+    if (!preserveSupport) {
+      supportLifetime.current.invalidate();
+      supportGeneration.current = supportLifetime.current.generation;
+      setSupportView(null);
+      setSupportRecovery(false);
+      supportProtected.current = false;
+    }
     csrf.current = "";
     contextKey.current = "";
     createSnapshot.current = null;
@@ -118,6 +134,42 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
     setMetadataError("");
     setBooting(false);
   }, []);
+  const adoptSupportSession = useCallback(
+    (view: StaffSupportSessionView) => {
+      if (supportGeneration.current !== supportLifetime.current.generation) clearPrivate(true);
+      supportGeneration.current = supportLifetime.current.generation;
+      const next = staffContextKey(view.session);
+      if (contextKey.current && contextKey.current !== next) {
+        ++listEpoch.current;
+        setOrganizations([]);
+        setLoaded(false);
+        setCursor(null);
+        setMetadataAt("");
+        setMetadataLoading(false);
+      }
+      contextKey.current = next;
+      csrf.current = view.csrf;
+      setStaff(view.session);
+      setSupportView(view);
+      setAuthUnknown(false);
+      setSignedOut(false);
+    },
+    [clearPrivate],
+  );
+  const markSupportUnverified = useCallback((err: unknown) => {
+    supportLifetime.current.unverify();
+    setSupportView(null);
+    setAuthUnknown(true);
+    setError(err instanceof Error ? err.message : "Current staff support context needs verification.");
+  }, []);
+  const protectSupport = useCallback((value: boolean) => {
+    supportProtected.current = value;
+    setSupportRecovery(value);
+    if (value) {
+      recoveryRef.current = true;
+      recoveryCallback.current?.(true);
+    }
+  }, []);
   const reportFailure = useCallback(
     (err: unknown) => {
       if (err instanceof ApiError && [401, 403].includes(err.status)) {
@@ -133,31 +185,30 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
   const readSession = useCallback(async () => {
     if (!syntheticFeaturesEnabled || !navigator.onLine) return;
     const generation = ++authEpoch.current;
+    const ticket = supportLifetime.current.beginRequest();
     try {
       const response = await api<SyntheticStaffSessionResponse>("/dev/staff/session");
       if (generation !== authEpoch.current) return;
-      const verified = verifyStaffSession(response.data, response.headers.get("X-CSRF-Token"));
-      const next = staffContextKey(verified);
-      if (contextKey.current && contextKey.current !== next) clearPrivate();
-      contextKey.current = next;
-      csrf.current = response.headers.get("X-CSRF-Token")!;
-      setStaff(verified);
-      setAuthUnknown(false);
-      setSignedOut(false);
+      try {
+        const verified = supportLifetime.current.acceptSession(ticket, response.data, response.headers);
+        if (verified) adoptSupportSession(verified);
+      } catch (err) {
+        markSupportUnverified(err);
+      }
     } catch (err) {
-      if (generation !== authEpoch.current) return;
+      if (generation !== authEpoch.current || !supportLifetime.current.isCurrentRequest(ticket)) return;
       if (err instanceof ApiError && err.status === 401) {
         clearPrivate();
         setAuthUnknown(false);
         setSignedOut(true);
       } else {
         reportFailure(err);
-        if (!(err instanceof ApiError && err.status === 403)) setAuthUnknown(true);
+        if (!(err instanceof ApiError && err.status === 403)) markSupportUnverified(err);
       }
     } finally {
       if (generation === authEpoch.current) setBooting(false);
     }
-  }, [syntheticFeaturesEnabled, clearPrivate, reportFailure]);
+  }, [syntheticFeaturesEnabled, clearPrivate, reportFailure, adoptSupportSession, markSupportUnverified]);
   useEffect(() => {
     if (!syntheticFeaturesEnabled) {
       clearPrivate();
@@ -171,7 +222,7 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
     } else void readSession();
     const reconnect = () => {
       setOnline(true);
-      void readSession();
+      if (!supportProtected.current) void readSession();
     };
     const disconnect = () => setOnline(false);
     window.addEventListener("online", reconnect);
@@ -197,6 +248,7 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
       ++lifetime.current;
       ++authEpoch.current;
       ++listEpoch.current;
+      supportLifetime.current.invalidate();
       recoveryCallback.current?.(false);
     },
     [],
@@ -289,7 +341,7 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
   async function signOut() {
     if (!online || inFlight.current || authUnknown) return;
     if (
-      recoveryRequired &&
+      (recoveryRef.current || supportProtected.current) &&
       !window.confirm(
         "Sign out and clear this console’s private draft and operation references? Keep any known operation ID for authorized recovery.",
       )
@@ -558,7 +610,8 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
         <FlaskConical size={22} aria-hidden="true" />
         <p>
           Staff authority is separate from member sessions. This console creates only approved synthetic
-          defaults. Live identity, payments, provider activation and customer CRM access remain unavailable.
+          defaults and explicitly granted synthetic read-only support. Live identity, payments and provider
+          activation remain unavailable.
         </p>
       </div>
       {!online && (
@@ -625,17 +678,21 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
           <section className={`${styles.card} ${styles.identity}`}>
             <div>
               <h2>
-                {authUnknown ? "Last verified synthetic staff session" : "Verified synthetic staff session"}
+                {authUnknown || !online
+                  ? "Last verified synthetic staff session"
+                  : "Verified synthetic staff session"}
               </h2>
               <p className={styles.muted}>Principal {staff.staffUserId}</p>
               <p>
-                {authUnknown ? "Last verified platform permissions" : "Current platform permissions"}:{" "}
-                {staff.permissions.length ? staff.permissions.join(", ") : "None returned"}
+                {authUnknown || !online
+                  ? "Last verified platform permissions"
+                  : "Current platform permissions"}
+                : {staff.permissions.length ? staff.permissions.join(", ") : "None returned"}
               </p>
               {staff.supportContext && (
                 <p className={styles.warning}>
-                  A separate support context is selected until {when(staff.supportContext.expiresAt)}. Reason:{" "}
-                  {staff.supportContext.reason}. This console does not expose its customer data.
+                  A support context was last verified. Its current purpose, expiry and usable reads are shown
+                  only in the verified support panel below.
                 </p>
               )}
             </div>
@@ -654,203 +711,231 @@ export default function StaffConsole({ syntheticFeaturesEnabled, onRecoveryRequi
               </Button>
             </div>
           </section>
-          <section className={styles.card}>
-            <div className={styles.heading}>
-              <div>
-                <p className={styles.eyebrow}>Metadata only</p>
-                <h2>Organizations</h2>
-                <p className={styles.muted}>
-                  {metadataAt ? `Last read ${when(metadataAt)}` : "Metadata has not been read."}
-                </p>
-              </div>
-              {canRead && (
-                <Button
-                  variant="secondary"
-                  disabled={!online || working || metadataLoading || authUnknown}
-                  onClick={() => void loadOrganizations()}
-                >
-                  <RefreshCw size={16} />
-                  {metadataLoading ? "Reading…" : "Refresh organizations"}
-                </Button>
-              )}
-            </div>
-            {metadataError && (
-              <p className={styles.error} role="alert">
-                {metadataError} {metadataAt && "Previously read metadata may be stale."}
-              </p>
-            )}
-            {!canRead ? (
-              <p className={styles.muted}>
-                The current staff session has no organization metadata permission.
-              </p>
-            ) : metadataLoading && !loaded ? (
-              <p role="status">Reading authorized organization metadata…</p>
-            ) : !loaded ? (
-              <p className={styles.muted}>Organization metadata is unavailable.</p>
-            ) : organizations.length === 0 ? (
-              <p>No organizations were returned by the authorized metadata read.</p>
-            ) : (
-              <div className={styles.orgGrid}>
-                {organizations.map((org) => (
-                  <article className={styles.org} key={org.id}>
-                    <Building2 size={22} aria-hidden="true" />
-                    <div>
-                      <h3>{org.name}</h3>
-                      <Badge tone={org.status === "active" ? "positive" : "warning"}>{org.status}</Badge>
-                      <p>
-                        {org.timezone} · {org.locale}
-                      </p>
-                      <p className={styles.muted}>
-                        Version {org.version} · {org.id}
-                      </p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-            {canRead && cursor && (
-              <Button
-                variant="secondary"
-                disabled={!online || working || metadataLoading || authUnknown}
-                onClick={() => void loadOrganizations(cursor)}
-              >
-                Load more organizations
-              </Button>
-            )}
-          </section>
-          {canProvision && (
-            <section className={styles.card}>
-              <h2>Request synthetic organization provisioning</h2>
-              <p>
-                The server binds the approved fixture Owner, built-in role presets, business profile, six
-                stages, default source/routing and mock billing policy. No client owner or plan claim is
-                accepted.
-              </p>
-              <form onSubmit={(event) => void createOrganization(event)}>
-                <fieldset
-                  disabled={working || !online || authUnknown || Boolean(attempt) || unknownRuns.length > 0}
-                >
-                  <legend className={styles.srOnly}>Organization defaults</legend>
-                  <label htmlFor="staff-org-name">
-                    Organization name
-                    <input
-                      ref={firstField}
-                      id="staff-org-name"
-                      autoComplete="organization"
-                      maxLength={120}
-                      required
-                      value={name}
-                      onChange={(event) => {
-                        setName(event.target.value);
-                        setDirty(true);
-                        setReviewed(false);
-                      }}
-                    />
-                  </label>
-                  <div className={styles.fields}>
-                    <label htmlFor="staff-org-timezone">
-                      Timezone
-                      <input
-                        id="staff-org-timezone"
-                        list="staff-timezones"
-                        maxLength={80}
-                        required
-                        value={timezone}
-                        onChange={(event) => {
-                          setTimezone(event.target.value);
-                          setDirty(true);
-                          setReviewed(false);
-                        }}
-                      />
-                      <datalist id="staff-timezones">
-                        <option value="America/Los_Angeles" />
-                        <option value="America/New_York" />
-                        <option value="Asia/Bangkok" />
-                        <option value="UTC" />
-                      </datalist>
-                    </label>
-                    <label htmlFor="staff-org-locale">
-                      Locale (optional)
-                      <input
-                        id="staff-org-locale"
-                        autoComplete="off"
-                        maxLength={20}
-                        value={locale}
-                        onChange={(event) => {
-                          setLocale(event.target.value);
-                          setDirty(true);
-                          setReviewed(false);
-                        }}
-                      />
-                    </label>
+          <StaffSupportPanel
+            lifetime={supportLifetime.current}
+            view={supportView}
+            online={online}
+            verified={!authUnknown}
+            locked={dirty || createUnknown || working || unknownRuns.length > 0 || pending || checking}
+            onSession={adoptSupportSession}
+            onUnverified={markSupportUnverified}
+            onAccessLost={reportFailure}
+            onVerifySession={readSession}
+            onRecoveryRequired={protectSupport}
+          />
+          {!unselected && (
+            <p className={styles.warning} role="status">
+              Provisioning and platform metadata are unavailable while support is selected, stale or
+              unverified. Explicitly clear and verify the staff context to resume.
+            </p>
+          )}
+          {unselected && (
+            <>
+              <section className={styles.card}>
+                <div className={styles.heading}>
+                  <div>
+                    <p className={styles.eyebrow}>Metadata only</p>
+                    <h2>Organizations</h2>
+                    <p className={styles.muted}>
+                      {metadataAt ? `Last read ${when(metadataAt)}` : "Metadata has not been read."}
+                    </p>
                   </div>
-                  <label className={styles.checkbox}>
-                    <input
-                      type="checkbox"
-                      checked={reviewed}
-                      onChange={(event) => {
-                        setReviewed(event.target.checked);
-                        setDirty(true);
-                      }}
-                    />
-                    <span>
-                      I reviewed these settings and explicitly request local synthetic provisioning with no
-                      real charges.
-                    </span>
-                  </label>
-                </fieldset>
-                {createUnknown && (
-                  <p className={styles.warning} role="status">
-                    The create result is unknown. Input and key are frozen; reconcile this exact request
-                    before starting another organization.
-                  </p>
-                )}
-                {createRejected && (
-                  <p className={styles.warning} role="status">
-                    The request was rejected. Discard the draft or explicitly edit it before creating a new
-                    request key.
-                  </p>
-                )}
-                <div className={styles.actions}>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={working || createUnknown || Boolean(attempt && !createRejected)}
-                    onClick={discardDraft}
-                  >
-                    Discard organization draft
-                  </Button>
-                  {createRejected && (
+                  {canRead && (
                     <Button
-                      type="button"
                       variant="secondary"
-                      disabled={working || !online}
-                      onClick={() => {
-                        createSnapshot.current = null;
-                        setAttempt(null);
-                        setCreateRejected(false);
-                        setReviewed(false);
-                        window.requestAnimationFrame(() => firstField.current?.focus());
-                      }}
+                      disabled={!online || working || metadataLoading || authUnknown}
+                      onClick={() => void loadOrganizations()}
                     >
-                      Edit rejected draft
+                      <RefreshCw size={16} />
+                      {metadataLoading ? "Reading…" : "Refresh organizations"}
                     </Button>
                   )}
-                  <Button
-                    type="submit"
-                    disabled={
-                      working || !online || authUnknown || unknownRuns.length > 0 || (!attempt && !reviewed)
-                    }
-                  >
-                    {working
-                      ? "Requesting…"
-                      : attempt
-                        ? "Reconcile original create request"
-                        : "Queue synthetic provisioning"}
-                  </Button>
                 </div>
-              </form>
-            </section>
+                {metadataError && (
+                  <p className={styles.error} role="alert">
+                    {metadataError} {metadataAt && "Previously read metadata may be stale."}
+                  </p>
+                )}
+                {!canRead ? (
+                  <p className={styles.muted}>
+                    The current staff session has no organization metadata permission.
+                  </p>
+                ) : metadataLoading && !loaded ? (
+                  <p role="status">Reading authorized organization metadata…</p>
+                ) : !loaded ? (
+                  <p className={styles.muted}>Organization metadata is unavailable.</p>
+                ) : organizations.length === 0 ? (
+                  <p>No organizations were returned by the authorized metadata read.</p>
+                ) : (
+                  <div className={styles.orgGrid}>
+                    {organizations.map((org) => (
+                      <article className={styles.org} key={org.id}>
+                        <Building2 size={22} aria-hidden="true" />
+                        <div>
+                          <h3>{org.name}</h3>
+                          <Badge tone={org.status === "active" ? "positive" : "warning"}>{org.status}</Badge>
+                          <p>
+                            {org.timezone} · {org.locale}
+                          </p>
+                          <p className={styles.muted}>
+                            Version {org.version} · {org.id}
+                          </p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+                {canRead && cursor && (
+                  <Button
+                    variant="secondary"
+                    disabled={!online || working || metadataLoading || authUnknown}
+                    onClick={() => void loadOrganizations(cursor)}
+                  >
+                    Load more organizations
+                  </Button>
+                )}
+              </section>
+              {canProvision && (
+                <section className={styles.card}>
+                  <h2>Request synthetic organization provisioning</h2>
+                  <p>
+                    The server binds the approved fixture Owner, built-in role presets, business profile, six
+                    stages, default source/routing and mock billing policy. No client owner or plan claim is
+                    accepted.
+                  </p>
+                  <form onSubmit={(event) => void createOrganization(event)}>
+                    <fieldset
+                      disabled={
+                        working || !online || authUnknown || Boolean(attempt) || unknownRuns.length > 0
+                      }
+                    >
+                      <legend className={styles.srOnly}>Organization defaults</legend>
+                      <label htmlFor="staff-org-name">
+                        Organization name
+                        <input
+                          ref={firstField}
+                          id="staff-org-name"
+                          autoComplete="organization"
+                          maxLength={120}
+                          required
+                          value={name}
+                          onChange={(event) => {
+                            setName(event.target.value);
+                            setDirty(true);
+                            setReviewed(false);
+                          }}
+                        />
+                      </label>
+                      <div className={styles.fields}>
+                        <label htmlFor="staff-org-timezone">
+                          Timezone
+                          <input
+                            id="staff-org-timezone"
+                            list="staff-timezones"
+                            maxLength={80}
+                            required
+                            value={timezone}
+                            onChange={(event) => {
+                              setTimezone(event.target.value);
+                              setDirty(true);
+                              setReviewed(false);
+                            }}
+                          />
+                          <datalist id="staff-timezones">
+                            <option value="America/Los_Angeles" />
+                            <option value="America/New_York" />
+                            <option value="Asia/Bangkok" />
+                            <option value="UTC" />
+                          </datalist>
+                        </label>
+                        <label htmlFor="staff-org-locale">
+                          Locale (optional)
+                          <input
+                            id="staff-org-locale"
+                            autoComplete="off"
+                            maxLength={20}
+                            value={locale}
+                            onChange={(event) => {
+                              setLocale(event.target.value);
+                              setDirty(true);
+                              setReviewed(false);
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <label className={styles.checkbox}>
+                        <input
+                          type="checkbox"
+                          checked={reviewed}
+                          onChange={(event) => {
+                            setReviewed(event.target.checked);
+                            setDirty(true);
+                          }}
+                        />
+                        <span>
+                          I reviewed these settings and explicitly request local synthetic provisioning with
+                          no real charges.
+                        </span>
+                      </label>
+                    </fieldset>
+                    {createUnknown && (
+                      <p className={styles.warning} role="status">
+                        The create result is unknown. Input and key are frozen; reconcile this exact request
+                        before starting another organization.
+                      </p>
+                    )}
+                    {createRejected && (
+                      <p className={styles.warning} role="status">
+                        The request was rejected. Discard the draft or explicitly edit it before creating a
+                        new request key.
+                      </p>
+                    )}
+                    <div className={styles.actions}>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={working || createUnknown || Boolean(attempt && !createRejected)}
+                        onClick={discardDraft}
+                      >
+                        Discard organization draft
+                      </Button>
+                      {createRejected && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={working || !online}
+                          onClick={() => {
+                            createSnapshot.current = null;
+                            setAttempt(null);
+                            setCreateRejected(false);
+                            setReviewed(false);
+                            window.requestAnimationFrame(() => firstField.current?.focus());
+                          }}
+                        >
+                          Edit rejected draft
+                        </Button>
+                      )}
+                      <Button
+                        type="submit"
+                        disabled={
+                          working ||
+                          !online ||
+                          authUnknown ||
+                          unknownRuns.length > 0 ||
+                          (!attempt && !reviewed)
+                        }
+                      >
+                        {working
+                          ? "Requesting…"
+                          : attempt
+                            ? "Reconcile original create request"
+                            : "Queue synthetic provisioning"}
+                      </Button>
+                    </div>
+                  </form>
+                </section>
+              )}
+            </>
           )}
           {canProvision && (
             <section className={styles.card}>
