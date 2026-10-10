@@ -6,6 +6,7 @@ import {
   copyBrowserJson,
   inspectBrowserDraft,
   requireBrowserShape,
+  serializeBrowserJson,
   type BrowserDraft,
   type BrowserIssue,
   type BrowserLinkPolicy,
@@ -72,6 +73,7 @@ export class CmsDraftController {
   private pending: CmsSaveCommand | null = null;
   private inFlight: Promise<void> | null = null;
   private generation = 0;
+  private readGeneration = 0;
   private refreshing = false;
   private readonly past: LocalEdit[] = [];
   private readonly future: LocalEdit[] = [];
@@ -144,7 +146,7 @@ export class CmsDraftController {
     this.future.length = 0;
   }
   private captureEdit(): LocalEdit {
-    const json = JSON.stringify(this.state.draft);
+    const json = serializeBrowserJson(this.state.draft);
     return { json, bytes: new TextEncoder().encode(json).byteLength };
   }
   private boundHistory() {
@@ -181,6 +183,7 @@ export class CmsDraftController {
     return inspection.issues.length ? null : (inspection.data as BrowserDraft);
   }
   setOnline(online: boolean) {
+    if (!online && this.state.online) ++this.readGeneration;
     if (!online && this.state.recovery) {
       this.update({
         online,
@@ -192,7 +195,12 @@ export class CmsDraftController {
       });
       return;
     }
-    this.update({ online });
+    this.update({
+      online,
+      ...(!online && this.refreshing
+        ? { message: "Version read interrupted. Reconnect and read the current version again." }
+        : {}),
+    });
   }
 
   /** UUID order and document publication pointers never select an editor revision implicitly. */
@@ -270,7 +278,7 @@ export class CmsDraftController {
     } catch (error) {
       if (!(error instanceof BrowserContentError)) throw error;
       this.update({
-        message: "That change exceeds the supported content limits. Your previous draft is retained.",
+        message: "That change is not supported. Your previous draft is retained.",
       });
       return false;
     }
@@ -359,7 +367,17 @@ export class CmsDraftController {
   private async attempt(command: CmsSaveCommand, generation: number) {
     try {
       if (generation !== this.generation) return;
-      const response = await this.options.client.saveDraft(copyBrowserJson(command));
+      if (!this.state.online) {
+        this.update({
+          phase: "uncertain",
+          message: "Save paused while offline. Reconnect and retry the same save.",
+        });
+        return;
+      }
+      const response = await this.options.client.saveDraft({
+        ...command,
+        body: copyBrowserJson(command.body),
+      });
       if (generation !== this.generation) return;
       const revision = requireBrowserShape("Revision", response.data);
       const version = browserDocumentVersion(response.etag);
@@ -414,11 +432,15 @@ export class CmsDraftController {
   async refreshVersion(): Promise<void> {
     if (this.pending || this.refreshing || !this.state.online || this.state.phase !== "conflict") return;
     const generation = this.generation;
+    const readGeneration = this.readGeneration;
+    const current = () =>
+      generation === this.generation && readGeneration === this.readGeneration && this.state.online;
     this.refreshing = true;
     this.update({ message: "Reading the current document version…" });
     try {
+      if (!current()) return;
       const response = await this.options.client.readDocument();
-      if (generation !== this.generation) return;
+      if (!current()) return;
       const document = requireBrowserShape("Document", response.data);
       if (
         document.id !== this.state.document.id ||
@@ -436,7 +458,7 @@ export class CmsDraftController {
     } catch (error) {
       if (generation !== this.generation) return;
       if ([401, 403, 404].includes((error as { status?: number } | null)?.status ?? 0)) this.revoke();
-      else
+      else if (current())
         this.update({ message: "The current version could not be read. Your unsaved draft is preserved." });
     } finally {
       this.refreshing = false;

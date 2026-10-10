@@ -7,7 +7,7 @@ import { api, ApiError } from "../../lib/api";
 import { PropertyDetailFocus } from "./detail-focus";
 import { PropertyCard, PropertyDetail, type PropertyListing } from "./property-view";
 import { propertiesAreCurrent, propertyExpiryDelay, PropertyReads } from "./read-lifecycle";
-import { refreshPropertyPages } from "./refresh-pages";
+import { loadMorePropertyPage, refreshPropertyPages } from "./refresh-pages";
 import {
   emptyPropertyFilters,
   propertySearchParams,
@@ -27,7 +27,6 @@ export interface PropertiesFeatureProps {
 type ScopedPage = { scope: string; page: Page };
 type ScopedDetail = { scope: string; item: PropertyListing };
 const emptyPage: Page = { items: [], hasMore: false, nextCursor: null };
-const interrupted = (error: unknown) => error instanceof Error && error.name === "AbortError";
 
 /** Memory-only authenticated synthetic feature; the coordinator registers its shell view. */
 export default function PropertiesFeature({
@@ -58,14 +57,15 @@ export default function PropertiesFeature({
   const currentSelection = useRef<string | null>(null);
   const applied = useRef(propertySearchParams(emptyPropertyFilters, "updated_desc"));
   const paging = useRef(new URLSearchParams(applied.current));
+  const consumedCursors = useRef<readonly string[]>([]);
   const visibleCount = useRef(20);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const propertiesHeading = useRef<HTMLHeadingElement>(null);
   const permitted =
     syntheticFeaturesEnabled && Boolean(session.activeOrgId) && session.permissions.includes("mls.read");
   const enabled = permitted && online && !denied;
-  const live = useRef({ scope: context, enabled });
-  live.current = { scope: context, enabled };
+  const live = useRef({ scope: context, enabled, result });
+  live.current = { scope: context, enabled, result };
   const base = `/dev/orgs/${session.activeOrgId}/mls/listings`;
   // Render guards apply before effects, so a changed scope/offline state cannot flash previous private data.
   const scopedPage = enabled && result?.scope === context ? result.page : emptyPage;
@@ -79,6 +79,7 @@ export default function PropertiesFeature({
     reads.clear();
     visibleCount.current = 20;
     paging.current = new URLSearchParams(applied.current);
+    consumedCursors.current = [];
     setResult(null);
     setDetail(null);
     setLoaded(false);
@@ -116,7 +117,7 @@ export default function PropertiesFeature({
           throw new Error("This synthetic property has expired. Refresh the search.");
         setDetail({ scope: context, item: response.data });
       } catch (failure) {
-        if (!reads.current(request, live.current.scope, live.current.enabled) || interrupted(failure)) return;
+        if (!reads.current(request, live.current.scope, live.current.enabled)) return;
         // Invalidate both pending reads as well as the displayed records.
         clearPrivate();
         setDetailError(failed(failure));
@@ -132,9 +133,12 @@ export default function PropertiesFeature({
     async (params: URLSearchParams, append = false, cursor?: string | null, count = 20) => {
       if (!live.current.enabled || live.current.scope !== context) return;
       const request = reads.begin("list", context);
+      const parentResult = live.current.result;
+      const history = consumedCursors.current;
       const query = new URLSearchParams(append ? paging.current : params);
       if (append && cursor) query.set("cursor", cursor);
       if (!append) {
+        consumedCursors.current = [];
         setResult(null);
         setLoaded(false);
       }
@@ -145,7 +149,13 @@ export default function PropertiesFeature({
         const read = async (query: URLSearchParams) =>
           (await api<Page>(`${base}?${query}`, { signal: request.controller.signal })).data;
         const response = append
-          ? { page: await read(query), params: new URLSearchParams(paging.current) }
+          ? await loadMorePropertyPage(
+              parentResult?.scope === context ? parentResult.page : emptyPage,
+              query,
+              history,
+              read,
+              () => reads.current(request, live.current.scope, live.current.enabled),
+            )
           : await refreshPropertyPages(params, count, read, () =>
               reads.current(request, live.current.scope, live.current.enabled),
             );
@@ -154,20 +164,18 @@ export default function PropertiesFeature({
         if (!propertiesAreCurrent(response.page.items))
           throw new Error("These synthetic results expired while loading. Refresh the search.");
         paging.current = response.params;
+        consumedCursors.current = response.consumedCursors;
         setResult((previous) => {
           if (!reads.current(request, live.current.scope, live.current.enabled)) return previous;
-          const items =
-            append && previous?.scope === context
-              ? [...previous.page.items, ...response.page.items]
-              : response.page.items;
+          if (append && previous !== parentResult) return previous;
           return {
             scope: context,
-            page: { ...response.page, items: [...new Map(items.map((item) => [item.id, item])).values()] },
+            page: response.page,
           };
         });
         setLoaded(true);
       } catch (failure) {
-        if (!reads.current(request, live.current.scope, live.current.enabled) || interrupted(failure)) return;
+        if (!reads.current(request, live.current.scope, live.current.enabled)) return;
         // Stale cursors and source errors invalidate already displayed pages/details too.
         clearPrivate();
         setError(failed(failure));

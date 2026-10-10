@@ -5,12 +5,22 @@ type PropertyRead = { kind: ReadKind; scope: string; controller: AbortController
 export class PropertyReads {
   private pending = new Map<ReadKind, PropertyRead>();
   private ongoing = new Set<PropertyRead>();
+  private clearing = 0;
 
   begin(kind: ReadKind, scope: string): PropertyRead {
-    this.cancel(kind);
     const read = { kind, scope, controller: new AbortController() };
+    if (this.clearing) {
+      read.controller.abort();
+      return read;
+    }
+    const previous = this.pending.get(kind);
+    // Publish the replacement first: a synchronous abort callback may supersede it again.
     this.pending.set(kind, read);
     this.ongoing.add(read);
+    if (previous) {
+      this.ongoing.delete(previous);
+      previous.controller.abort();
+    }
     return read;
   }
 
@@ -25,11 +35,11 @@ export class PropertyReads {
 
   cancel(kind: ReadKind) {
     const read = this.pending.get(kind);
-    if (read) {
-      read.controller.abort();
-      this.ongoing.delete(read);
-    }
     this.pending.delete(kind);
+    if (read) {
+      this.ongoing.delete(read);
+      read.controller.abort();
+    }
   }
 
   busy(kind: ReadKind) {
@@ -42,8 +52,16 @@ export class PropertyReads {
   }
 
   clear() {
-    this.cancel("list");
-    this.cancel("detail");
+    ++this.clearing;
+    const pending = [...this.pending.values()];
+    this.pending.clear();
+    this.ongoing.clear();
+    try {
+      // Both surfaces are retired before any abort handler can run or attempt another read.
+      for (const read of pending) read.controller.abort();
+    } finally {
+      --this.clearing;
+    }
   }
 }
 

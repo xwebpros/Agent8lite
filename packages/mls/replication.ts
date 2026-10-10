@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { types } from "node:util";
 import type { ChangePage, FeedContext, ReplicationAdapter, SourceChange } from "../providers/mls/port";
 import { isDisplayPolicy } from "./contracts";
 import { isNativeRights } from "./projection";
+import { snapshotMockReplicationData } from "./replication-data";
 import {
   closed,
   integer,
@@ -116,6 +118,14 @@ const checkpointKeys = [
   "cycleBinding",
 ];
 export function isMockReplicationCheckpoint(value: unknown): value is MockReplicationCheckpoint {
+  try {
+    return validCheckpoint(snapshotMockReplicationData(value));
+  } catch {
+    return false;
+  }
+}
+
+function validCheckpoint(value: unknown): value is MockReplicationCheckpoint {
   if (!record(value) || !closed(value, checkpointKeys)) return false;
   const hashes = value.cursorHashes;
   return (
@@ -152,20 +162,26 @@ export function createMockReplicationCheckpoint(
     readonly watermark?: string | null;
   } = {},
 ): MockReplicationCheckpoint {
+  let data: { context: FeedContext; options: typeof options };
+  try {
+    data = snapshotMockReplicationData({ context, options });
+  } catch {
+    throw new Error("invalid_checkpoint");
+  }
   const checkpoint: MockReplicationCheckpoint = {
     schemaVersion: 1,
-    context: structuredClone(context),
+    context: data.context,
     resource: "listing",
     revision: 0,
     cursor: null,
-    watermark: options.watermark ?? null,
-    overlapSeconds: options.overlapSeconds ?? 30,
-    limit: options.limit ?? 100,
+    watermark: data.options.watermark ?? null,
+    overlapSeconds: data.options.overlapSeconds ?? 30,
+    limit: data.options.limit ?? 100,
     pagesInCycle: 0,
     cursorHashes: [],
     cycleBinding: null,
   };
-  if (!isMockReplicationCheckpoint(checkpoint)) throw new Error("invalid_checkpoint");
+  if (!validCheckpoint(checkpoint)) throw new Error("invalid_checkpoint");
   return immutable(checkpoint);
 }
 
@@ -201,8 +217,13 @@ export function getMockReplicationFeedBinding(
   context: FeedContext,
   feed: NativeMockFeed,
 ): MockReplicationFeedBinding | null {
-  if (!isReplicationContext(context) || !authorizedFeed(feed, context)) return null;
-  return { feedRevision: feed.revision, rightsFingerprint: rightsFingerprint(feed) };
+  try {
+    const data = snapshotMockReplicationData({ context, feed });
+    if (!isReplicationContext(data.context) || !authorizedFeed(data.feed, data.context)) return null;
+    return { feedRevision: data.feed.revision, rightsFingerprint: rightsFingerprint(data.feed) };
+  } catch {
+    return null;
+  }
 }
 
 function validPage(page: unknown, checkpoint: MockReplicationCheckpoint): page is ChangePage {
@@ -242,15 +263,21 @@ export async function stepMockReplication(
   input: MockReplicationCheckpoint,
   ports: MockReplicationPorts,
 ): Promise<MockReplicationResult> {
-  if (!isMockReplicationCheckpoint(input) || input.revision === Number.MAX_SAFE_INTEGER)
+  let checkpoint: MockReplicationCheckpoint;
+  try {
+    const data = snapshotMockReplicationData(input);
+    if (!validCheckpoint(data) || data.revision === Number.MAX_SAFE_INTEGER)
+      return { status: "blocked", code: "invalid_checkpoint" };
+    checkpoint = immutable(data);
+  } catch {
     return { status: "blocked", code: "invalid_checkpoint" };
-  const checkpoint = immutable(structuredClone(input));
+  }
   if (ports.adapter.providerCode !== "mock-synthetic" || ports.adapter.mode !== "replication")
     return { status: "blocked", code: "capability_denied" };
   let feed: NativeMockFeed;
   let fingerprint: string;
   try {
-    feed = immutable(structuredClone(await ports.authorize(checkpoint.context)));
+    feed = immutable(snapshotMockReplicationData(await ports.authorize(checkpoint.context)));
     if (!authorizedFeed(feed, checkpoint.context)) return { status: "blocked", code: "policy_denied" };
     fingerprint = rightsFingerprint(feed);
     if (
@@ -264,7 +291,7 @@ export async function stepMockReplication(
   }
   let page: ChangePage;
   try {
-    const capabilities = await ports.adapter.capabilities(checkpoint.context);
+    const capabilities = snapshotMockReplicationData(await ports.adapter.capabilities(checkpoint.context));
     if (
       capabilities.mode !== "replication" ||
       capabilities.supports.incremental !== true ||
@@ -272,7 +299,7 @@ export async function stepMockReplication(
       !integer(capabilities.rate.maxPageSize, checkpoint.limit, Number.MAX_SAFE_INTEGER)
     )
       return { status: "blocked", code: "capability_denied" };
-    page = structuredClone(
+    page = snapshotMockReplicationData(
       await ports.adapter.readChanges(checkpoint.context, {
         cursor: checkpoint.cursor,
         watermark: checkpoint.watermark,
@@ -280,7 +307,7 @@ export async function stepMockReplication(
         limit: checkpoint.limit,
       }),
     );
-    if (Array.isArray(page.changes)) {
+    if (record(page) && Array.isArray(page.changes)) {
       page = {
         ...page,
         changes: page.changes.map((change) => {
@@ -291,17 +318,26 @@ export async function stepMockReplication(
       };
     }
   } catch (error) {
-    if (error instanceof MockReplicationReadError) {
-      if (error.code === "rate_limited" && integer(error.retryAfterSeconds, 1, 3600))
-        return { status: "retry", code: "rate_limited", retryAfterSeconds: error.retryAfterSeconds };
-      if (error.code === "credential_expired" || error.code === "cursor_expired")
-        return { status: "blocked", code: error.code };
+    if (
+      error !== null &&
+      typeof error === "object" &&
+      !types.isProxy(error) &&
+      Object.getPrototypeOf(error) === MockReplicationReadError.prototype
+    ) {
+      const code = Object.getOwnPropertyDescriptor(error, "code");
+      const retry = Object.getOwnPropertyDescriptor(error, "retryAfterSeconds");
+      if (code && Object.hasOwn(code, "value") && retry && Object.hasOwn(retry, "value")) {
+        if (code.value === "rate_limited" && integer(retry.value, 1, 3600))
+          return { status: "retry", code: "rate_limited", retryAfterSeconds: retry.value };
+        if (code.value === "credential_expired" || code.value === "cursor_expired")
+          return { status: "blocked", code: code.value };
+      }
     }
     return { status: "blocked", code: "read_failed" };
   }
   if (!validPage(page, checkpoint)) return { status: "blocked", code: "invalid_page" };
   try {
-    const current = await ports.authorize(checkpoint.context);
+    const current = snapshotMockReplicationData(await ports.authorize(checkpoint.context));
     if (!authorizedFeed(current, checkpoint.context)) return { status: "blocked", code: "policy_denied" };
     if (rightsFingerprint(current) !== fingerprint) return { status: "blocked", code: "policy_changed" };
   } catch {
@@ -327,7 +363,7 @@ export async function stepMockReplication(
   };
   const plan = immutable({ ...content, receiptId: hash(content) });
   try {
-    const commit = await ports.commitPage(plan);
+    const commit = snapshotMockReplicationData(await ports.commitPage(plan));
     if (commit?.status === "conflict") return { status: "reload_required", code: "checkpoint_conflict" };
     if (
       !record(commit) ||
