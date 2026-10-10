@@ -450,6 +450,66 @@ describe("Trestle listing projection and continuations", () => {
     h.state.authorization = { ...h.state.authorization, revision: "2" };
     expect(await h.adapter.health(context)).toMatchObject({ state: "unavailable", lastSuccessAt: null });
   });
+  it("expires readiness at the approved freshness boundary without fetching or renewing it", async () => {
+    const h = harness();
+    expect(await h.adapter.health(context)).toEqual({ state: "unavailable", lastSuccessAt: null });
+    await h.adapter.search(context, {});
+    const stamp = h.state.now.toISOString(),
+      calls = h.fetch.mock.calls.length;
+    h.state.now = new Date(h.state.now.getTime() + 299999);
+    expect(await h.adapter.health(context)).toEqual({ state: "ready", lastSuccessAt: stamp });
+    h.state.now = new Date(h.state.now.getTime() + 1);
+    expect(await h.adapter.health(context)).toEqual({ state: "unavailable", lastSuccessAt: stamp });
+    expect(h.fetch).toHaveBeenCalledTimes(calls);
+  });
+  it("reports a failed provider read as degraded and restores readiness only after success", async () => {
+    const h = harness();
+    await h.adapter.search(context, {});
+    const stamp = h.state.now.toISOString(),
+      calls = h.fetch.mock.calls.length;
+    h.state.respond = () => json({ private: "must never escape" }, { status: 429 });
+    await expect(h.adapter.search(context, {})).rejects.toMatchObject({ code: "TRESTLE_QUOTA_EXCEEDED" });
+    expect(h.fetch).toHaveBeenCalledTimes(calls + 1);
+    expect(await h.adapter.health(context)).toEqual({ state: "degraded", lastSuccessAt: stamp });
+    // Invalid client input neither heals nor worsens the actual provider state.
+    await expect(h.adapter.search(context, { q: "unsupported" })).rejects.toMatchObject({
+      code: "TRESTLE_KEYWORD_NOT_IMPLEMENTED",
+    });
+    expect(await h.adapter.health(context)).toEqual({ state: "degraded", lastSuccessAt: stamp });
+    h.state.respond = () => json({ value: [row()] });
+    h.state.now = new Date(h.state.now.getTime() + 1);
+    await h.adapter.getListing(context, "fixture-listing");
+    expect(await h.adapter.health(context)).toEqual({
+      state: "ready",
+      lastSuccessAt: h.state.now.toISOString(),
+    });
+  });
+  it("does not interpret malformed client filters as upstream failure", async () => {
+    const h = harness();
+    await h.adapter.search(context, {});
+    await expect(h.adapter.search(context, { q: "unsupported" })).rejects.toMatchObject({
+      code: "TRESTLE_KEYWORD_NOT_IMPLEMENTED",
+    });
+    expect(await h.adapter.health(context)).toMatchObject({ state: "ready" });
+  });
+  it.each([new Date(Number.NaN), new Date("2026-10-09T23:59:59Z")])(
+    "withholds readiness under invalid or regressed clocks (%s)",
+    async (now) => {
+      const h = harness();
+      await h.adapter.search(context, {});
+      h.state.now = now;
+      expect(await h.adapter.health(context)).toEqual({ state: "unavailable", lastSuccessAt: null });
+    },
+  );
+  it("clears historical health on revoked authorization and does not heal it with metadata", async () => {
+    const h = harness();
+    await h.adapter.search(context, {});
+    h.state.authorization = { ...h.state.authorization, connectionState: "suspended" };
+    expect(await h.adapter.health(context)).toEqual({ state: "unavailable", lastSuccessAt: null });
+    h.state.authorization = authorization();
+    await h.adapter.readMetadata(context);
+    expect(await h.adapter.health(context)).toEqual({ state: "unavailable", lastSuccessAt: null });
+  });
   it("denies detail key substitution and excess page size", async () => {
     const h = harness();
     await expect(h.adapter.getListing(context, "other-key")).rejects.toMatchObject({

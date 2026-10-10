@@ -7,11 +7,32 @@ import type {
   LiveQueryAdapter,
   SearchPage,
 } from "../port";
-import { authorizeFeed, digest, TrestleError } from "./safety";
+import { authorizeFeed, digest, instant, TrestleError } from "./safety";
 import { TrestleClient } from "./trestle.client";
 import { mapTrestleListing, matchesTrestleCriteria, selectedFields } from "./trestle.mapper";
 import { continuation, propertyQuery } from "./trestle.query";
 import type { TrestleAdapterOptions, TrestleFeedAuthorization } from "./types";
+
+const providerFailures = new Set([
+  "TRESTLE_QUOTA_EXCEEDED",
+  "TRESTLE_AUTH_DENIED",
+  "TRESTLE_UPSTREAM_ERROR",
+  "TRESTLE_BAD_RESPONSE",
+  "TRESTLE_RESPONSE_TOO_LARGE",
+  "TRESTLE_REQUEST_TIMEOUT",
+  "TRESTLE_TRANSPORT_ERROR",
+  "TRESTLE_BAD_TOKEN_RESPONSE",
+  "TRESTLE_BAD_METADATA_RESPONSE",
+  "TRESTLE_BAD_PROPERTY_RESPONSE",
+  "TRESTLE_PAGE_BOUND_EXCEEDED",
+  "TRESTLE_DUPLICATE_SOURCE_RECORD",
+  "TRESTLE_SOURCE_SCOPE_DENIED",
+  "TRESTLE_UNTRUSTED_SOURCE_RECORD",
+  "TRESTLE_CONTINUATION_DENIED",
+  "TRESTLE_DETAIL_NOT_UNIQUE",
+  "TRESTLE_CREDENTIAL_NOT_READY",
+  "TRESTLE_OPERATION_FAILED",
+]);
 
 /** Unregistered live-query seam. Default application configuration remains mock. */
 export class TrestleAdapter implements LiveQueryAdapter {
@@ -22,6 +43,7 @@ export class TrestleAdapter implements LiveQueryAdapter {
   #now: () => Date;
   #lastSuccessAt: string | null = null;
   #lastSuccessBinding: string | null = null;
+  #lastFailureBinding: string | null = null;
   #cursors = new Map<string, { url: string; binding: string; expiresAt: number }>();
 
   constructor(options: TrestleAdapterOptions) {
@@ -39,6 +61,7 @@ export class TrestleAdapter implements LiveQueryAdapter {
       this.#cursors.clear();
       this.#lastSuccessAt = null;
       this.#lastSuccessBinding = null;
+      this.#lastFailureBinding = null;
       if (error instanceof TrestleError) throw error;
       throw new TrestleError("TRESTLE_FEED_NOT_AUTHORIZED");
     }
@@ -57,14 +80,18 @@ export class TrestleAdapter implements LiveQueryAdapter {
         this.#cursors.clear();
         this.#lastSuccessAt = null;
         this.#lastSuccessBinding = null;
+        this.#lastFailureBinding = null;
         throw new TrestleError("TRESTLE_AUTHORIZATION_CHANGED");
       }
     };
     try {
       const result = await work(authorization, guard);
       await guard();
+      if (display) this.#lastFailureBinding = null;
       return result;
     } catch (error) {
+      if (!(error instanceof TrestleError) || providerFailures.has(error.code))
+        this.#lastFailureBinding = digest([context, authorization]);
       if (error instanceof TrestleError) throw error;
       throw new TrestleError("TRESTLE_OPERATION_FAILED");
     }
@@ -114,9 +141,20 @@ export class TrestleAdapter implements LiveQueryAdapter {
     context = structuredClone(context);
     try {
       const authorization = await this.#authorized(context, true);
-      const current = this.#lastSuccessBinding === digest([context, authorization]);
+      const binding = digest([context, authorization]);
+      const current = this.#lastSuccessBinding === binding;
+      const now = this.#now().getTime();
+      const success = this.#lastSuccessAt ? instant(this.#lastSuccessAt) : Number.NaN;
+      if (!Number.isFinite(now) || !Number.isFinite(success) || success > now)
+        return { state: "unavailable" as const, lastSuccessAt: null };
+      const fresh = now - success < authorization.policy.maxDataAgeSeconds! * 1000;
       return {
-        state: current && this.#lastSuccessAt ? ("ready" as const) : ("unavailable" as const),
+        state:
+          current && fresh
+            ? this.#lastFailureBinding === binding
+              ? ("degraded" as const)
+              : ("ready" as const)
+            : ("unavailable" as const),
         lastSuccessAt: current ? this.#lastSuccessAt : null,
       };
     } catch {
