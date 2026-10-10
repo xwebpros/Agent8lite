@@ -46,10 +46,27 @@ export class NativeMockReadService {
     }
   }
 
+  private async recheckCurrentCapability(): Promise<void> {
+    await requireEntitlement(this.client, "mls.read");
+    // The foundation checkpoint uses transaction-start now(). Keep an owned current-clock
+    // check until its shared clock_timestamp correction is integrated; rights expiry can
+    // advance while this transaction waits for source SHARE locks.
+    const current = await this.client.query(
+      "SELECT id FROM app.entitlement WHERE tenant_id=app.current_tenant() AND feature='mls' AND state='enabled' AND (effective_until IS NULL OR effective_until>clock_timestamp()) FOR SHARE",
+    );
+    if (!current.rowCount)
+      throw new AccessError(
+        403,
+        "entitlement_disabled",
+        "This organization does not have an active capability for this operation.",
+      );
+  }
+
   async list(query: unknown) {
     return this.read(async () => {
       const input = parseNativeListingQuery(query);
       const { snapshot, now } = await new NativeMockListingRepository(this.client).current();
+      await this.recheckCurrentCapability();
       const body = searchNativeMockListings(snapshot, this.context, input, {
         now,
         signingKey: this.options.signingKey,
@@ -70,6 +87,7 @@ export class NativeMockReadService {
       )
         throw new AccessError(422, "query_invalid", "The property detail request is invalid.");
       const { snapshot, now } = await new NativeMockListingRepository(this.client).current();
+      await this.recheckCurrentCapability();
       const body = getNativeMockListing(snapshot, this.context, id, now);
       if (!body) throw new AccessError(404, "listing_unavailable", "The synthetic property is unavailable.");
       validateSchema("Listing", body, true);

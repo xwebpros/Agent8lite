@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { NativeMockReadService } from "../../apps/api/src/mls";
+import { NativeMockReadService, tryNativeMockRead } from "../../apps/api/src/mls";
+import { createSyntheticSession, readSession } from "../../packages/auth/sessions";
 import { fixtures } from "../../packages/db/fixtures";
 import { assertRuntimeRole } from "../../packages/db/runtime-role";
 import { withTenantTransaction } from "../../packages/db/tenant-transaction";
@@ -298,6 +299,72 @@ describe("W07 approved candidate — real runtime role and current locked projec
       await reader.query("ROLLBACK");
       writer.release();
       reader.release();
+    }
+  });
+
+  it("rechecks current MLS capability after list/detail source locks when entitlement expires while blocked", async () => {
+    const token = (await createSyntheticSession(runtime, fixtures.ownerUser, fixtures.orgA)).token;
+    const session = await readSession(runtime, token);
+    for (const suffix of ["", `/${nativeId("SYNTHETIC-VEGAS-001")}`]) {
+      await resetDatabase();
+      const writer = await admin.connect();
+      let pending: ReturnType<typeof tryNativeMockRead> | undefined;
+      try {
+        await writer.query("BEGIN");
+        await writer.query("UPDATE app.listing SET row_version=row_version WHERE id=$1", [
+          nativeId("SYNTHETIC-VEGAS-001"),
+        ]);
+        await admin.query(
+          "UPDATE app.entitlement SET effective_until=clock_timestamp()+interval '500 milliseconds' WHERE tenant_id=$1 AND feature='mls'",
+          [fixtures.orgA],
+        );
+        pending = tryNativeMockRead(
+          {
+            path: `/dev/orgs/${fixtures.orgA}/mls/listings${suffix}`,
+            method: "GET",
+            query: {},
+            remoteAddress: "127.0.0.1",
+          },
+          session,
+          runtime,
+          { signingKey },
+        );
+        // Attach rejection handling before releasing the writer to avoid an unhandled rejection.
+        const outcome = pending.then(
+          () => ({ ok: true as const }),
+          (error) => ({ ok: false as const, error }),
+        );
+        const deadline = Date.now() + 5000;
+        let waiting = false;
+        while (Date.now() < deadline) {
+          const blocked = await admin.query(
+            "SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND usename='estate_runtime' AND wait_event_type='Lock' AND query LIKE '%FROM app.listing l%'",
+          );
+          if (blocked.rowCount) {
+            waiting = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(waiting).toBe(true);
+        const untilExpired = Date.now() + 5000;
+        while (Date.now() < untilExpired) {
+          const status = await admin.query(
+            "SELECT effective_until<=clock_timestamp() AS expired FROM app.entitlement WHERE tenant_id=$1 AND feature='mls'",
+            [fixtures.orgA],
+          );
+          if (status.rows[0].expired) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        await writer.query("COMMIT");
+        const result = await outcome;
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toMatchObject({ status: 403, code: "entitlement_disabled" });
+      } finally {
+        await writer.query("ROLLBACK");
+        await pending?.catch(() => {});
+        writer.release();
+      }
     }
   });
 
