@@ -1,6 +1,6 @@
 # ADR-011 — Local synthetic development and integration ownership
 
-ADR-020 defines the document-bound synthetic CMS recovery read. Its shared contract precedes dependent consumers; runtime registration follows reviewed policy and acceptance tests.
+ADR-020 defines the document-bound synthetic CMS recovery read and closed revision metadata index. Their shared contracts precede dependent consumers; runtime registration follows reviewed policy and acceptance tests.
 
 Accepted for local implementation on 2026-10-10; production identities/providers are not approved by this decision.
 

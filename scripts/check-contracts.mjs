@@ -22,6 +22,11 @@ for (const definition of Object.keys(consent.$defs))
 ajv.compile(
   JSON.parse(await fs.readFile("packages/contracts/internal/native-cms-recovery-v1.schema.json", "utf8")),
 );
+ajv.compile(
+  JSON.parse(
+    await fs.readFile("packages/contracts/internal/native-cms-revision-history-v1.schema.json", "utf8"),
+  ),
+);
 for (const [name, schema] of Object.entries(api.components.schemas)) {
   ajv.compile({ ...schema, components: api.components });
   if (!schema.type && !schema.oneOf && !schema.anyOf && !schema.allOf)
