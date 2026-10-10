@@ -52,6 +52,9 @@ import { createStaffHttpAdapter } from "./control/http-adapter";
 import { withStaffTransaction } from "../../../packages/auth/staff-sessions";
 import { CampaignDraftService, campaignEtag } from "./marketing";
 import { CampaignWorkflowService, WorkflowCommandError } from "./marketing/workflow-service";
+import { MessageDesignDraftService } from "./marketing/message-design-service";
+import { MessageDesignCommandError } from "./marketing/message-design-errors";
+import { messageDesignEtag } from "./marketing/message-design-model";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -128,7 +131,9 @@ function problem(error: unknown, traceId: string, path: string) {
     code: failure.code,
     traceId,
     instance: path,
-    ...(failure instanceof WorkflowCommandError ? { errors: failure.errors } : {}),
+    ...(failure instanceof WorkflowCommandError || failure instanceof MessageDesignCommandError
+      ? { errors: failure.errors }
+      : {}),
   };
 }
 
@@ -554,6 +559,7 @@ class ApiController {
         "lead-sources": "leadSourceId",
         campaigns: "campaignId",
         "campaign-versions": "campaignVersionId",
+        "message-designs": "messageDesignId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
@@ -577,6 +583,31 @@ class ApiController {
             return { body, status: 202 };
           }
           await requireEntitlement(client, spec["x-permission"]);
+          if (resource === "message-designs") {
+            localAccess(req);
+            if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            const designs = new MessageDesignDraftService(client, context, traceId);
+            let response: ApiCommandResponse;
+            if (req.method === "GET") {
+              const body = id ? await designs.get(id) : await designs.list(req.query);
+              response = {
+                body,
+                status: 200,
+                etag: id ? messageDesignEtag((body as { version: number }).version) : undefined,
+              };
+            } else if (req.method === "POST" && !id) {
+              response = await designs.create(req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+            } else if (req.method === "PATCH" && id) {
+              response = await designs.update(id, req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+                ifMatch: revision(req),
+              });
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
           if ((resource === "campaigns" && action === "versions" && id) || resource === "campaign-versions") {
             localAccess(req);
             const workflows = new CampaignWorkflowService(client, context, traceId);

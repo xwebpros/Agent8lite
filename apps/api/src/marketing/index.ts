@@ -7,6 +7,15 @@ export type {
 } from "./input";
 export { campaignEtag } from "./model";
 export { CampaignDraftService, type CampaignMutation } from "./service";
+export { MessageDesignDraftService } from "./message-design-service";
+export { MessageDesignCommandError } from "./message-design-errors";
+export {
+  messageDesignEtag,
+  type MessageDesign,
+  type MessageDesignWrite,
+  type MessageDesignPage,
+  type MessageDesignMutation,
+} from "./message-design-model";
 export {
   CampaignWorkflowService,
   WorkflowCommandError,

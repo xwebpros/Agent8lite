@@ -172,7 +172,7 @@ describe("organization message design library entry and shared protection", () =
       [false, false, true],
       [true, true, true],
     ] as const) {
-      const protectedDraft = campaignDraftsProtected(...states);
+      const protectedDraft = campaignDraftsProtected(states[0], states[1], states[2]);
       expect(protectedDraft).toBe(true);
       expect(button(frame(protectedDraft), "Back to campaign library")).toContain('disabled=""');
     }
