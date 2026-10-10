@@ -1,5 +1,7 @@
 # ADR-011 — Local synthetic development and integration ownership
 
+ADR-020 defines the document-bound synthetic CMS recovery read. Its shared contract precedes dependent consumers; runtime registration follows reviewed policy and acceptance tests.
+
 Accepted for local implementation on 2026-10-10; production identities/providers are not approved by this decision.
 
 The user authorized local dependencies, routine implementation, synthetic listings and mock services, then explicitly requested three concurrent agents. The coordinator owns shared dependencies/contracts/CI/provider ports; agents have disjoint directory ownership in one Git checkout. This session overrides the proposed per-workstream worktree rule while retaining review and integration responsibility.
