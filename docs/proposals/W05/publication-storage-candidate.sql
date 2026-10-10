@@ -802,6 +802,20 @@ CREATE FUNCTION app.guard_cms_publication_counter_change() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $counter$
 DECLARE receipt app.cms_synthetic_namespace_permit;
 BEGIN
+  IF TG_OP='INSERT' THEN
+    IF TG_TABLE_NAME='cms_synthetic_host_sequence' THEN
+      IF NEW.last_generation IS DISTINCT FROM 0::bigint THEN
+        RAISE EXCEPTION 'Invalid host generation bootstrap' USING ERRCODE='55000';
+      END IF;
+    ELSE
+      IF NEW.publication_generation IS DISTINCT FROM 0::bigint OR NEW.enabled IS DISTINCT FROM false THEN
+        RAISE EXCEPTION 'Invalid publication generation bootstrap' USING ERRCODE='55000';
+      END IF;
+    END IF;
+    -- Empty history only. This row is not fixture/source/public authority.
+    -- The closed owner ports still authorize/serialize each exact bootstrap.
+    RETURN NEW;
+  END IF;
   IF TG_TABLE_NAME='cms_synthetic_host_sequence' THEN
     receipt:=app.cms_current_namespace_permit(OLD.hostname);
     IF NEW.hostname IS DISTINCT FROM OLD.hostname
@@ -821,13 +835,13 @@ BEGIN
 END;
 $counter$;
 REVOKE ALL ON FUNCTION app.guard_cms_publication_counter_change() FROM PUBLIC;
-CREATE TRIGGER cms_host_counter_monotonic BEFORE UPDATE ON app.cms_synthetic_host_sequence
+CREATE TRIGGER cms_host_counter_monotonic BEFORE INSERT OR UPDATE ON app.cms_synthetic_host_sequence
   FOR EACH ROW EXECUTE FUNCTION app.guard_cms_publication_counter_change();
 CREATE TRIGGER cms_host_counter_retained BEFORE DELETE ON app.cms_synthetic_host_sequence
   FOR EACH ROW EXECUTE FUNCTION app.reject_cms_publication_history_change();
 CREATE TRIGGER cms_host_counter_no_reset BEFORE TRUNCATE ON app.cms_synthetic_host_sequence
   FOR EACH STATEMENT EXECUTE FUNCTION app.reject_cms_publication_history_change();
-CREATE TRIGGER cms_site_counter_monotonic BEFORE UPDATE ON app.cms_site_publication_state
+CREATE TRIGGER cms_site_counter_monotonic BEFORE INSERT OR UPDATE ON app.cms_site_publication_state
   FOR EACH ROW EXECUTE FUNCTION app.guard_cms_publication_counter_change();
 CREATE TRIGGER cms_site_counter_retained BEFORE DELETE ON app.cms_site_publication_state
   FOR EACH ROW EXECUTE FUNCTION app.reject_cms_publication_history_change();
