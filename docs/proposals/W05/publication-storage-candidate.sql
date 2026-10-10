@@ -316,15 +316,65 @@ CREATE TABLE app.cms_publication_context (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   valid_until timestamptz NOT NULL,
   PRIMARY KEY (backend_pid,transaction_id,nonce),
+  CHECK (isfinite(created_at) AND isfinite(valid_until)),
   CHECK (valid_until>created_at AND valid_until<=created_at+interval '5 seconds'),
+  CHECK (fence IS NULL OR fence>0),
+  CHECK ((binding_id IS NULL)=(binding_generation IS NULL)),
+  CHECK (binding_generation IS NULL OR binding_generation BETWEEN 1 AND 9007199254740991),
   CHECK (purpose<>'public' OR (actor_id IS NULL AND job_id IS NULL AND fence IS NULL
     AND authority IS NOT NULL AND route IS NOT NULL AND binding_id IS NOT NULL AND binding_generation IS NOT NULL
     AND release_id IS NOT NULL AND prepared_id IS NOT NULL)),
   CHECK (purpose<>'public_lookup' OR (actor_id IS NULL AND job_id IS NULL AND fence IS NULL
-    AND authority IS NOT NULL AND route IS NOT NULL AND binding_id IS NOT NULL AND binding_generation IS NOT NULL)),
+    AND authority IS NOT NULL AND route IS NOT NULL AND binding_id IS NOT NULL AND binding_generation IS NOT NULL
+    AND release_id IS NULL AND prepared_id IS NULL)),
   CHECK (purpose<>'command' OR actor_id IS NOT NULL),
   CHECK (purpose<>'execution' OR (actor_id IS NOT NULL AND job_id IS NOT NULL AND fence IS NOT NULL AND fence>0))
 );
+-- Lifecycle/provenance only: source rights and exact owner roles remain CLOSED
+-- shared prerequisites. No grant, minting entry point or eligibility decision.
+-- Only a lookup capsule can advance once to public; preserve every scope field
+-- and the original mint clock, narrowing expiry to current source limits.
+-- Command/execution capsules are immutable; a new authorized attempt mints a
+-- new nonce rather than rewriting actor/job/fence or renewing an old capsule.
+CREATE FUNCTION app.guard_cms_publication_context() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $context_lifecycle$
+DECLARE checked_clock timestamptz:=clock_timestamp(); expected app.cms_publication_context;
+BEGIN
+  IF NEW.backend_pid IS DISTINCT FROM pg_backend_pid()
+    OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() OR NEW.nonce IS NULL
+    OR NEW.created_at IS NULL OR NEW.valid_until IS NULL
+    OR NOT isfinite(NEW.created_at) OR NOT isfinite(NEW.valid_until)
+    OR NEW.created_at>checked_clock OR NEW.valid_until<=checked_clock THEN
+    RAISE EXCEPTION 'CMS publication context unavailable' USING ERRCODE='42501';
+  END IF;
+  IF NEW.valid_until<=NEW.created_at OR NEW.valid_until>NEW.created_at+interval '5 seconds' THEN
+    RAISE EXCEPTION 'CMS publication context unavailable' USING ERRCODE='42501';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    IF NEW.purpose IS NOT DISTINCT FROM 'public' THEN
+      RAISE EXCEPTION 'CMS public lookup context required' USING ERRCODE='42501';
+    END IF;
+  ELSE
+    IF OLD.purpose IS DISTINCT FROM 'public_lookup' OR NEW.purpose IS DISTINCT FROM 'public'
+      OR NEW.release_id IS NULL OR NEW.prepared_id IS NULL
+      OR NEW.valid_until>OLD.valid_until THEN
+      RAISE EXCEPTION 'CMS publication context transition unavailable' USING ERRCODE='42501';
+    END IF;
+    expected:=OLD;
+    expected.purpose:='public';
+    expected.release_id:=NEW.release_id;
+    expected.prepared_id:=NEW.prepared_id;
+    expected.valid_until:=NEW.valid_until;
+    IF NEW IS DISTINCT FROM expected THEN
+      RAISE EXCEPTION 'CMS publication context scope is immutable' USING ERRCODE='42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$context_lifecycle$;
+REVOKE ALL ON FUNCTION app.guard_cms_publication_context() FROM PUBLIC;
+CREATE TRIGGER cms_publication_context_guard BEFORE INSERT OR UPDATE ON app.cms_publication_context
+  FOR EACH ROW EXECUTE FUNCTION app.guard_cms_publication_context();
 -- Resolver deletes its capsule before return; ROLLBACK/connection reset removes
 -- authority. Owner-only bounded TTL cleanup handles exceptional committed rows.
 
