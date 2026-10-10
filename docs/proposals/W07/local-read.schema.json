@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/internal/w07-mock-listing-read-proposal-v1",
+  "description": "W07 proposal. No route is registered by this file. Response DTOs remain frozen v1 generated shapes.",
+  "$defs": {
+    "SearchQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filter": { "type": "string", "maxLength": 8192 },
+        "limit": { "type": "string", "pattern": "^(?:[1-9]\\d?|100)$" },
+        "sort": { "enum": ["updated_desc", "price_asc", "price_desc"] },
+        "cursor": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "SearchPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "orgId": { "type": "string", "format": "uuid" } },
+      "required": ["orgId"]
+    },
+    "DetailPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "orgId": { "type": "string", "format": "uuid" },
+        "listingId": { "type": "string", "format": "uuid" }
+      },
+      "required": ["orgId", "listingId"]
+    },
+    "DetailQuery": { "type": "object", "additionalProperties": false },
+    "PageListing": { "$ref": "https://estate.example/schemas/openapi#/components/schemas/PageListing" },
+    "Listing": { "$ref": "https://estate.example/schemas/openapi#/components/schemas/Listing" }
+  }
+}
