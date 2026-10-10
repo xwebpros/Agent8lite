@@ -3112,7 +3112,7 @@ export interface components {
             id: string;
             /** @enum {string} */
             type: "hero" | "text" | "image" | "cta" | "agent" | "testimonials" | "community" | "listing_grid" | "search" | "form" | "map" | "footer";
-            props: Record<string, never>;
+            props: Record<string, unknown>;
             children?: string[];
         };
         Seo: {
@@ -3413,7 +3413,7 @@ export interface components {
             subject?: string;
             /** @enum {string} */
             editor: "unlayer" | "native";
-            design: Record<string, never>;
+            design: Record<string, unknown>;
             content: string;
         };
         MessageDesign: {
@@ -3425,7 +3425,7 @@ export interface components {
             subject?: string | null;
             /** @enum {string} */
             editor: "unlayer" | "native";
-            design: Record<string, never>;
+            design: Record<string, unknown>;
             content: string;
             version: number;
         };
@@ -3641,7 +3641,7 @@ export interface components {
             type: string;
             /** Format: date-time */
             occurredAt?: string;
-            data: Record<string, never>;
+            data: Record<string, unknown>;
         };
         InvitationAccept: {
             token: string;
@@ -19611,7 +19611,7 @@ export interface operations {
         /** @description Exact raw signed vendor payload; normalized WebhookEnvelope is produced internally after validation. */
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": Record<string, unknown>;
                 "application/x-www-form-urlencoded": {
                     [key: string]: string;
                 };

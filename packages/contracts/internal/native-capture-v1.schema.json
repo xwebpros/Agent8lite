@@ -1,0 +1,14 @@
+{
+  "$id": "urn:estate:synthetic-native-capture:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "sourceSubmissionId": { "type": "string", "format": "uuid" },
+    "contactId": { "$ref": "contract#/components/schemas/LeadCreate/properties/contactId" },
+    "sourceId": { "$ref": "contract#/components/schemas/LeadCreate/properties/sourceId" },
+    "intent": { "$ref": "contract#/components/schemas/LeadCreate/properties/intent" },
+    "timeline": { "$ref": "contract#/components/schemas/LeadCreate/properties/timeline" },
+    "postalCode": { "type": "string", "minLength": 1, "maxLength": 16, "pattern": "^[A-Za-z0-9 -]+$" }
+  },
+  "required": ["sourceSubmissionId", "contactId", "sourceId", "intent"]
+}
