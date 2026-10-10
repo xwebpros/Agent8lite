@@ -3,6 +3,9 @@
 BEGIN;
 
 ALTER TABLE app.site ALTER COLUMN state SET DEFAULT 'draft';
+-- Revision responses do not carry document.version. Preserve the historical command header for replay.
+ALTER TABLE app.idempotency_record ADD COLUMN response_etag text
+  CHECK (response_etag IS NULL OR (length(response_etag)<=100 AND response_etag ~ '^"[1-9][0-9]*"$'));
 
 GRANT SELECT ON app.site,app.content_document,app.content_revision TO estate_runtime;
 GRANT INSERT (tenant_id,id,business_profile_id,name,theme_version)
