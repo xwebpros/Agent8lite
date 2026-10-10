@@ -12,6 +12,8 @@ Run `pnpm contracts:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test:isolated` 
 
 For GoDaddy Node.js hosting, root `npm run build` and `npm start` use the assigned PORT. An explicit password-protected temporary demo runs without PostgreSQL or production identity. See the [GoDaddy launch runbook](docs/runbooks/godaddy-nodejs.md) for environment variables and preview limitations. Agents remain paused; deployment is a separate owner action.
 
+If the host automatically selects `npm run dev`, hosting environment markers select that same production launcher before any local development settings load. Prefer `npm start`; keep PORT at its assigned value. The runbook covers the local-port EACCES failure and redeployment steps.
+
 Cotality/CoreLogic Trestle is the selected future MLS provider. The [disabled server scaffold and secure setup runbook](docs/runbooks/trestle-feed.md) are included. Live feeds, outbound messaging, charges and production deployment remain disabled until their documented authorization and integration gates are satisfied.
 
 ## Requirements and reference artifacts

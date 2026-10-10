@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { launchConfiguration } from "./launch-config.mjs";
+import { hostedLaunchRequired, launchConfiguration } from "./launch-config.mjs";
 import { supervise } from "./start-app.mjs";
 
 const workspace = { engines: { node: "24.19.0" } };
@@ -11,6 +11,27 @@ const environment = {
   DATABASE_URL: "postgresql://runtime:fixture@127.0.0.1:55432/estate",
 };
 const configure = (extra) => launchConfiguration({ ...environment, ...extra }, workspace, "v24.19.0");
+
+describe("development command host selection", () => {
+  it.each([
+    { PORT: "43127" },
+    { PORT: "3000", NODE_ENV: "development", APP_ENV: "test", DEV_AUTH_ENABLED: "true" },
+    { PORT: "" },
+    { PORT: undefined },
+    { PORT: "invalid" },
+    { NODE_ENV: "production" },
+    { APP_ENV: "production" },
+    { HOSTED_DEMO_ENABLED: "true" },
+  ])("selects production before local defaults for %s", (env) =>
+    expect(hostedLaunchRequired(env)).toBe(true),
+  );
+  it.each([
+    {},
+    { NODE_ENV: "development", APP_ENV: "development", DEV_AUTH_ENABLED: "true" },
+    { NODE_ENV: "test", APP_ENV: "test", DEV_AUTH_ENABLED: "true" },
+    { HOSTED_DEMO_ENABLED: "false" },
+  ])("keeps ordinary loopback development for %s", (env) => expect(hostedLaunchRequired(env)).toBe(false));
+});
 
 describe("host launch boundary", () => {
   it.each([undefined, "", "0", "-1", "1.5", "3000junk", "03000", "65536", "999999", " 3000"])(

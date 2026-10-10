@@ -4,6 +4,12 @@ The repository root now supports `npm run build` and `npm start`. Build compiles
 
 Use the GitHub application's `main` branch and configure secrets through GoDaddy's environment-variable UI. Do not commit `.env`, credentials, node_modules or build artifacts. The platform's dependency-only install is supported: build-time TypeScript and required type packages are production dependencies with the existing exact version pins. pnpm11.25.0 plus the frozen pnpm lockfile remains the reproducible repository/CI install. GoDaddy's npm install does not consume that lockfile; a clean npm production-only install is separately smoke-tested, but transitive npm resolution is not promised to be byte-identical to pnpm.
 
+## If the host runs dev and reports EACCES on port3000
+
+Logs containing `node scripts/dev.mjs`, `Synthetic workspace` and `listen EACCES ...127.0.0.1:3000` show the local development command was selected. Set the build command to `npm run build` and the start/run command to `npm start`, then redeploy GitHub main. Keep PORT at the host-assigned value. Do not force port3000 or enable ordinary synthetic authentication to resolve this error.
+
+The dev command also has a host compatibility safeguard: a supplied PORT, production NODE_ENV/APP_ENV or explicit HOSTED_DEMO_ENABLED=true selects the same production launcher as npm start, before loading local fixture settings or dev dependencies. Updated logs show `hosted-launch-selected`, then `status:ready` with the assigned port. Missing/invalid PORT reports `launch_port_required`; it never falls back to port3000. An old `Synthetic workspace` log after redeployment indicates old source or missing hosting settings. Both launch paths still need a successful build and the mode's environment configuration below. Local development without hosting markers continues to use the loopback workflow.
+
 ## Temporary preview without PostgreSQL or a production identity provider
 
 Set these values before starting:
