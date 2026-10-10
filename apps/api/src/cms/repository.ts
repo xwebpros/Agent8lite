@@ -31,6 +31,7 @@ export type RevisionRow = {
   content_hash: string;
   created_at: Date;
 };
+export type RevisionMetadataRow = Pick<RevisionRow, "id" | "document_id" | "schema_version" | "created_at">;
 
 /** Own native CMS tables only. Tenant context/transaction/permission checks belong to the caller. */
 export class CmsRepository {
@@ -79,6 +80,17 @@ export class CmsRepository {
   async listRevisions(documentId: string, after: string | null, limit: number): Promise<RevisionRow[]> {
     const result = await this.client.query<RevisionRow>(
       "SELECT * FROM app.content_revision WHERE tenant_id=app.current_tenant() AND document_id=$1 AND ($2::uuid IS NULL OR id>$2) ORDER BY id LIMIT $3",
+      [documentId, after, limit],
+    );
+    return result.rows;
+  }
+  async listRevisionMetadata(
+    documentId: string,
+    after: string | null,
+    limit: number,
+  ): Promise<RevisionMetadataRow[]> {
+    const result = await this.client.query<RevisionMetadataRow>(
+      "SELECT id,document_id,schema_version,created_at FROM app.content_revision WHERE tenant_id=app.current_tenant() AND document_id=$1 AND ($2::uuid IS NULL OR id>$2) ORDER BY id LIMIT $3",
       [documentId, after, limit],
     );
     return result.rows;

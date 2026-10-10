@@ -39,6 +39,7 @@ const result = await build({
       entry: {
         editor: "apps/web/features/cms/draft-editor.tsx",
         controller: "apps/web/features/cms/draft-controller.ts",
+        history: "packages/cms/history.ts",
       },
       formats: ["es"],
     },

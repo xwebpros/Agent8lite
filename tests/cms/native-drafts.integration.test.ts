@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CmsService } from "../../apps/api/src/cms";
+import { encodeCursor } from "../../apps/api/src/cursors";
 import { createSyntheticSession } from "../../packages/auth/sessions";
 import { prepareTemplateDraft } from "../../packages/cms";
 import { requireRevisionRecovery } from "../../packages/cms/recovery";
+import { requireRevisionHistory } from "../../packages/cms/history";
 import { fixtures } from "../../packages/db/fixtures";
 import { withTenantTransaction } from "../../packages/db/tenant-transaction";
 import { assertContract, assertProblem, type Schemas } from "../helpers/api";
@@ -26,6 +28,8 @@ const base = (session = owner) => `/v1/orgs/${session.org}`;
 const draftPath = (id: string, session = owner) => `/dev/orgs/${session.org}/cms/documents/${id}/drafts`;
 const recoveryPath = (documentId: string, revisionId: string, session = owner) =>
   `/dev/orgs/${session.org}/cms/documents/${documentId}/revisions/${revisionId}/recovery`;
+const historyPath = (documentId: string, session = owner) =>
+  `/dev/orgs/${session.org}/cms/documents/${documentId}/revision-history`;
 const draft = () => prepareTemplateDraft("agent-introduction", "1.0.0", cmsTestPolicy).document;
 function request(
   session: Session,
@@ -102,10 +106,11 @@ async function counts(documentId: string) {
 async function insertRecovery(
   documentId: string,
   data = { schemaVersion: 7, blocks: [] as unknown, seo: {} as unknown },
+  id: string = randomUUID(),
+  createdAt?: string,
 ) {
-  const id = randomUUID();
   await environment.admin.query(
-    "INSERT INTO app.content_revision(tenant_id,id,document_id,author_member_id,schema_version,block_data,seo,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,'synthetic-recovery')",
+    "INSERT INTO app.content_revision(tenant_id,id,document_id,author_member_id,schema_version,block_data,seo,content_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,'synthetic-recovery',COALESCE($8::timestamptz,now()))",
     [
       fixtures.orgA,
       id,
@@ -114,6 +119,7 @@ async function insertRecovery(
       data.schemaVersion,
       JSON.stringify(data.blocks),
       JSON.stringify(data.seo),
+      createdAt ?? null,
     ],
   );
   return id;
@@ -128,14 +134,25 @@ async function recovered(response: Response) {
   expect(Object.keys(body).sort()).toEqual(["canPublish", "canSave", "data", "documentId", "id", "issues"]);
   return body;
 }
-async function waitForLock(table: string) {
+async function history(response: Response, documentId: string) {
+  const raw = await response.text();
+  expect(response.status, raw).toBe(200);
+  expect(new TextEncoder().encode(raw).byteLength).toBeLessThanOrEqual(64 * 1024);
+  const body = requireRevisionHistory(JSON.parse(raw), documentId);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(response.headers.get("x-trace-id")).toBeTruthy();
+  expect(response.headers.get("etag")).toBeNull();
+  return body;
+}
+async function waitForLock(table: string, minimum = 1) {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
     const state = await environment.admin.query(
       "SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=$1 AND usename='estate_runtime' AND wait_event_type='Lock' AND query LIKE $2",
       [environment.database, `%${table}%`],
     );
-    if (state.rows[0].count > 0) return;
+    if (state.rows[0].count >= minimum) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("Expected the recovery request to wait for its source lock.");
@@ -702,6 +719,236 @@ describe("unregistered native CMS API against a disposable real-role database", 
     expect(await counts(document.id)).toEqual(before);
   });
 
+  it("indexes all mixed native revisions with default 50-row ID pagination and no original data", async () => {
+    const { document } = await createPair();
+    const supported = await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    );
+    const ids = [supported.id];
+    for (let index = 1; index <= 50; index++) {
+      const id = `a3000000-0000-4000-8000-${index.toString().padStart(12, "0")}`;
+      ids.push(
+        await insertRecovery(
+          document.id,
+          {
+            schemaVersion: index % 2 ? 1 : 7,
+            blocks: [{ id: randomUUID(), type: "future", props: { private: "Never expose original data" } }],
+            seo: index === 50 ? "界".repeat(90_000) : {},
+          },
+          id,
+          new Date(Date.UTC(2026, 9, 10) - index * 1000).toISOString(),
+        ),
+      );
+    }
+    const before = await counts(document.id);
+    const first = await history(await request(owner, "GET", historyPath(document.id)), document.id);
+    expect(first.items).toHaveLength(50);
+    expect(first.hasMore).toBe(true);
+    const second = await history(
+      await request(
+        owner,
+        "GET",
+        `${historyPath(document.id)}?cursor=${encodeURIComponent(first.nextCursor!)}`,
+      ),
+      document.id,
+    );
+    expect(second.items).toHaveLength(1);
+    expect(second).toMatchObject({ hasMore: false, nextCursor: null });
+    const items = [...first.items, ...second.items];
+    expect(items.map((item) => item.id)).toEqual(ids.sort());
+    for (const item of items)
+      expect(Object.keys(item).sort()).toEqual(["createdAt", "documentId", "id", "schemaVersion"]);
+    expect(JSON.stringify(first)).not.toContain("Never expose original data");
+    const row1 = items.find((item) => item.id.endsWith("000000000001"))!;
+    const row2 = items.find((item) => item.id.endsWith("000000000002"))!;
+    expect(row1.id < row2.id && row1.createdAt > row2.createdAt).toBe(true);
+    expect(
+      await history(await request(owner, "GET", `${historyPath(document.id)}?limit=100`), document.id),
+    ).toMatchObject({ items, hasMore: false, nextCursor: null });
+    await assertProblem(await request(owner, "GET", `${base()}/documents/${document.id}/revisions`), 409);
+    await assertProblem(
+      await request(owner, "GET", recoveryPath(document.id, ids.find((id) => id.endsWith("000000000050"))!)),
+      422,
+    );
+    expect(await counts(document.id)).toEqual(before);
+  });
+
+  it("reads history under real column grants that make original block/SEO reads impossible", async () => {
+    const { document } = await createPair();
+    const id = await insertRecovery(document.id);
+    const before = await counts(document.id);
+    await environment.admin.query("REVOKE SELECT ON app.content_revision FROM estate_runtime");
+    await environment.admin.query(
+      "GRANT SELECT(id,tenant_id,document_id,schema_version,created_at) ON app.content_revision TO estate_runtime",
+    );
+    try {
+      await expect(
+        direct((_service, client) =>
+          client.query("SELECT block_data,seo FROM app.content_revision WHERE id=$1", [id]),
+        ),
+      ).rejects.toMatchObject({ code: "42501" });
+      const page = await history(await request(owner, "GET", historyPath(document.id)), document.id);
+      expect(page.items.map((item) => item.id)).toEqual([id]);
+      expect(await counts(document.id)).toEqual(before);
+    } finally {
+      await environment.admin.query(
+        "REVOKE SELECT(id,tenant_id,document_id,schema_version,created_at) ON app.content_revision FROM estate_runtime",
+      );
+      await environment.admin.query("GRANT SELECT ON app.content_revision TO estate_runtime");
+    }
+  });
+
+  it("binds expiring history cursors to the member, current grants, document and distinct resource", async () => {
+    const { document } = await createPair(editor);
+    const second = await createPair(editor);
+    await insertRecovery(document.id);
+    await insertRecovery(document.id);
+    const first = await history(
+      await request(editor, "GET", `${historyPath(document.id, editor)}?limit=1`),
+      document.id,
+    );
+    const cursor = first.nextCursor!;
+    for (const [session, path] of [
+      [owner, historyPath(document.id)],
+      [editor, historyPath(second.document.id, editor)],
+      [editor, `${base(editor)}/documents/${document.id}/revisions`],
+    ] as const)
+      await assertProblem(await request(session, "GET", `${path}?cursor=${encodeURIComponent(cursor)}`), 422);
+    const tampered = `${cursor[0] === "a" ? "b" : "a"}${cursor.slice(1)}`;
+    await assertProblem(
+      await request(
+        editor,
+        "GET",
+        `${historyPath(document.id, editor)}?cursor=${encodeURIComponent(tampered)}`,
+      ),
+      422,
+    );
+    const binding = JSON.parse(Buffer.from(cursor.split(".")[0], "base64url").toString("utf8")).binding;
+    let expired: string;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 16 * 60 * 1000);
+    try {
+      expired = encodeCursor(first.items[0].id, binding);
+    } finally {
+      clock.mockRestore();
+    }
+    await assertProblem(
+      await request(
+        editor,
+        "GET",
+        `${historyPath(document.id, editor)}?cursor=${encodeURIComponent(expired!)}`,
+      ),
+      422,
+    );
+    await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+      JSON.stringify(grants.filter((grant) => grant.code !== "content.write")),
+      editorRole,
+    ]);
+    await assertProblem(
+      await request(
+        editor,
+        "GET",
+        `${historyPath(document.id, editor)}?cursor=${encodeURIComponent(cursor)}`,
+      ),
+      422,
+    );
+  });
+
+  it("defines stable-index insertion behavior without a snapshot or latest-revision inference", async () => {
+    const { document } = await createPair();
+    const id = (value: string) => `a4000000-0000-4000-8000-${value.padStart(12, "0")}`;
+    await insertRecovery(document.id, undefined, id("100"));
+    await insertRecovery(document.id, undefined, id("200"));
+    const first = await history(
+      await request(owner, "GET", `${historyPath(document.id)}?limit=1`),
+      document.id,
+    );
+    expect(first.items.map((item) => item.id)).toEqual([id("100")]);
+    await insertRecovery(document.id, undefined, id("50"));
+    await insertRecovery(document.id, undefined, id("150"));
+    const next = await history(
+      await request(
+        owner,
+        "GET",
+        `${historyPath(document.id)}?cursor=${encodeURIComponent(first.nextCursor!)}`,
+      ),
+      document.id,
+    );
+    expect(next.items.map((item) => item.id)).toEqual([id("150"), id("200")]);
+    expect(next).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("gates history by the exact current tenant/document, private session and synthetic transport", async () => {
+    const { document } = await createPair();
+    await insertRecovery(document.id);
+    expect(await history(await request(owner, "GET", historyPath(document.id)), document.id)).toHaveProperty(
+      "items",
+    );
+    const empty = await createPair();
+    expect(
+      await history(await request(owner, "GET", historyPath(empty.document.id)), empty.document.id),
+    ).toEqual({ items: [], hasMore: false, nextCursor: null });
+    await assertProblem(await request(owner, "GET", historyPath(randomUUID())), 404);
+    await assertProblem(await request(otherOwner, "GET", historyPath(document.id, otherOwner)), 404);
+    await assertProblem(await request(otherOwner, "GET", historyPath(document.id)), 403);
+    await assertProblem(await request(owner, "GET", historyPath("invalid")), 422);
+    await assertProblem(await fetch(`${environment.origin}${historyPath(document.id)}`), 401);
+    await assertProblem(await request(owner, "POST", historyPath(document.id)), 404);
+    await assertProblem(await request(owner, "GET", `${historyPath(document.id)}?unexpected=true`), 422);
+    await assertProblem(await request(owner, "GET", `${historyPath(document.id)}?__proto__=value`), 422);
+    await assertProblem(
+      await request(owner, "GET", `${historyPath(document.id)}?__proto__=a&__proto__=b`),
+      422,
+    );
+    await assertProblem(await request(owner, "GET", `${historyPath(document.id)}?limit=1&limit=2`), 422);
+    await assertProblem(await request(owner, "GET", `${historyPath(document.id)}?cursor=x&cursor=y`), 422);
+    const input = {
+      method: "GET",
+      url: historyPath(document.id),
+      headers: { cookie: `estate_session=${owner.token}` },
+      remoteAddress: "203.0.113.8",
+    };
+    expect((await environment.adapter.handle(input)).status).toBe(403);
+    expect(
+      (
+        await environment.adapter.handle({
+          ...input,
+          remoteAddress: "127.0.0.1",
+          headers: { ...input.headers, "x-forwarded-for": "203.0.113.8" },
+        })
+      ).status,
+    ).toBe(403);
+    const previous = process.env.DEV_AUTH_ENABLED;
+    try {
+      process.env.DEV_AUTH_ENABLED = "false";
+      expect((await environment.adapter.handle({ ...input, remoteAddress: "127.0.0.1" })).status).toBe(404);
+    } finally {
+      if (previous === undefined) delete process.env.DEV_AUTH_ENABLED;
+      else process.env.DEV_AUTH_ENABLED = previous;
+    }
+  });
+
+  it.each(["0", "101", "1.5", "1e2", "01", "true", ""])(
+    "rejects noncanonical history limit %s",
+    async (limit) => {
+      const { document } = await createPair();
+      await assertProblem(
+        await request(owner, "GET", `${historyPath(document.id)}?limit=${encodeURIComponent(limit)}`),
+        422,
+      );
+    },
+  );
+
+  it.each(["own", "team"])("denies history under unsupported %s content scope", async (scope) => {
+    const { document } = await createPair(editor);
+    await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+      JSON.stringify(grants.map((grant) => (grant.code === "content.read" ? { ...grant, scope } : grant))),
+      editorRole,
+    ]);
+    await assertProblem(await request(editor, "GET", historyPath(document.id, editor)), 403);
+  });
+
   it("keeps recovery unavailable outside explicit synthetic loopback access", async () => {
     const { document } = await createPair();
     const id = await insertRecovery(document.id, {
@@ -760,7 +1007,7 @@ describe("unregistered native CMS API against a disposable real-role database", 
   });
 
   it.each(["grant", "member", "capability", "site", "document", "profile"])(
-    "denies recovery after current %s eligibility is revoked",
+    "denies recovery and history after current %s eligibility is revoked",
     async (mode) => {
       const { site, document } = await createPair(editor);
       const id = await insertRecovery(document.id);
@@ -791,6 +1038,11 @@ describe("unregistered native CMS API against a disposable real-role database", 
         ["grant", "member", "capability"].includes(mode) ? 403 : 404,
       );
       expect(body).not.toHaveProperty("data");
+      const metadata = await assertProblem(
+        await request(editor, "GET", historyPath(document.id, editor)),
+        ["grant", "member", "capability"].includes(mode) ? 403 : 404,
+      );
+      expect(metadata).not.toHaveProperty("items");
       expect(await counts(document.id)).toEqual(before);
     },
   );
@@ -824,7 +1076,7 @@ describe("unregistered native CMS API against a disposable real-role database", 
   });
 
   it.each(["content_document", "site", "business_profile", "membership", "entitlement"])(
-    "denies recovery when the database clock expires across a blocked %s source",
+    "denies recovery and history when the database clock expires across a blocked %s source",
     async (table) => {
       const { site, document } = await createPair(editor);
       const id = await insertRecovery(document.id);
@@ -844,12 +1096,16 @@ describe("unregistered native CMS API against a disposable real-role database", 
         ],
       };
       const blocker = await environment.admin.connect();
-      let pending: Promise<Response> | undefined;
+      const pending: Promise<Response>[] = [];
+      let released = false;
       try {
         await blocker.query("BEGIN");
         await blocker.query(sources[table][0], [sources[table][1]]);
-        pending = request(editor, "GET", recoveryPath(document.id, id, editor));
-        await waitForLock(table);
+        pending.push(
+          request(editor, "GET", recoveryPath(document.id, id, editor)),
+          request(editor, "GET", historyPath(document.id, editor)),
+        );
+        await waitForLock(table, 2);
         const deadline = Date.now() + 5000;
         let expired = false;
         while (!expired && Date.now() < deadline) {
@@ -862,18 +1118,24 @@ describe("unregistered native CMS API against a disposable real-role database", 
         }
         expect(expired).toBe(true);
         await blocker.query("ROLLBACK");
-        expect(await assertProblem(await pending, 403)).toMatchObject({ code: "entitlement_disabled" });
+        released = true;
+        for (const response of await Promise.all(pending)) {
+          const body = await assertProblem(response, 403);
+          expect(body).toMatchObject({ code: "entitlement_disabled" });
+          expect(body).not.toHaveProperty("data");
+          expect(body).not.toHaveProperty("items");
+        }
         expect(await counts(document.id)).toEqual(before);
       } finally {
-        await blocker.query("ROLLBACK");
-        if (pending) await pending;
+        if (!released) await blocker.query("ROLLBACK");
+        await Promise.allSettled(pending);
         blocker.release();
       }
     },
   );
 
   it.each(["content_document", "site", "business_profile", "membership", "role_definition", "entitlement"])(
-    "rechecks %s eligibility after its locked source is changed",
+    "rechecks recovery/history %s eligibility after its locked source is changed",
     async (table) => {
       const { site, document } = await createPair(editor);
       const id = await insertRecovery(document.id);
@@ -889,12 +1151,16 @@ describe("unregistered native CMS API against a disposable real-role database", 
         ],
       };
       const blocker = await environment.admin.connect();
-      let pending: Promise<Response> | undefined;
+      const pending: Promise<Response>[] = [];
+      let released = false;
       try {
         await blocker.query("BEGIN");
         await blocker.query(sources[table][0], [sources[table][1]]);
-        pending = request(editor, "GET", recoveryPath(document.id, id, editor));
-        await waitForLock(table);
+        pending.push(
+          request(editor, "GET", recoveryPath(document.id, id, editor)),
+          request(editor, "GET", historyPath(document.id, editor)),
+        );
+        await waitForLock(table, 2);
         if (table === "content_document")
           await blocker.query("UPDATE app.content_document SET archived_at=now() WHERE id=$1", [document.id]);
         if (table === "site")
@@ -915,15 +1181,19 @@ describe("unregistered native CMS API against a disposable real-role database", 
             [fixtures.orgA],
           );
         await blocker.query("COMMIT");
-        const body = await assertProblem(
-          await pending,
-          ["content_document", "site", "business_profile"].includes(table) ? 404 : 403,
-        );
-        expect(body).not.toHaveProperty("data");
+        released = true;
+        for (const response of await Promise.all(pending)) {
+          const body = await assertProblem(
+            response,
+            ["content_document", "site", "business_profile"].includes(table) ? 404 : 403,
+          );
+          expect(body).not.toHaveProperty("data");
+          expect(body).not.toHaveProperty("items");
+        }
         expect((await counts(document.id)).revisions).toBe(1);
       } finally {
-        await blocker.query("ROLLBACK");
-        if (pending) await pending;
+        if (!released) await blocker.query("ROLLBACK");
+        await Promise.allSettled(pending);
         blocker.release();
       }
     },
