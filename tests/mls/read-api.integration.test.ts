@@ -12,6 +12,7 @@ import {
 } from "../../packages/auth/sessions";
 import { fixtures } from "../../packages/db/fixtures";
 import { AccessError } from "../../packages/db/tenant-transaction";
+import type { PageListing } from "../../packages/mls";
 import { assertContract, assertProblem } from "../helpers/api";
 import {
   admin,
@@ -258,6 +259,7 @@ describe("W07 unregistered dev handler — real sessions, HTTP and PostgreSQL ro
     const token = (await createSyntheticSession(runtime, fixtures.ownerUser, fixtures.orgA)).token;
     const session = await readSession(runtime, token);
     const writer = await admin.connect();
+    const additionalFeed = change === "switch" ? randomUUID() : null;
     let pending: Promise<Response> | undefined;
     let revoked: Promise<void> | undefined;
     try {
@@ -280,11 +282,31 @@ describe("W07 unregistered dev handler — real sessions, HTTP and PostgreSQL ro
       const problem = await assertProblem(await request(base, token), change === "revoke" ? 401 : 403);
       expect(problem.code).toBe(change === "revoke" ? "session_expired" : "active_organization_mismatch");
       if (change === "switch") {
+        // Registered seeds can have other legitimate B feeds. Reproduce that without changing shared seeds.
+        await admin.query(
+          `INSERT INTO app.mls_feed SELECT (jsonb_populate_record(NULL::app.mls_feed,
+          to_jsonb(f) || jsonb_build_object('id',$1::uuid))).* FROM app.mls_feed f WHERE tenant_id=$2 AND id=$3`,
+          [additionalFeed, fixtures.orgB, feedB],
+        );
+        await admin.query(
+          `INSERT INTO app.listing SELECT (jsonb_populate_record(NULL::app.listing,
+          to_jsonb(l) || jsonb_build_object('id',$1::uuid,'feed_id',$2::uuid))).* FROM app.listing l WHERE tenant_id=$3 AND id=$4`,
+          [randomUUID(), additionalFeed, fixtures.orgB, nativeId("SYNTHETIC-VEGAS-001", feedB)],
+        );
         const current = await request(`/dev/orgs/${fixtures.orgB}/mls/listings`, token);
         expect(current.status).toBe(200);
-        const page = await current.json();
+        const page: PageListing = await current.json();
         assertContract("PageListing", page);
-        expect(page.items.every((item: { feedId: string }) => item.feedId === feedB)).toBe(true);
+        expect(page.items.some((item) => item.feedId === feedB)).toBe(true);
+        expect(page.items.some((item) => item.feedId === additionalFeed)).toBe(true);
+        const stored = await admin.query<{ id: string; feed_id: string; tenant_id: string }>(
+          "SELECT id,feed_id,tenant_id FROM app.listing WHERE id=ANY($1::uuid[])",
+          [page.items.map((item) => item.id)],
+        );
+        expect(stored.rows).toHaveLength(page.items.length);
+        expect(new Set(stored.rows.map((row) => row.tenant_id))).toEqual(new Set([fixtures.orgB]));
+        for (const item of page.items)
+          expect(stored.rows.find((row) => row.id === item.id)?.feed_id).toBe(item.feedId);
       }
       expect((await runtime.query("SELECT token_hash FROM app.login_session")).rowCount).toBe(0);
     } finally {
@@ -292,6 +314,16 @@ describe("W07 unregistered dev handler — real sessions, HTTP and PostgreSQL ro
       writer.release();
       await pending;
       await revoked;
+      if (additionalFeed) {
+        await admin.query("DELETE FROM app.listing WHERE tenant_id=$1 AND feed_id=$2", [
+          fixtures.orgB,
+          additionalFeed,
+        ]);
+        await admin.query("DELETE FROM app.mls_feed WHERE tenant_id=$1 AND id=$2", [
+          fixtures.orgB,
+          additionalFeed,
+        ]);
+      }
     }
   });
 
