@@ -1,5 +1,8 @@
 # Implementation status — 2026-10-10
 
+## In progress — server contact name search (ADR-038)
+Reporting checkpoint0d7f6d100685e32188d4ae7b4b4c90c3a028006d is pushed and remote-verified on feat/W01-foundation; main remains5d9e5670fa206fab665d4c55e998bd8df6e60d3d. The next bounded M2 slice replaces Contacts' loaded-page search with the frozen server name predicate, query-bound pagination and truthful partial states. Read-only assessment identified strict-input, current service authority and post-wait CRM-expiry prerequisites; ADR038 is committed before dependent consumers. Backend owns those contact-list changes, frontend owns a private controller/view and narrow mount, tester owns actual API plus pure/static acceptance, and root owns request framing/integration. No new contract, schema, dependency, provider or milestone completion. Implementation and acceptance remain in progress.
+
 ## Resumed M2 default-member dashboard measurement — ADR-037
 The reporting widget now measures current-member-owned, unarchived leads created during the closed UTC month through a captured PostgreSQL clock. The same millisecond-normalized bounds define the SQL query and returned period; measured refresh is captured afterward. Definitionv2 intersects actual current lead permissions and office eligibility without widening the default member view. A measured zero remains zero; unavailable revenue has no numeric value. Reassignment or archival can change the current eligible count for an earlier creation period; this is not an immutable acquisition funnel. GET uses the frozen Dashboard contract and rejects undeclared query/body inputs. No migration, dependency, provider activation or complete module/milestone is claimed.
 
