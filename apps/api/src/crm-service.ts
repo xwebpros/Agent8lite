@@ -13,6 +13,13 @@ import { parseContactQuery } from "./contact-query";
 import { contactCommandJson, contactReceipt, contactRevision, prepareContactPatch } from "./contact-command";
 import { appendContactCreatedEvent } from "./contact-created-event";
 import {
+  prepareStageTransition,
+  stageTransitionEvent,
+  stageTransitionJson,
+  stageTransitionReceipt,
+  stageTransitionRevision,
+} from "./stage-transition-command";
+import {
   capturePostJson,
   contactPostReceipt,
   leadPostReceipt,
@@ -69,7 +76,10 @@ function timezone(value: string) {
   return value;
 }
 
-function detachedReadContext(value: TenantContext, subject: "reporting" | "contact"): TenantContext {
+function detachedReadContext(
+  value: TenantContext,
+  subject: "reporting" | "contact" | "stage",
+): TenantContext {
   const invalid = (): never => {
     throw new AccessError(403, "permission_denied", `Current ${subject} authority is required.`);
   };
@@ -546,7 +556,7 @@ export class CrmService {
     };
   }
 
-  private async contactCommandAuthority(lock = false) {
+  private async contactCommandAuthority(lock = false, subject: "contact" | "stage" = "contact") {
     const context = this.context;
     const result = await this.client.query(
       `SELECT 1 FROM app.membership m
@@ -568,7 +578,7 @@ export class CrmService {
       ],
     );
     if (!result.rowCount)
-      throw new AccessError(403, "permission_denied", "Current contact authority is unavailable.");
+      throw new AccessError(403, "permission_denied", `Current ${subject} authority is unavailable.`);
   }
 
   /** Contact PATCH owns its exact request/receipt boundary; other generic commands retain their protocol. */
@@ -1067,6 +1077,229 @@ export class CrmService {
     return { body: lead, status: 201, etag: '"1"' };
   }
 
+  /** Stage POST retains its original receipt while authorizing current, locked source state. */
+  async postStageTransition(
+    id: string,
+    body: unknown,
+    expectedVersion: string | undefined,
+    key: string | undefined,
+    routeKey: string,
+  ): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "stage");
+    const command = prepareStageTransition(id, body, expectedVersion, key, routeKey, context.organizationId);
+    const traceId = this.traceId;
+    if (
+      typeof traceId !== "string" ||
+      !traceId ||
+      [...traceId].length > 80 ||
+      /[\uD800-\uDFFF]/u.test(traceId)
+    )
+      throw new AccessError(503, "event_contract_failure", "Stage reference event validation failed.");
+    const current = new CrmService(this.client, context, traceId);
+    const scope = requirePermission(context, "crm.leads.write");
+    await current.contactCommandAuthority(true, "stage");
+    await requireEntitlement(this.client, "crm.leads.write");
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${context.organizationId}:${context.userId}:${command.routeKey}:${command.key}`,
+    ]);
+    await current.contactCommandAuthority(false, "stage");
+    await requireEntitlement(this.client, "crm.leads.write", { lock: false });
+    const receiptParameters = [context.userId, command.routeKey, command.key];
+    const saved = (
+      await this.client.query(
+        `SELECT request_hash,response_body,status_code,response_etag,
+          expires_at>clock_timestamp() AS unexpired FROM app.idempotency_record
+         WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+        receiptParameters,
+      )
+    ).rows[0];
+    if (saved?.request_hash !== undefined && saved.request_hash !== command.requestHash)
+      throw new AccessError(409, "idempotency_conflict", "This key was used with a different request.");
+    if (saved && !saved.unexpired)
+      throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+    const receipt = saved ? stageTransitionReceipt(saved.response_body, command) : null;
+    const historicalEtag = `"${command.version + 1}"`;
+    if (
+      saved &&
+      (saved.request_hash !== command.requestHash ||
+        saved.status_code !== 201 ||
+        (saved.response_etag !== null && saved.response_etag !== historicalEtag))
+    )
+      throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+    const source = `SELECT r.* FROM app.lead r WHERE r.tenant_id=app.current_tenant()
+      AND r.id=$1 AND r.archived_at IS NULL AND $2::uuid IS NOT NULL
+      AND ${current.scopeSql("leads", scope, "$2")}
+      AND EXISTS(SELECT 1 FROM app.contact c WHERE(c.tenant_id,c.id)=(r.tenant_id,r.contact_id)
+        AND c.archived_at IS NULL)`;
+    const sourceParameters = [command.id, context.memberId];
+    const peek = (await this.client.query(source, sourceParameters)).rows[0] ?? notFound();
+    if (
+      typeof peek.contact_id !== "string" ||
+      !uuid.test(peek.contact_id) ||
+      typeof peek.source_id !== "string" ||
+      !uuid.test(peek.source_id)
+    )
+      throw new AccessError(503, "resource_unavailable", "Lead references are unavailable.");
+    const contactId = peek.contact_id,
+      sourceId = peek.source_id;
+    if (
+      receipt &&
+      (receipt.contactId.toLowerCase() !== contactId || receipt.sourceId.toLowerCase() !== sourceId)
+    )
+      throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+    // Contact before Lead matches Contact PATCH lock order and prevents a source lock inversion.
+    if (
+      !(
+        await this.client.query(
+          "SELECT id FROM app.contact WHERE tenant_id=app.current_tenant() AND id=$1 AND archived_at IS NULL FOR SHARE",
+          [contactId],
+        )
+      ).rowCount
+    )
+      notFound();
+    const boundSource = `${source} AND r.contact_id=$3 AND r.source_id=$4`;
+    const boundParameters = [...sourceParameters, contactId, sourceId];
+    const locked =
+      (await this.client.query(`${boundSource} FOR UPDATE OF r`, boundParameters)).rows[0] ?? notFound();
+    const targetStageId = command.body.toStageId.toLowerCase();
+    const stageIds = [...new Set<string>([locked.stage_id, targetStageId])].sort();
+    const stages = await this.client.query(
+      `SELECT id FROM app.pipeline_stage WHERE tenant_id=app.current_tenant()
+       AND id=ANY($1::uuid[]) ORDER BY id FOR SHARE`,
+      [stageIds],
+    );
+    if (!stages.rows.some((stage) => stage.id === targetStageId))
+      throw new AccessError(422, "stage_invalid", "Stage must belong to this organization.");
+    if (stages.rowCount !== stageIds.length) notFound();
+    if (
+      !(
+        await this.client.query(
+          "SELECT id FROM app.lead_source WHERE tenant_id=app.current_tenant() AND id=$1 FOR SHARE",
+          [sourceId],
+        )
+      ).rowCount
+    )
+      notFound();
+    if (scope === "team")
+      await current.lockCaptureOffices(
+        locked.owner_member_id ? [context.memberId, locked.owner_member_id] : [context.memberId],
+      );
+    const assertSources = async () => {
+      const authorized = (await this.client.query(boundSource, boundParameters)).rows[0] ?? notFound();
+      const availableStages = await this.client.query(
+        "SELECT id FROM app.pipeline_stage WHERE tenant_id=app.current_tenant() AND id=ANY($1::uuid[])",
+        [stageIds],
+      );
+      if (availableStages.rowCount !== stageIds.length) notFound();
+      if (
+        !(
+          await this.client.query(
+            "SELECT id FROM app.lead_source WHERE tenant_id=app.current_tenant() AND id=$1",
+            [sourceId],
+          )
+        ).rowCount
+      )
+        notFound();
+      await current.contactCommandAuthority(false, "stage");
+      await requireEntitlement(this.client, "crm.leads.write", { lock: false });
+      return authorized;
+    };
+    const finish = async () => {
+      await assertSources();
+      const result = await this.client.query(
+        `SELECT expires_at>clock_timestamp() AS unexpired FROM app.idempotency_record
+         WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+        receiptParameters,
+      );
+      if (!result.rows[0]?.unexpired)
+        throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+      await requireEntitlement(this.client, "crm.leads.write", { lock: false });
+    };
+    const authorized = await assertSources();
+    if (receipt) {
+      await finish();
+      return { body: receipt, status: 201, etag: historicalEtag };
+    }
+    const version = stageTransitionRevision(authorized.row_version);
+    if (version !== command.version)
+      throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+    if (version >= Number.MAX_SAFE_INTEGER)
+      throw new AccessError(409, "revision_exhausted", "Lead revision cannot advance safely.");
+    if (authorized.stage_id === targetStageId)
+      throw new AccessError(409, "stage_unchanged", "Lead is already in this stage.");
+    const clock = await this.client.query("SELECT date_trunc('milliseconds',clock_timestamp()) AS instant");
+    const event = stageTransitionEvent(
+      context.organizationId,
+      command.id,
+      targetStageId,
+      version + 1,
+      traceId,
+      clock.rows[0]?.instant,
+    );
+    await this.client.query(
+      `INSERT INTO app.stage_transition
+       (tenant_id,lead_id,from_stage_id,to_stage_id,actor_member_id,reason,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$7)`,
+      [
+        context.organizationId,
+        command.id,
+        authorized.stage_id,
+        targetStageId,
+        context.memberId,
+        command.body.reason ?? null,
+        event.occurredAt,
+      ],
+    );
+    const updated = await this.client.query(
+      `UPDATE app.lead SET stage_id=$1,row_version=row_version+1,updated_at=$2
+       WHERE tenant_id=app.current_tenant() AND id=$3 AND row_version=$4 RETURNING *`,
+      [targetStageId, event.occurredAt, command.id, command.version],
+    );
+    if (!updated.rowCount)
+      throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+    const lead = stageTransitionReceipt(models.lead(updated.rows[0]), command);
+    if (lead.contactId.toLowerCase() !== contactId || lead.sourceId.toLowerCase() !== sourceId) notFound();
+    await assertSources();
+    await this.client.query(
+      `INSERT INTO app.outbox(tenant_id,id,event_type,aggregate_id,payload,initiating_actor_id)
+       VALUES($1,$2,'lead.stage_changed',$3,$4,$5)`,
+      [context.organizationId, event.eventId, command.id, stageTransitionJson(event), context.userId],
+    );
+    const safeReferences = stageTransitionJson({ resourceId: command.id, resourceVersion: lead.version });
+    await this.client.query(
+      `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data)
+       VALUES($1,$2,'lead.stage_changed',$3,$4,$5)`,
+      [context.organizationId, command.id, event.eventId, event.occurredAt, safeReferences],
+    );
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff)
+       VALUES($1,$2,'lead.stage_changed','lead',$3,$4,$5)`,
+      [
+        context.organizationId,
+        context.userId,
+        command.id,
+        traceId,
+        stageTransitionJson({ resourceVersion: lead.version }),
+      ],
+    );
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+       (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
+       VALUES($1,$2,$3,$4,$5,$6,201,$7,clock_timestamp()+interval '1 day')`,
+      [
+        context.organizationId,
+        context.userId,
+        command.routeKey,
+        command.key,
+        command.requestHash,
+        stageTransitionJson(lead),
+        historicalEtag,
+      ],
+    );
+    await finish();
+    return { body: lead, status: 201, etag: historicalEtag };
+  }
+
   async idempotent(
     key: string | undefined,
     routeKey: string,
@@ -1424,42 +1657,12 @@ export class CrmService {
     return { body: config.mapper(row), status: 200, etag: `"${row.row_version}"` };
   }
 
-  async transition(id: string, body: Body, expectedVersion: string | undefined): Promise<Mutation> {
-    const row = await this.row("leads", id, true, true);
-    requireVersion(row, expectedVersion);
-    const stage = await this.client.query("SELECT id FROM app.pipeline_stage WHERE id=$1", [body.toStageId]);
-    if (!stage.rowCount)
-      throw new AccessError(422, "stage_invalid", "Stage must belong to this organization.");
-    if (row.stage_id === body.toStageId)
-      throw new AccessError(409, "stage_unchanged", "Lead is already in this stage.");
-    await this.client.query(
-      `INSERT INTO app.stage_transition(tenant_id,lead_id,from_stage_id,to_stage_id,actor_member_id,reason) VALUES($1,$2,$3,$4,$5,$6)`,
-      [
-        this.context.organizationId,
-        id,
-        row.stage_id,
-        body.toStageId,
-        this.context.memberId,
-        body.reason ?? null,
-      ],
+  async transition(_id: string, _body: Body, _expectedVersion: string | undefined): Promise<Mutation> {
+    throw new AccessError(
+      503,
+      "stage_command_required",
+      "Stage transitions require the recoverable command boundary.",
     );
-    const result = await this.client.query(
-      "UPDATE app.lead SET stage_id=$1,row_version=row_version+1,updated_at=now() WHERE id=$2 RETURNING *",
-      [body.toStageId, id],
-    );
-    const updated = result.rows[0];
-    await this.audit("lead.stage_changed", "lead", id, Number(updated.row_version));
-    await this.event("lead.stage_changed", "lead", id, Number(updated.row_version), [body.toStageId]);
-    await this.client.query(
-      `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data) VALUES($1,$2,'lead.stage_changed',$3,now(),$4)`,
-      [
-        this.context.organizationId,
-        id,
-        randomUUID(),
-        JSON.stringify({ resourceId: id, resourceVersion: Number(updated.row_version) }),
-      ],
-    );
-    return { body: models.lead(updated), status: 201, etag: `"${updated.row_version}"` };
   }
 
   async notes(id: string, body?: Body, expectedVersion?: string): Promise<unknown> {

@@ -774,6 +774,16 @@ class ApiController {
               req.headers["idempotency-key"] as string,
               `${req.method} ${req.path}`,
             );
+          } else if (resource === "leads" && req.method === "POST" && id && action === "stage-transitions") {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.postStageTransition(
+              id,
+              req.body,
+              revision(req),
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
           } else {
             response = await crm.idempotent(
               req.headers["idempotency-key"] as string,
@@ -829,8 +839,6 @@ class ApiController {
                 if (req.method === "POST" && !id) return crm.create(resource, req.body);
                 if (req.method === "PATCH" && id && !action)
                   return crm.update(resource, id, req.body, revision(req));
-                if (req.method === "POST" && resource === "leads" && id && action === "stage-transitions")
-                  return crm.transition(id, req.body, revision(req));
                 if (req.method === "POST" && resource === "leads" && id && action === "notes")
                   return (await crm.notes(id, req.body, revision(req))) as {
                     body: unknown;

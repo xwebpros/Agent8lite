@@ -82,6 +82,14 @@ import {
   type LeadCaptureTemplate,
 } from "./lead-capture";
 import LeadCapturePanel, { emptyLeadCaptureDraft, type LeadCaptureDraft } from "./lead-capture-panel";
+import {
+  StageTransitionProtocol,
+  stageTransitionContext,
+  stageTransitionEligible,
+  stageTransitionRequest,
+  type StageTransitionCommand,
+} from "./stage-transition";
+import StageTransitionPanel from "./stage-transition-panel";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -244,6 +252,20 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   leadCapture.current.bind(leadCaptureBinding);
   const leadSnapshot = leadCapture.current.getSnapshot();
   const leadPending = Boolean(leadSnapshot.sequence);
+  const stageTransition = useRef(new StageTransitionProtocol());
+  const activeStageTransition = useRef<StageTransitionCommand | null>(null);
+  const [, updateStageTransition] = useState(0);
+  const [stageDenied, setStageDenied] = useState(false);
+  const stageBinding = stageDenied
+    ? null
+    : stageTransitionContext({ session, memberId: member, csrf, accessRevision });
+  const currentStageBinding = useRef(stageBinding);
+  currentStageBinding.current = stageBinding;
+  stageTransition.current.bind(stageBinding);
+  if (activeStageTransition.current && activeStageTransition.current.context !== stageBinding)
+    activeStageTransition.current = null;
+  const stageSnapshot = stageTransition.current.getSnapshot();
+  const stagePending = Boolean(stageSnapshot.command);
   const unsaved =
     dirty ||
     noteDirty ||
@@ -254,6 +276,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     taskPending ||
     contactPending ||
     leadPending ||
+    stagePending ||
     Boolean(invitationTransfer);
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
@@ -333,6 +356,34 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     member,
     csrf,
   };
+  const currentStageUI = useRef({
+    binding: stageBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    busy,
+    loading,
+    detailLoading,
+    dirty,
+    modal,
+    leads: data.leads,
+    stages: data.stages,
+    csrf,
+  });
+  currentStageUI.current = {
+    binding: stageBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    busy,
+    loading,
+    detailLoading,
+    dirty,
+    modal,
+    leads: data.leads,
+    stages: data.stages,
+    csrf,
+  };
   const [invitationAcceptance, setInvitationAcceptance] = useState<{
     userId: string;
     job: Schema<"Job">;
@@ -350,7 +401,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     notificationProtected.current ||
     Boolean(taskCompletion.current.getSnapshot().command) ||
     Boolean(contactEdit.current.getSnapshot().command) ||
-    Boolean(leadCapture.current.getSnapshot().sequence);
+    Boolean(leadCapture.current.getSnapshot().sequence) ||
+    Boolean(stageTransition.current.getSnapshot().command);
   const protectCms = useCallback((value: boolean) => {
     cmsProtected.current = value;
     if (value) reloadProtected.current = true;
@@ -449,7 +501,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         notificationProtected.current ||
         taskCompletion.current.getSnapshot().command ||
         contactEdit.current.getSnapshot().command ||
-        leadCapture.current.getSnapshot().sequence
+        leadCapture.current.getSnapshot().sequence ||
+        stageTransition.current.getSnapshot().command
       ) {
         setLoading(false);
         return;
@@ -516,6 +569,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           ["permission_denied", "entitlement_disabled"].includes(err.code ?? "");
         if (err instanceof ApiError && [401, 403].includes(err.status) && !unrelatedCrmDenial) {
           taskCompletion.current.bind(null);
+          stageTransition.current.bind(null);
+          currentStageBinding.current = null;
+          activeStageTransition.current = null;
+          setStageDenied(true);
           contactEdit.current.bind(null);
           currentContactBinding.current = null;
           selectedContactBinding.current = null;
@@ -621,6 +678,20 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           setBusy(false);
         }
         leadCapture.current.bind(nextLeadBinding);
+        const nextStageBinding = stageTransitionContext({
+          session: result.data,
+          memberId: result.headers.get("X-Member-Id") || "",
+          csrf: result.headers.get("X-CSRF-Token") || "",
+          accessRevision: currentAccessRevision.current,
+        });
+        if (currentStageBinding.current !== nextStageBinding) {
+          activeStageTransition.current = null;
+          setBusy(false);
+        }
+        stageTransition.current.bind(nextStageBinding);
+        currentStageBinding.current = nextStageBinding;
+        setStageDenied(false);
+        updateStageTransition((value) => value + 1);
         currentLeadCaptureBinding.current = nextLeadBinding;
         setLeadCaptureDenied(false);
         updateLeadCapture((value) => value + 1);
@@ -648,6 +719,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           return null;
         }
         setSession(null);
+        stageTransition.current.bind(null);
+        currentStageBinding.current = null;
+        activeStageTransition.current = null;
         taskCompletion.current.bind(null);
         contactEdit.current.bind(null);
         leadCapture.current.bind(null);
@@ -688,6 +762,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     contactEdit.current.bind(contactEditBinding);
     return () => {
       contactLifetimeActive.current = false;
+      stageTransition.current.bind(null);
+      currentStageBinding.current = null;
+      activeStageTransition.current = null;
       contactEdit.current.bind(null);
       leadCapture.current.bind(null);
       currentLeadCaptureBinding.current = null;
@@ -711,12 +788,14 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       setContactVisible(document.visibilityState === "visible");
       updateContactEdit((value) => value + 1);
       updateLeadCapture((value) => value + 1);
+      updateStageTransition((value) => value + 1);
     };
     visibility();
     const clock = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         updateContactEdit((value) => value + 1);
         updateLeadCapture((value) => value + 1);
+        updateStageTransition((value) => value + 1);
       }
     }, 30000);
     document.addEventListener("visibilitychange", visibility);
@@ -769,6 +848,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (modal) dialog.current?.showModal();
   }, [modal]);
   useEffect(() => {
+    if (stageTransition.current.getSnapshot().command) {
+      setDetailLoading(false);
+      return;
+    }
     const pendingContact = contactEdit.current.getSnapshot().command;
     if (
       pendingContact &&
@@ -900,13 +983,15 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         setNotice(
           contactEdit.current.getSnapshot().command
             ? "The app update activated. Reconcile the unconfirmed contact save before reloading."
-            : leadCapture.current.getSnapshot().sequence
-              ? "The app update activated. Resolve the unfinished lead capture before reloading."
-              : taskCompletion.current.getSnapshot().command
-                ? "The app update activated. Reconcile the unconfirmed task completion before reloading."
-                : notificationProtected.current
-                  ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
-                  : "The app update activated. Finish or discard your current draft before reloading.",
+            : stageTransition.current.getSnapshot().command
+              ? "The app update activated. Reconcile the unconfirmed stage transition before reloading."
+              : leadCapture.current.getSnapshot().sequence
+                ? "The app update activated. Resolve the unfinished lead capture before reloading."
+                : taskCompletion.current.getSnapshot().command
+                  ? "The app update activated. Reconcile the unconfirmed task completion before reloading."
+                  : notificationProtected.current
+                    ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
+                    : "The app update activated. Finish or discard your current draft before reloading.",
         );
         return;
       }
@@ -942,6 +1027,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     receiveHeaders?: (headers: Headers) => void,
     explicitKey?: string,
   ) {
+    if (stageTransition.current.getSnapshot().command)
+      throw new Error("Reconcile the unconfirmed stage transition before starting another command.");
     if (leadCapture.current.getSnapshot().sequence)
       throw new Error("Resolve the unfinished lead capture before starting another command.");
     if (contactEdit.current.getSnapshot().command)
@@ -974,6 +1061,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     return result.data;
   }
   async function loadMore(resource: "contacts" | "leads" | "tasks") {
+    if (stageTransition.current.getSnapshot().command) return;
     const cursor = cursors[resource];
     if (!cursor || !session?.activeOrgId) return;
     const epoch = refreshEpoch.current;
@@ -1019,6 +1107,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   }
   async function continueInvitation(transfer: InvitationTransfer, identity: "owner" | "agent") {
     if (busy || !online) return;
+    if (stageTransition.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed stage transition before changing identity.");
+      return;
+    }
     if (leadCapture.current.getSnapshot().sequence) {
       setError("Resolve the unfinished lead capture before changing identity.");
       return;
@@ -1060,6 +1152,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     await signIn(identity);
   }
   function closeModal() {
+    if (stageTransition.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed stage transition before closing this view.");
+      return;
+    }
     if (leadCapture.current.getSnapshot().sequence) {
       setError("Resolve the unfinished lead capture in this editor before closing it.");
       return;
@@ -1072,6 +1168,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     setLeadCaptureDraft(null);
   }
   function closeDetail() {
+    if (stageTransition.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed stage transition before closing this view.");
+      return;
+    }
     if (leadCapture.current.getSnapshot().sequence) {
       setError("Resolve the unfinished lead capture before leaving this view.");
       return;
@@ -1144,6 +1244,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       ui.tagDirty ||
       ui.modal ||
       taskCompletion.current.getSnapshot().command ||
+      stageTransition.current.getSnapshot().command ||
       (acknowledged
         ? !acknowledgedCommand ||
           activeContactEdit.current !== acknowledgedCommand ||
@@ -1361,7 +1462,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         invitationTransfer ||
         taskCompletion.current.getSnapshot().command ||
         contactEdit.current.getSnapshot().command ||
-        leadCapture.current.getSnapshot().sequence,
+        leadCapture.current.getSnapshot().sequence ||
+        stageTransition.current.getSnapshot().command,
     );
   }
   function forgetContactRecovery(expectedCommand = contactSnapshot.command) {
@@ -1506,6 +1608,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   function openModal(next: "lead" | "task") {
+    if (stageTransition.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed stage transition before starting another edit.");
+      return;
+    }
     if (leadCapture.current.getSnapshot().sequence) {
       setError("Return to the unfinished lead capture before starting another edit.");
       return;
@@ -1554,6 +1660,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           notificationProtected.current ||
           Boolean(taskCompletion.current.getSnapshot().command) ||
           Boolean(contactEdit.current.getSnapshot().command) ||
+          Boolean(stageTransition.current.getSnapshot().command) ||
           currentContactUI.current.noteDirty ||
           currentContactUI.current.tagDirty,
       })
@@ -1894,33 +2001,203 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       setError("There is no current unconfirmed task completion to reconcile.");
     }
   }
-  async function moveLead(lead: Lead, toStageId: string) {
-    if (!session?.activeOrgId || lead.stageId === toStageId) return;
+  function stageAllowed(binding: string | null, ownCommand?: StageTransitionCommand) {
+    const ui = currentStageUI.current;
+    return (
+      stageTransition.current.isBoundTo(binding) &&
+      stageTransition.current.getSnapshot().phase !== "forgotten" &&
+      stageTransitionEligible(binding, {
+        binding: currentStageBinding.current,
+        active: contactLifetimeActive.current,
+        online: ui.online && navigator.onLine,
+        visible: ui.visible && document.visibilityState === "visible",
+        changingOrganization: ui.changingOrganization,
+        busy: ui.busy && (!ownCommand || activeStageTransition.current !== ownCommand),
+        loading: ui.loading,
+        detailLoading: ui.detailLoading,
+        dirty: ui.dirty,
+        otherProtected: Boolean(
+          ui.modal ||
+            currentContactUI.current.noteDirty ||
+            currentContactUI.current.tagDirty ||
+            cmsProtected.current ||
+            campaignProtected.current ||
+            notificationProtected.current ||
+            invitationTransfer ||
+            taskCompletion.current.getSnapshot().command ||
+            contactEdit.current.getSnapshot().command ||
+            leadCapture.current.getSnapshot().sequence,
+        ),
+      })
+    );
+  }
+  function invalidateStageAccess() {
+    stageTransition.current.bind(null);
+    currentStageBinding.current = null;
+    activeStageTransition.current = null;
+    setStageDenied(true);
+    ++refreshEpoch.current;
+    ++detailEpoch.current;
+    setData(emptyData);
+    setRefreshed(null);
+    setSelectedLead(null);
+    selectedContactBinding.current = null;
+    setSelectedContact(null);
+    setContactDraft(null);
+    setDetailLoading(false);
+    setBusy(false);
+    updateStageTransition((value) => value + 1);
+  }
+  async function sendStageTransition(original: StageTransitionCommand) {
+    const active = retainedSession.current;
+    if (
+      !active?.activeOrgId ||
+      !stageTransition.current.isCurrent(original) ||
+      !stageAllowed(original.context) ||
+      activeStageTransition.current ||
+      !stageTransition.current.canRetry(original)
+    ) {
+      if (
+        contactLifetimeActive.current &&
+        stageTransition.current.isCurrent(original) &&
+        !activeStageTransition.current
+      ) {
+        stageTransition.current.reject(original, new Error("Stage send unavailable."));
+        updateStageTransition((value) => value + 1);
+      }
+      return;
+    }
+    activeStageTransition.current = original;
+    reloadProtected.current = true;
+    ++refreshEpoch.current;
+    ++detailEpoch.current;
+    currentStageUI.current.leads = [];
+    currentStageUI.current.stages = [];
+    setData(emptyData);
+    setRefreshed(null);
+    setSelectedLead(null);
+    selectedContactBinding.current = null;
+    setSelectedContact(null);
+    setContactDraft(null);
     setBusy(true);
     setError("");
+    setNotice("");
+    updateStageTransition((value) => value + 1);
     try {
-      const input: Schema<"StageTransition"> = { toStageId, reason: "Moved through workspace pipeline" };
-      await command<Lead>(
-        `/v1/orgs/${session.activeOrgId}/leads/${lead.id}/stage-transitions`,
-        input,
-        "POST",
-        lead.version,
-      );
-      setNotice("Pipeline stage updated.");
-      await refresh(session);
+      const receipt = await stageTransitionRequest(active.activeOrgId, original, currentStageUI.current.csrf);
+      if (!contactLifetimeActive.current || !stageTransition.current.isCurrent(original)) return;
+      if (!stageTransition.current.acknowledge(original, receipt.data, receipt.etag)) {
+        setError(
+          "The stage transition may have completed, but its receipt could not be verified. Reconcile the original command.",
+        );
+        return;
+      }
+      updateStageTransition((value) => value + 1);
+      setNotice("Stage transition acknowledged. Current records are read separately.");
+      if (stageAllowed(original.context, original)) await refresh(active);
     } catch (err) {
+      if (!contactLifetimeActive.current) return;
+      const outcome = stageTransition.current.reject(original, err);
+      if (outcome === "ignored") return;
+      if (err instanceof ApiError && [401, 403].includes(err.status)) invalidateStageAccess();
+      else if (err instanceof ApiError && [404, 412].includes(err.status)) {
+        ++refreshEpoch.current;
+        setData(emptyData);
+        setRefreshed(null);
+      }
       setError(
-        err instanceof ApiError && err.status === 412
-          ? "This lead changed. Refresh the pipeline and review the latest stage before retrying."
-          : err instanceof Error
-            ? err.message
-            : "Stage could not be changed.",
+        outcome === "unknown"
+          ? "Stage transition unconfirmed. Only its exact original command may be reconciled."
+          : err instanceof ApiError && err.status === 412
+            ? "The first transition was rejected because the lead changed. Refresh current records before another transition."
+            : "The first stage command was rejected or current access is unavailable. Review current records and access before continuing.",
       );
+      updateStageTransition((value) => value + 1);
     } finally {
-      setBusy(false);
+      if (activeStageTransition.current === original && contactLifetimeActive.current) {
+        activeStageTransition.current = null;
+        setBusy(false);
+      }
     }
   }
+  async function moveLead(lead: Lead, toStageId: string) {
+    if (
+      !stageAllowed(stageBinding) ||
+      reloadProtected.current ||
+      detailId ||
+      stageTransition.current.getSnapshot().command
+    )
+      return;
+    const ui = currentStageUI.current;
+    const current = ui.leads.find(
+      (row) =>
+        row.id === lead.id &&
+        row.version === lead.version &&
+        row.stageId === lead.stageId &&
+        row.contactId === lead.contactId &&
+        row.sourceId === lead.sourceId,
+    );
+    if (!current || !ui.stages.some((stage) => stage.id === toStageId)) return;
+    try {
+      const command = stageTransition.current.begin(
+        { lead: current, body: { toStageId, reason: "Moved through workspace pipeline" } },
+        crypto.randomUUID(),
+      );
+      reloadProtected.current = true;
+      await sendStageTransition(command);
+    } catch {
+      if (stageTransition.current.isBoundTo(stageBinding))
+        setError("The stage input or revision is unavailable. Refresh current records before continuing.");
+    }
+  }
+  async function reconcileStageTransition() {
+    if (!stageAllowed(stageBinding) || activeStageTransition.current) return;
+    try {
+      await sendStageTransition(stageTransition.current.retry());
+    } catch {
+      if (stageTransition.current.isBoundTo(stageBinding))
+        setError("The original stage command cannot be resent; its outcome remains unconfirmed.");
+    }
+  }
+  function forgetStageTransition(expected: StageTransitionCommand | null) {
+    const ui = currentStageUI.current;
+    if (
+      !contactLifetimeActive.current ||
+      !stageTransition.current.isBoundTo(stageBinding) ||
+      ui.binding !== stageBinding ||
+      currentStageBinding.current !== stageBinding ||
+      stageTransition.current.getSnapshot().command !== expected ||
+      !ui.visible ||
+      document.visibilityState !== "visible" ||
+      ui.changingOrganization ||
+      ui.busy ||
+      ui.loading ||
+      ui.detailLoading ||
+      activeStageTransition.current ||
+      !stageTransition.current.forget()
+    )
+      return;
+    activeStageTransition.current = null;
+    ++refreshEpoch.current;
+    ++detailEpoch.current;
+    currentStageUI.current.leads = [];
+    currentStageUI.current.stages = [];
+    setData(emptyData);
+    setRefreshed(null);
+    setSelectedLead(null);
+    selectedContactBinding.current = null;
+    setSelectedContact(null);
+    setContactDraft(null);
+    setError("");
+    setNotice("");
+    releaseForgottenRecoveryProtection();
+    updateStageTransition((value) => value + 1);
+  }
   async function switchOrganization(id: string) {
+    if (stageTransition.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed stage transition before switching organizations.");
+      return;
+    }
     if (leadCapture.current.getSnapshot().sequence) {
       setError(
         "Resolve the unfinished lead capture before switching organizations. A saved contact is kept unless you explicitly close its known partial capture.",
@@ -1993,6 +2270,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function logout() {
+    if (stageTransition.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed stage transition before signing out.");
+      return;
+    }
     if (leadCapture.current.getSnapshot().sequence) {
       setError(
         "Resolve the unfinished lead capture before signing out. An unconfirmed step cannot be discarded.",
@@ -2280,7 +2561,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         if (
           (!taskCompletion.current.getSnapshot().command &&
             !contactEdit.current.getSnapshot().command &&
-            !leadCapture.current.getSnapshot().sequence) ||
+            !leadCapture.current.getSnapshot().sequence &&
+            !stageTransition.current.getSnapshot().command) ||
           !(event.target instanceof Element)
         )
           return;
@@ -2297,11 +2579,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         event.preventDefault();
         event.stopPropagation();
         setError(
-          contactEdit.current.getSnapshot().command
-            ? "Reconcile the unconfirmed contact save before navigating away. Current-record review does not confirm its outcome."
-            : leadCapture.current.getSnapshot().sequence
-              ? "Resolve the unfinished lead capture before navigating away. An unconfirmed step cannot be discarded."
-              : "Reconcile the unconfirmed task completion before navigating away.",
+          stageTransition.current.getSnapshot().command
+            ? "Reconcile the unconfirmed stage transition before navigating away."
+            : contactEdit.current.getSnapshot().command
+              ? "Reconcile the unconfirmed contact save before navigating away. Current-record review does not confirm its outcome."
+              : leadCapture.current.getSnapshot().sequence
+                ? "Resolve the unfinished lead capture before navigating away. An unconfirmed step cannot be discarded."
+                : "Reconcile the unconfirmed task completion before navigating away.",
         );
       }}
     >
@@ -2491,13 +2775,15 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <Download size={19} />
               <span>
                 An app update is ready.
-                {taskPending
-                  ? " Reconcile the unconfirmed task completion before updating or reloading."
-                  : notificationPending
-                    ? " Reconcile the unconfirmed read command in Notifications before updating or reloading."
-                    : unsaved || busy
-                      ? " Finish or discard your draft before updating."
-                      : " Reload when you’re ready."}
+                {stagePending
+                  ? " Reconcile the unconfirmed stage transition before updating or reloading."
+                  : taskPending
+                    ? " Reconcile the unconfirmed task completion before updating or reloading."
+                    : notificationPending
+                      ? " Reconcile the unconfirmed read command in Notifications before updating or reloading."
+                      : unsaved || busy
+                        ? " Finish or discard your draft before updating."
+                        : " Reload when you’re ready."}
               </span>
               <Button
                 variant="secondary"
@@ -2587,6 +2873,18 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               {notice}
             </div>
           )}
+          <StageTransitionPanel
+            snapshot={stageSnapshot}
+            online={online && !changingOrganization}
+            visible={
+              contactVisible && (typeof document === "undefined" || document.visibilityState === "visible")
+            }
+            busy={busy || loading || detailLoading}
+            canWrite={Boolean(stageBinding) && !stageDenied}
+            canRetry={stageTransition.current.canRetry()}
+            onReconcile={() => void reconcileStageTransition()}
+            onForget={() => forgetStageTransition(stageSnapshot.command)}
+          />
           {(contactSnapshot.phase === "forgotten" || leadSnapshot.phase === "forgotten") && (
             <div className="connection-banner" role="status">
               <ShieldCheck size={18} aria-hidden="true" />
@@ -2744,824 +3042,857 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               </Button>
             </div>
           )}
-          {(view === "notifications" || notificationPending) && (
-            <div hidden={view !== "notifications"}>
-              <NotificationCenter
-                key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
-                session={session}
-                memberId={member}
-                csrf={csrf}
-                online={online && !changingOrganization && view === "notifications"}
-                accessRevision={accessRevision}
-                onProtectedChange={protectNotification}
-                onNavigate={openNotification}
-                onAccessRevoked={() => {
-                  router.replace("/dashboard");
-                  setError(
-                    "Notification access changed. Refresh workspace access before reopening Notifications.",
-                  );
-                }}
-              />
-            </div>
-          )}
-          {view === "properties" && (
-            <PropertiesFeature
-              key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
-              session={session}
-              online={online}
-              syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
-              accessRevision={accessRevision}
-              onAccessRevoked={() => {
-                router.replace("/dashboard");
-                setError("Property access changed. Refresh workspace access before reopening Properties.");
-              }}
-            />
-          )}
-          {view === "websites" && (
-            <CmsWorkspace
-              key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
-              session={session}
-              csrf={csrf}
-              online={online}
-              syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
-              accessRevision={accessRevision}
-              onDirty={protectCms}
-              onAccessRevoked={() => {
-                router.replace("/dashboard");
-                setError("Website access changed. Refresh workspace access before reopening Websites.");
-              }}
-            />
-          )}
-          {view === "campaigns" && (
-            <CampaignWorkspace
-              key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
-              session={session}
-              csrf={csrf}
-              online={online}
-              syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
-              accessRevision={accessRevision}
-              onDirty={protectCampaign}
-              onAccessRevoked={() => {
-                router.replace("/dashboard");
-                setError("Campaign access changed. Refresh workspace access before reopening Campaigns.");
-              }}
-            />
-          )}
-          {view === "dashboard" && (
+          {!stagePending && (
             <>
-              {permission("dashboard.read") && session.activeOrgId && (
-                <VerifiedMetrics
+              {(view === "notifications" || notificationPending) && (
+                <div hidden={view !== "notifications"}>
+                  <NotificationCenter
+                    key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                    session={session}
+                    memberId={member}
+                    csrf={csrf}
+                    online={online && !changingOrganization && view === "notifications"}
+                    accessRevision={accessRevision}
+                    onProtectedChange={protectNotification}
+                    onNavigate={openNotification}
+                    onAccessRevoked={() => {
+                      router.replace("/dashboard");
+                      setError(
+                        "Notification access changed. Refresh workspace access before reopening Notifications.",
+                      );
+                    }}
+                  />
+                </div>
+              )}
+              {view === "properties" && (
+                <PropertiesFeature
                   key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                  session={session}
+                  online={online}
+                  syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
+                  accessRevision={accessRevision}
+                  onAccessRevoked={() => {
+                    router.replace("/dashboard");
+                    setError(
+                      "Property access changed. Refresh workspace access before reopening Properties.",
+                    );
+                  }}
+                />
+              )}
+              {view === "websites" && (
+                <CmsWorkspace
+                  key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                  session={session}
+                  csrf={csrf}
+                  online={online}
+                  syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
+                  accessRevision={accessRevision}
+                  onDirty={protectCms}
+                  onAccessRevoked={() => {
+                    router.replace("/dashboard");
+                    setError("Website access changed. Refresh workspace access before reopening Websites.");
+                  }}
+                />
+              )}
+              {view === "campaigns" && (
+                <CampaignWorkspace
+                  key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                  session={session}
+                  csrf={csrf}
+                  online={online}
+                  syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
+                  accessRevision={accessRevision}
+                  onDirty={protectCampaign}
+                  onAccessRevoked={() => {
+                    router.replace("/dashboard");
+                    setError("Campaign access changed. Refresh workspace access before reopening Campaigns.");
+                  }}
+                />
+              )}
+              {view === "dashboard" && (
+                <>
+                  {permission("dashboard.read") && session.activeOrgId && (
+                    <VerifiedMetrics
+                      key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                      session={session}
+                      memberId={member}
+                      accessRevision={accessRevision}
+                      refreshMarker={refreshed}
+                      online={online}
+                      changingOrganization={changingOrganization}
+                      onAccessRevoked={() =>
+                        setError(
+                          "Reporting access changed. Refresh workspace access before reopening the report.",
+                        )
+                      }
+                    />
+                  )}
+                  <div className="metrics">
+                    <Metric
+                      icon={<Users size={21} />}
+                      name="Relationships"
+                      value={refreshed && permission("crm.contacts.read") ? data.contacts.length : null}
+                      detail="Contacts in loaded scope"
+                    />
+                    <Metric
+                      icon={<Kanban size={21} />}
+                      name="Opportunities"
+                      value={refreshed && permission("crm.leads.read") ? data.leads.length : null}
+                      detail="Leads in loaded scope"
+                    />
+                    <Metric
+                      icon={<ListTodo size={21} />}
+                      name="Open follow-ups"
+                      value={refreshed && permission("crm.tasks.read") ? openTasks.length : null}
+                      detail="Tasks with state open"
+                    />
+                    <Metric
+                      icon={<Clock3 size={21} />}
+                      name="Needs attention"
+                      value={refreshed && permission("crm.tasks.read") ? overdue.length : null}
+                      detail="Open tasks past due"
+                      warning
+                    />
+                  </div>
+                  <p className="metric-definition">
+                    Snapshot v1 · Current loaded records · All-time record inventory as of refresh · Source:
+                    CRM API.
+                    {Object.values(cursors).some(Boolean)
+                      ? " Additional records exist; these counts are partial."
+                      : ""}{" "}
+                    Counts do not represent engagement or revenue.
+                  </p>
+                  <div className="dashboard-grid">
+                    <TaskAgenda
+                      contextKey={taskAgendaContext}
+                      tasks={data.tasks}
+                      userTimezone={session.profile.timezone}
+                      organizationTimezone={organization?.timezone}
+                      scope={scope}
+                      refreshedAt={refreshed}
+                      hasMore={Boolean(cursors.tasks)}
+                      loading={loading}
+                      online={online && !changingOrganization}
+                      canRead={permission("crm.tasks.read")}
+                      canComplete={canTask && Boolean(member)}
+                      blocked={
+                        busy ||
+                        changingOrganization ||
+                        dirty ||
+                        noteDirty ||
+                        tagDirty ||
+                        cmsProtected.current ||
+                        campaignProtected.current ||
+                        notificationProtected.current
+                      }
+                      completionPending={taskPending}
+                      onReconcile={() => void reconcileTaskCompletion()}
+                      onOpenTask={openAgendaTask}
+                      onCompleteTask={completeAgendaTask}
+                      onViewTasks={() => {
+                        if (taskAgendaAllowed()) router.push("/tasks");
+                      }}
+                      onAddTask={() => {
+                        if (taskAgendaAllowed() && canTask) openModal("task");
+                      }}
+                    />
+                    <section className="panel pipeline-summary">
+                      <PanelHeading
+                        icon={<Kanban size={18} />}
+                        title="Pipeline at a glance"
+                        action={
+                          <Link href="/pipeline" aria-label="Open pipeline">
+                            <ArrowRight size={17} />
+                          </Link>
+                        }
+                      />
+                      <div className="stage-bars">
+                        {(permission("crm.leads.read") ? data.stages : []).map((stage, index) => {
+                          const count = data.leads.filter((lead) => lead.stageId === stage.id).length;
+                          return (
+                            <div key={stage.id} className="stage-bar">
+                              <div>
+                                <span>
+                                  <i
+                                    style={{
+                                      background: [
+                                        "#2459B8",
+                                        "#487ECA",
+                                        "#6D89B2",
+                                        "#8997AD",
+                                        "#096B52",
+                                        "#62A38E",
+                                      ][index % 6],
+                                    }}
+                                  />
+                                  {stage.name}
+                                </span>
+                                <strong>{count}</strong>
+                              </div>
+                              <div className="bar-track">
+                                <span
+                                  style={{
+                                    width: `${data.leads.length ? Math.max((count / data.leads.length) * 100, count ? 4 : 0) : 0}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {(!data.stages.length || !permission("crm.leads.read")) && (
+                          <Empty icon={<Kanban size={26} />} title="Pipeline unavailable">
+                            Refresh to load your organization’s stages.
+                          </Empty>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+                  <AppointmentAgenda
+                    key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                    session={session}
+                    memberId={member}
+                    online={online && !changingOrganization}
+                    accessRevision={accessRevision}
+                    onOpenLead={openAppointmentLead}
+                    onAccessRevoked={() => {
+                      setError(
+                        "Stored appointment access changed. Refresh workspace access before reopening this agenda.",
+                      );
+                    }}
+                  />
+                  <div className="dashboard-grid lower">
+                    <section className="panel">
+                      <PanelHeading
+                        icon={<Users size={18} />}
+                        title="People in your workspace"
+                        action={
+                          <Link href="/contacts">
+                            View contacts <ArrowRight size={14} />
+                          </Link>
+                        }
+                      />
+                      {data.contacts.length ? (
+                        <div className="recent-contacts">
+                          {data.contacts.slice(0, 4).map((contact) => (
+                            <Link
+                              href={`/contacts?contact=${contact.id}`}
+                              key={contact.id}
+                              className="contact-row"
+                            >
+                              <span className="avatar light">{initials(contact.displayName)}</span>
+                              <div>
+                                <strong>{contact.displayName}</strong>
+                                <span>{contact.emails[0] || "Email not provided"}</span>
+                              </div>
+                              <ChevronRight size={17} />
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <Empty
+                          icon={<Users size={27} />}
+                          title={
+                            refreshed && permission("crm.contacts.read")
+                              ? "Your first relationship starts here"
+                              : "Contacts unavailable"
+                          }
+                        >
+                          {refreshed && permission("crm.contacts.read")
+                            ? "Capture a lead to bring a new person into your workspace."
+                            : "Current contact read access and a successful refresh are required."}
+                        </Empty>
+                      )}
+                    </section>
+                    <section className="panel health-panel">
+                      <PanelHeading icon={<Activity size={18} />} title="Connections" />
+                      <div className="health-row">
+                        <span className="health-icon">
+                          <ShieldCheck size={19} />
+                        </span>
+                        <div>
+                          <strong>CRM workspace</strong>
+                          <span>
+                            {refreshed ? "Records read from the local service" : "Awaiting service response"}
+                          </span>
+                        </div>
+                        <Badge tone={refreshed ? "positive" : "warning"}>
+                          {refreshed ? "Connected" : "Unavailable"}
+                        </Badge>
+                      </div>
+                      <div className="health-row">
+                        <span className="health-icon">
+                          <House size={19} />
+                        </span>
+                        <div>
+                          <strong>Trestle MLS</strong>
+                          <span>Approved feed rights and credentials required</span>
+                        </div>
+                        <Badge>Not connected</Badge>
+                      </div>
+                      <div className="health-row">
+                        <span className="health-icon">
+                          <Mail size={19} />
+                        </span>
+                        <div>
+                          <strong>Messaging & calendar</strong>
+                          <span>No live delivery or booking provider</span>
+                        </div>
+                        <Badge>Unavailable</Badge>
+                      </div>
+                      <div className="health-note">
+                        <Sparkles size={16} />
+                        <span>
+                          Only confirmed activity appears here. Provider workflows are added as their
+                          acceptance gates pass.
+                        </span>
+                      </div>
+                    </section>
+                  </div>
+                </>
+              )}
+
+              {view === "contacts" && (
+                <ContactsSearch
+                  key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}:${scope}`}
                   session={session}
                   memberId={member}
                   accessRevision={accessRevision}
-                  refreshMarker={refreshed}
+                  scope={scope}
                   online={online}
                   changingOrganization={changingOrganization}
+                  refreshMarker={refreshed}
+                  actionsBlocked={busy || loading || detailLoading || unsaved}
+                  onOpenContact={openSearchContact}
                   onAccessRevoked={() =>
                     setError(
-                      "Reporting access changed. Refresh workspace access before reopening the report.",
+                      "Contact search access changed. Use Refresh workspace to verify current access before reopening Contacts.",
                     )
                   }
                 />
               )}
-              <div className="metrics">
-                <Metric
-                  icon={<Users size={21} />}
-                  name="Relationships"
-                  value={refreshed && permission("crm.contacts.read") ? data.contacts.length : null}
-                  detail="Contacts in loaded scope"
-                />
-                <Metric
-                  icon={<Kanban size={21} />}
-                  name="Opportunities"
-                  value={refreshed && permission("crm.leads.read") ? data.leads.length : null}
-                  detail="Leads in loaded scope"
-                />
-                <Metric
-                  icon={<ListTodo size={21} />}
-                  name="Open follow-ups"
-                  value={refreshed && permission("crm.tasks.read") ? openTasks.length : null}
-                  detail="Tasks with state open"
-                />
-                <Metric
-                  icon={<Clock3 size={21} />}
-                  name="Needs attention"
-                  value={refreshed && permission("crm.tasks.read") ? overdue.length : null}
-                  detail="Open tasks past due"
-                  warning
-                />
-              </div>
-              <p className="metric-definition">
-                Snapshot v1 · Current loaded records · All-time record inventory as of refresh · Source: CRM
-                API.
-                {Object.values(cursors).some(Boolean)
-                  ? " Additional records exist; these counts are partial."
-                  : ""}{" "}
-                Counts do not represent engagement or revenue.
-              </p>
-              <div className="dashboard-grid">
-                <TaskAgenda
-                  contextKey={taskAgendaContext}
-                  tasks={data.tasks}
-                  userTimezone={session.profile.timezone}
-                  organizationTimezone={organization?.timezone}
-                  scope={scope}
-                  refreshedAt={refreshed}
-                  hasMore={Boolean(cursors.tasks)}
-                  loading={loading}
-                  online={online && !changingOrganization}
-                  canRead={permission("crm.tasks.read")}
-                  canComplete={canTask && Boolean(member)}
-                  blocked={
-                    busy ||
-                    changingOrganization ||
-                    dirty ||
-                    noteDirty ||
-                    tagDirty ||
-                    cmsProtected.current ||
-                    campaignProtected.current ||
-                    notificationProtected.current
-                  }
-                  completionPending={taskPending}
-                  onReconcile={() => void reconcileTaskCompletion()}
-                  onOpenTask={openAgendaTask}
-                  onCompleteTask={completeAgendaTask}
-                  onViewTasks={() => {
-                    if (taskAgendaAllowed()) router.push("/tasks");
-                  }}
-                  onAddTask={() => {
-                    if (taskAgendaAllowed() && canTask) openModal("task");
-                  }}
-                />
-                <section className="panel pipeline-summary">
-                  <PanelHeading
-                    icon={<Kanban size={18} />}
-                    title="Pipeline at a glance"
-                    action={
-                      <Link href="/pipeline" aria-label="Open pipeline">
-                        <ArrowRight size={17} />
+
+              {view === "pipeline" && (
+                <nav className="settings-nav" aria-label="Pipeline sections">
+                  {[
+                    { id: "board", label: "Lead pipeline", allowed: true },
+                    {
+                      id: "deals",
+                      label: "Deals",
+                      allowed: permission("crm.deals.read") && permission("crm.leads.read"),
+                    },
+                    { id: "capture", label: "Synthetic capture", allowed: captureAllowed },
+                  ]
+                    .filter((item) => item.allowed)
+                    .map((item) => (
+                      <Link
+                        key={item.id}
+                        href={item.id === "board" ? "/pipeline" : `/pipeline?tab=${item.id}`}
+                        aria-current={
+                          (dealsTab ? "deals" : captureTab ? "capture" : "board") === item.id
+                            ? "page"
+                            : undefined
+                        }
+                        onClick={(event) => {
+                          if (
+                            busy ||
+                            (unsaved &&
+                              !window.confirm("Discard unsaved changes and change pipeline section?"))
+                          ) {
+                            event.preventDefault();
+                            return;
+                          }
+                          setDirty(false);
+                          setNoteDirty(false);
+                          setTagDirty(false);
+                        }}
+                      >
+                        {item.label}
                       </Link>
-                    }
-                  />
-                  <div className="stage-bars">
-                    {(permission("crm.leads.read") ? data.stages : []).map((stage, index) => {
-                      const count = data.leads.filter((lead) => lead.stageId === stage.id).length;
+                    ))}
+                </nav>
+              )}
+              {dealsTab && permission("crm.deals.read") && permission("crm.leads.read") && (
+                <DealsPanel
+                  key={`${session.activeOrgId}:${scope}`}
+                  session={session}
+                  memberId={member}
+                  scope={scope}
+                  online={online}
+                  working={busy}
+                  leads={data.leads}
+                  leadLabel={nameFor}
+                  runCommand={command}
+                  onDirty={setDirty}
+                  setWorking={setBusy}
+                />
+              )}
+              {dealsTab && (!permission("crm.deals.read") || !permission("crm.leads.read")) && (
+                <Empty icon={<Kanban size={30} />} title="Deals unavailable">
+                  Your current role cannot read deals and their linked leads.
+                </Empty>
+              )}
+              {captureTab && syntheticEnabled && (
+                <SyntheticCapture
+                  key={`${session.activeOrgId}:${scope}`}
+                  session={session}
+                  memberId={member}
+                  scope={scope}
+                  online={online}
+                  working={busy}
+                  contacts={data.contacts}
+                  sources={data.sources}
+                  runCommand={command}
+                  onDirty={setDirty}
+                  setWorking={setBusy}
+                  onSaved={() => refresh(session)}
+                />
+              )}
+              {captureTab && !syntheticEnabled && (
+                <Empty icon={<ShieldCheck size={30} />} title="Synthetic capture unavailable">
+                  This demonstration requires an explicitly enabled local synthetic session.
+                </Empty>
+              )}
+              {view === "pipeline" &&
+                !dealsTab &&
+                !captureTab &&
+                (!online || !contactVisible || changingOrganization || stagePending) && (
+                  <div className="empty" role="status">
+                    {stagePending
+                      ? "Reconcile the original stage transition before reading the current pipeline."
+                      : "Pipeline details are hidden while offline, inactive or switching organizations."}
+                  </div>
+                )}
+              {view === "pipeline" &&
+                !dealsTab &&
+                !captureTab &&
+                online &&
+                contactVisible &&
+                !changingOrganization &&
+                !stagePending && (
+                  <div className="pipeline-board">
+                    {data.stages.map((stage) => {
+                      const leads = data.leads.filter((lead) => lead.stageId === stage.id);
                       return (
-                        <div key={stage.id} className="stage-bar">
-                          <div>
-                            <span>
-                              <i
-                                style={{
-                                  background: [
-                                    "#2459B8",
-                                    "#487ECA",
-                                    "#6D89B2",
-                                    "#8997AD",
-                                    "#096B52",
-                                    "#62A38E",
-                                  ][index % 6],
-                                }}
-                              />
-                              {stage.name}
-                            </span>
-                            <strong>{count}</strong>
+                        <section className="pipeline-column" key={stage.id}>
+                          <div className="pipeline-column-heading">
+                            <h2>{stage.name}</h2>
+                            <Badge>{leads.length}</Badge>
                           </div>
-                          <div className="bar-track">
-                            <span
-                              style={{
-                                width: `${data.leads.length ? Math.max((count / data.leads.length) * 100, count ? 4 : 0) : 0}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
+                          {leads.map((lead) => (
+                            <article className="lead-card" key={lead.id}>
+                              <Link href={`/pipeline?lead=${lead.id}`} className="lead-name">
+                                {nameFor(lead)}
+                              </Link>
+                              <div className="lead-badges">
+                                <Badge>{lead.intent === "unknown" ? "Intent unknown" : lead.intent}</Badge>
+                                <span>v{lead.version}</span>
+                              </div>
+                              <p>{lead.timeline || "Timeline not provided"}</p>
+                              <div className="lead-source">
+                                {data.sources.find((source) => source.id === lead.sourceId)?.label ||
+                                  "Source unavailable"}
+                              </div>
+                              <label className="stage-selector">
+                                <span>Move to stage</span>
+                                <select
+                                  aria-label={`Stage for ${nameFor(lead)}`}
+                                  value={lead.stageId}
+                                  disabled={
+                                    busy ||
+                                    loading ||
+                                    !online ||
+                                    !stageBinding ||
+                                    stageSnapshot.phase === "forgotten" ||
+                                    unsaved ||
+                                    !contactVisible
+                                  }
+                                  onChange={(event) => void moveLead(lead, event.target.value)}
+                                >
+                                  {data.stages.map((option) => (
+                                    <option key={option.id} value={option.id}>
+                                      {option.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </article>
+                          ))}
+                          {!leads.length && <p className="column-empty">No opportunities here yet</p>}
+                        </section>
                       );
                     })}
-                    {(!data.stages.length || !permission("crm.leads.read")) && (
-                      <Empty icon={<Kanban size={26} />} title="Pipeline unavailable">
-                        Refresh to load your organization’s stages.
-                      </Empty>
+                    {!data.stages.length && (
+                      <section className="panel">
+                        <Empty icon={<Kanban size={30} />} title="Pipeline unavailable">
+                          Reconnect and refresh to load your configured stages.
+                        </Empty>
+                      </section>
                     )}
                   </div>
-                </section>
-              </div>
-              <AppointmentAgenda
-                key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
-                session={session}
-                memberId={member}
-                online={online && !changingOrganization}
-                accessRevision={accessRevision}
-                onOpenLead={openAppointmentLead}
-                onAccessRevoked={() => {
-                  setError(
-                    "Stored appointment access changed. Refresh workspace access before reopening this agenda.",
-                  );
-                }}
-              />
-              <div className="dashboard-grid lower">
+                )}
+
+              {view === "tasks" && (
                 <section className="panel">
-                  <PanelHeading
-                    icon={<Users size={18} />}
-                    title="People in your workspace"
-                    action={
-                      <Link href="/contacts">
-                        View contacts <ArrowRight size={14} />
-                      </Link>
-                    }
-                  />
-                  {data.contacts.length ? (
-                    <div className="recent-contacts">
-                      {data.contacts.slice(0, 4).map((contact) => (
-                        <Link
-                          href={`/contacts?contact=${contact.id}`}
-                          key={contact.id}
-                          className="contact-row"
+                  <div className="list-toolbar">
+                    <div className="tabs" role="group" aria-label="Task filter">
+                      {["open", "done", "all"].map((filter) => (
+                        <button
+                          key={filter}
+                          aria-pressed={taskFilter === filter}
+                          className={taskFilter === filter ? "selected" : ""}
+                          onClick={() => setTaskFilter(filter)}
                         >
-                          <span className="avatar light">{initials(contact.displayName)}</span>
-                          <div>
-                            <strong>{contact.displayName}</strong>
-                            <span>{contact.emails[0] || "Email not provided"}</span>
-                          </div>
-                          <ChevronRight size={17} />
-                        </Link>
+                          {filter === "open" ? "Open" : filter === "done" ? "Completed" : "All tasks"}
+                        </button>
                       ))}
+                    </div>
+                    <span className="muted">Times in {timezone}</span>
+                  </div>
+                  {data.tasks.filter((task) => taskFilter === "all" || task.state === taskFilter).length ? (
+                    <div>
+                      {taskRows(
+                        data.tasks
+                          .filter((task) => taskFilter === "all" || task.state === taskFilter)
+                          .sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
+                      )}
                     </div>
                   ) : (
                     <Empty
-                      icon={<Users size={27} />}
-                      title={
-                        refreshed && permission("crm.contacts.read")
-                          ? "Your first relationship starts here"
-                          : "Contacts unavailable"
-                      }
+                      icon={<ListTodo size={30} />}
+                      title={refreshed ? "Nothing on this list yet" : "Tasks unavailable"}
                     >
-                      {refreshed && permission("crm.contacts.read")
-                        ? "Capture a lead to bring a new person into your workspace."
-                        : "Current contact read access and a successful refresh are required."}
+                      Add a follow-up with a due time and an assigned member. Completion is confirmed by the
+                      server.
                     </Empty>
                   )}
                 </section>
-                <section className="panel health-panel">
-                  <PanelHeading icon={<Activity size={18} />} title="Connections" />
-                  <div className="health-row">
-                    <span className="health-icon">
-                      <ShieldCheck size={19} />
-                    </span>
-                    <div>
-                      <strong>CRM workspace</strong>
-                      <span>
-                        {refreshed ? "Records read from the local service" : "Awaiting service response"}
-                      </span>
-                    </div>
-                    <Badge tone={refreshed ? "positive" : "warning"}>
-                      {refreshed ? "Connected" : "Unavailable"}
-                    </Badge>
-                  </div>
-                  <div className="health-row">
-                    <span className="health-icon">
-                      <House size={19} />
-                    </span>
-                    <div>
-                      <strong>Trestle MLS</strong>
-                      <span>Approved feed rights and credentials required</span>
-                    </div>
-                    <Badge>Not connected</Badge>
-                  </div>
-                  <div className="health-row">
-                    <span className="health-icon">
-                      <Mail size={19} />
-                    </span>
-                    <div>
-                      <strong>Messaging & calendar</strong>
-                      <span>No live delivery or booking provider</span>
-                    </div>
-                    <Badge>Unavailable</Badge>
-                  </div>
-                  <div className="health-note">
-                    <Sparkles size={16} />
-                    <span>
-                      Only confirmed activity appears here. Provider workflows are added as their acceptance
-                      gates pass.
-                    </span>
-                  </div>
-                </section>
-              </div>
-            </>
-          )}
+              )}
 
-          {view === "contacts" && (
-            <ContactsSearch
-              key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}:${scope}`}
-              session={session}
-              memberId={member}
-              accessRevision={accessRevision}
-              scope={scope}
-              online={online}
-              changingOrganization={changingOrganization}
-              refreshMarker={refreshed}
-              actionsBlocked={busy || loading || detailLoading || unsaved}
-              onOpenContact={openSearchContact}
-              onAccessRevoked={() =>
-                setError(
-                  "Contact search access changed. Use Refresh workspace to verify current access before reopening Contacts.",
-                )
-              }
-            />
-          )}
-
-          {view === "pipeline" && (
-            <nav className="settings-nav" aria-label="Pipeline sections">
-              {[
-                { id: "board", label: "Lead pipeline", allowed: true },
-                {
-                  id: "deals",
-                  label: "Deals",
-                  allowed: permission("crm.deals.read") && permission("crm.leads.read"),
-                },
-                { id: "capture", label: "Synthetic capture", allowed: captureAllowed },
-              ]
-                .filter((item) => item.allowed)
-                .map((item) => (
-                  <Link
-                    key={item.id}
-                    href={item.id === "board" ? "/pipeline" : `/pipeline?tab=${item.id}`}
-                    aria-current={
-                      (dealsTab ? "deals" : captureTab ? "capture" : "board") === item.id ? "page" : undefined
-                    }
-                    onClick={(event) => {
-                      if (
-                        busy ||
-                        (unsaved && !window.confirm("Discard unsaved changes and change pipeline section?"))
-                      ) {
-                        event.preventDefault();
-                        return;
-                      }
-                      setDirty(false);
-                      setNoteDirty(false);
-                      setTagDirty(false);
-                    }}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-            </nav>
-          )}
-          {dealsTab && permission("crm.deals.read") && permission("crm.leads.read") && (
-            <DealsPanel
-              key={`${session.activeOrgId}:${scope}`}
-              session={session}
-              memberId={member}
-              scope={scope}
-              online={online}
-              working={busy}
-              leads={data.leads}
-              leadLabel={nameFor}
-              runCommand={command}
-              onDirty={setDirty}
-              setWorking={setBusy}
-            />
-          )}
-          {dealsTab && (!permission("crm.deals.read") || !permission("crm.leads.read")) && (
-            <Empty icon={<Kanban size={30} />} title="Deals unavailable">
-              Your current role cannot read deals and their linked leads.
-            </Empty>
-          )}
-          {captureTab && syntheticEnabled && (
-            <SyntheticCapture
-              key={`${session.activeOrgId}:${scope}`}
-              session={session}
-              memberId={member}
-              scope={scope}
-              online={online}
-              working={busy}
-              contacts={data.contacts}
-              sources={data.sources}
-              runCommand={command}
-              onDirty={setDirty}
-              setWorking={setBusy}
-              onSaved={() => refresh(session)}
-            />
-          )}
-          {captureTab && !syntheticEnabled && (
-            <Empty icon={<ShieldCheck size={30} />} title="Synthetic capture unavailable">
-              This demonstration requires an explicitly enabled local synthetic session.
-            </Empty>
-          )}
-          {view === "pipeline" && !dealsTab && !captureTab && (
-            <div className="pipeline-board">
-              {data.stages.map((stage) => {
-                const leads = data.leads.filter((lead) => lead.stageId === stage.id);
-                return (
-                  <section className="pipeline-column" key={stage.id}>
-                    <div className="pipeline-column-heading">
-                      <h2>{stage.name}</h2>
-                      <Badge>{leads.length}</Badge>
-                    </div>
-                    {leads.map((lead) => (
-                      <article className="lead-card" key={lead.id}>
-                        <Link href={`/pipeline?lead=${lead.id}`} className="lead-name">
-                          {nameFor(lead)}
-                        </Link>
-                        <div className="lead-badges">
-                          <Badge>{lead.intent === "unknown" ? "Intent unknown" : lead.intent}</Badge>
-                          <span>v{lead.version}</span>
-                        </div>
-                        <p>{lead.timeline || "Timeline not provided"}</p>
-                        <div className="lead-source">
-                          {data.sources.find((source) => source.id === lead.sourceId)?.label ||
-                            "Source unavailable"}
-                        </div>
-                        <label className="stage-selector">
-                          <span>Move to stage</span>
-                          <select
-                            aria-label={`Stage for ${nameFor(lead)}`}
-                            value={lead.stageId}
-                            disabled={busy || !online || !permission("crm.leads.write")}
-                            onChange={(event) => void moveLead(lead, event.target.value)}
-                          >
-                            {data.stages.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </article>
+              {view === "settings" && (
+                <nav className="settings-nav" aria-label="Settings sections">
+                  {[
+                    { id: "device", label: "Device & app", allowed: true },
+                    { id: "account", label: "Account & access", allowed: true },
+                    {
+                      id: "workspace",
+                      label: "Offices & brands",
+                      allowed: permission("offices.read") || permission("profiles.read"),
+                    },
+                    { id: "invitations", label: "Invitations", allowed: true },
+                    { id: "routing", label: "Routing", allowed: permission("crm.routing.read") },
+                    {
+                      id: "consent",
+                      label: "Synthetic consent",
+                      allowed: syntheticEnabled && permission("consent.write"),
+                    },
+                    {
+                      id: "crm",
+                      label: "CRM configuration",
+                      allowed:
+                        permission("crm.pipeline.read") ||
+                        permission("crm.sources.read") ||
+                        permission("crm.tags.read"),
+                    },
+                    { id: "billing", label: "Billing", allowed: permission("billing.read") },
+                    {
+                      id: "data",
+                      label: "CSV import / export",
+                      allowed: permission("crm.import") || permission("data.export"),
+                    },
+                    {
+                      id: "support",
+                      label: "Support",
+                      allowed: permission("support.read") || permission("support.write"),
+                    },
+                  ]
+                    .filter((item) => item.allowed)
+                    .map((item) => (
+                      <Link
+                        key={item.id}
+                        href={`/settings?panel=${item.id}`}
+                        aria-current={settingsPanel === item.id ? "page" : undefined}
+                        onClick={(event) => {
+                          if (busy) {
+                            event.preventDefault();
+                            setError("Wait for the current command to resolve before leaving this section.");
+                            return;
+                          }
+                          if (unsaved && !window.confirm("Discard unsaved settings and leave this section?"))
+                            event.preventDefault();
+                          else {
+                            setDirty(false);
+                            setNoteDirty(false);
+                            setTagDirty(false);
+                            if (item.id !== "invitations") setInvitationTransfer(null);
+                          }
+                        }}
+                      >
+                        {item.label}
+                      </Link>
                     ))}
-                    {!leads.length && <p className="column-empty">No opportunities here yet</p>}
+                </nav>
+              )}
+              {view === "settings" && settingsPanel === "device" && (
+                <div className="settings-grid">
+                  <section className="panel settings-card">
+                    <span className="settings-icon">
+                      <Smartphone size={26} />
+                    </span>
+                    <h2>Estate on your home screen</h2>
+                    <p>
+                      Use the complete workspace in your browser or install it on iPhone and Android. No app
+                      store needed.
+                    </p>
+                    <Badge tone={standalone ? "positive" : "neutral"}>
+                      {standalone ? "Running as an installed app" : "Running in your browser"}
+                    </Badge>
+                    {install && !standalone && (
+                      <Button
+                        onClick={async () => {
+                          await install.prompt();
+                          await install.userChoice;
+                          setInstall(null);
+                        }}
+                      >
+                        <ArrowDownToLine size={17} />
+                        Install Estate
+                      </Button>
+                    )}
+                    <ol className="install-guide">
+                      <li>
+                        <strong>{ios ? "On this iPhone or iPad" : "On iPhone"}</strong>
+                        <span>
+                          Open in Safari, use the Share or browser menu, then choose Add to Home Screen. Open
+                          the new icon to launch Estate.
+                        </span>
+                      </li>
+                      <li>
+                        <strong>On Android</strong>
+                        <span>
+                          Open in Chrome. Use Install app or Add to Home screen in the browser menu when
+                          available.
+                        </span>
+                      </li>
+                    </ol>
+                    <p className="muted">
+                      Installation requires a secure HTTPS deployment. Localhost supports development testing.
+                      Physical device acceptance is still pending.
+                    </p>
                   </section>
-                );
-              })}
-              {!data.stages.length && (
-                <section className="panel">
-                  <Empty icon={<Kanban size={30} />} title="Pipeline unavailable">
-                    Reconnect and refresh to load your configured stages.
+                  <section className="panel settings-card">
+                    <span className="settings-icon">
+                      <ShieldCheck size={26} />
+                    </span>
+                    <h2>Your device & privacy</h2>
+                    <p>
+                      Private records stay on the server. This app caches only original icons, a generic
+                      offline page and approved static build assets.
+                    </p>
+                    <div className="settings-fact">
+                      <strong>Offline saving</strong>
+                      <Badge>Disabled</Badge>
+                    </div>
+                    <div className="settings-fact">
+                      <strong>App update</strong>
+                      <Badge>{waiting ? "Ready" : "No waiting update"}</Badge>
+                    </div>
+                    <div className="settings-fact">
+                      <strong>Push notifications</strong>
+                      <Badge>Unavailable</Badge>
+                    </div>
+                    <p className="muted">
+                      Push opt-in will be available after encrypted member-scoped device subscriptions and
+                      no-delivery provider tests are implemented.
+                    </p>
+                    <Button variant="secondary" disabled={!online || busy} onClick={() => void logout()}>
+                      <LogOut size={17} />
+                      Sign out
+                    </Button>
+                  </section>
+                  <section className="panel settings-card workspace-settings">
+                    <h2>Workspace details</h2>
+                    <dl>
+                      <div>
+                        <dt>Organization</dt>
+                        <dd>{organization?.name}</dd>
+                      </div>
+                      <div>
+                        <dt>Organization timezone</dt>
+                        <dd>{organization?.timezone}</dd>
+                      </div>
+                      <div>
+                        <dt>Your timezone</dt>
+                        <dd>{timezone}</dd>
+                      </div>
+                      <div>
+                        <dt>Identity mode</dt>
+                        <dd>Synthetic local development</dd>
+                      </div>
+                      <div>
+                        <dt>MLS provider</dt>
+                        <dd>Trestle · Live access disabled</dd>
+                      </div>
+                    </dl>
+                  </section>
+                </div>
+              )}
+              {view === "settings" && settingsPanel === "account" && (
+                <SettingsAdmin
+                  key={session.activeOrgId}
+                  session={session}
+                  profileVersion={profileVersion}
+                  online={online}
+                  working={busy}
+                  runCommand={command}
+                  onRefresh={async () => {
+                    await readSession();
+                  }}
+                  setWorking={setBusy}
+                  onDirty={setDirty}
+                />
+              )}
+              {view === "settings" && settingsPanel === "support" && (
+                <SupportPanel
+                  key={session.activeOrgId}
+                  session={session}
+                  online={online}
+                  working={busy}
+                  runCommand={command}
+                  onDirty={setDirty}
+                  setWorking={setBusy}
+                  ticketId={query.get("ticket")}
+                />
+              )}
+              {view === "settings" && settingsPanel === "billing" && (
+                <BillingPanel
+                  key={session.activeOrgId}
+                  session={session}
+                  syntheticEnabled={syntheticEnabled}
+                  online={online}
+                  working={busy}
+                  runCommand={command}
+                  onDirty={setDirty}
+                  setWorking={setBusy}
+                />
+              )}
+              {view === "settings" &&
+                settingsPanel === "consent" &&
+                (syntheticEnabled ? (
+                  <ConsentPanel
+                    key={`${session.userId}:${session.activeOrgId}:${member}:${scope}:${session.permissions.join(",")}:${accessRevision}`}
+                    session={session}
+                    memberId={member}
+                    scope={scope}
+                    online={online}
+                    working={busy}
+                    runCommand={command}
+                    onDirty={setDirty}
+                    setWorking={setBusy}
+                  />
+                ) : (
+                  <Empty icon={<ShieldCheck size={30} />} title="Synthetic consent unavailable">
+                    This demonstration requires an explicitly enabled local synthetic session.
                   </Empty>
-                </section>
-              )}
-            </div>
-          )}
-
-          {view === "tasks" && (
-            <section className="panel">
-              <div className="list-toolbar">
-                <div className="tabs" role="group" aria-label="Task filter">
-                  {["open", "done", "all"].map((filter) => (
-                    <button
-                      key={filter}
-                      aria-pressed={taskFilter === filter}
-                      className={taskFilter === filter ? "selected" : ""}
-                      onClick={() => setTaskFilter(filter)}
-                    >
-                      {filter === "open" ? "Open" : filter === "done" ? "Completed" : "All tasks"}
-                    </button>
-                  ))}
-                </div>
-                <span className="muted">Times in {timezone}</span>
-              </div>
-              {data.tasks.filter((task) => taskFilter === "all" || task.state === taskFilter).length ? (
-                <div>
-                  {taskRows(
-                    data.tasks
-                      .filter((task) => taskFilter === "all" || task.state === taskFilter)
-                      .sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
-                  )}
-                </div>
-              ) : (
-                <Empty
-                  icon={<ListTodo size={30} />}
-                  title={refreshed ? "Nothing on this list yet" : "Tasks unavailable"}
-                >
-                  Add a follow-up with a due time and an assigned member. Completion is confirmed by the
-                  server.
-                </Empty>
-              )}
-            </section>
-          )}
-
-          {view === "settings" && (
-            <nav className="settings-nav" aria-label="Settings sections">
-              {[
-                { id: "device", label: "Device & app", allowed: true },
-                { id: "account", label: "Account & access", allowed: true },
-                {
-                  id: "workspace",
-                  label: "Offices & brands",
-                  allowed: permission("offices.read") || permission("profiles.read"),
-                },
-                { id: "invitations", label: "Invitations", allowed: true },
-                { id: "routing", label: "Routing", allowed: permission("crm.routing.read") },
-                {
-                  id: "consent",
-                  label: "Synthetic consent",
-                  allowed: syntheticEnabled && permission("consent.write"),
-                },
-                {
-                  id: "crm",
-                  label: "CRM configuration",
-                  allowed:
-                    permission("crm.pipeline.read") ||
-                    permission("crm.sources.read") ||
-                    permission("crm.tags.read"),
-                },
-                { id: "billing", label: "Billing", allowed: permission("billing.read") },
-                {
-                  id: "data",
-                  label: "CSV import / export",
-                  allowed: permission("crm.import") || permission("data.export"),
-                },
-                {
-                  id: "support",
-                  label: "Support",
-                  allowed: permission("support.read") || permission("support.write"),
-                },
-              ]
-                .filter((item) => item.allowed)
-                .map((item) => (
-                  <Link
-                    key={item.id}
-                    href={`/settings?panel=${item.id}`}
-                    aria-current={settingsPanel === item.id ? "page" : undefined}
-                    onClick={(event) => {
-                      if (busy) {
-                        event.preventDefault();
-                        setError("Wait for the current command to resolve before leaving this section.");
-                        return;
-                      }
-                      if (unsaved && !window.confirm("Discard unsaved settings and leave this section?"))
-                        event.preventDefault();
-                      else {
-                        setDirty(false);
-                        setNoteDirty(false);
-                        setTagDirty(false);
-                        if (item.id !== "invitations") setInvitationTransfer(null);
-                      }
-                    }}
-                  >
-                    {item.label}
-                  </Link>
                 ))}
-            </nav>
-          )}
-          {view === "settings" && settingsPanel === "device" && (
-            <div className="settings-grid">
-              <section className="panel settings-card">
-                <span className="settings-icon">
-                  <Smartphone size={26} />
-                </span>
-                <h2>Estate on your home screen</h2>
-                <p>
-                  Use the complete workspace in your browser or install it on iPhone and Android. No app store
-                  needed.
-                </p>
-                <Badge tone={standalone ? "positive" : "neutral"}>
-                  {standalone ? "Running as an installed app" : "Running in your browser"}
-                </Badge>
-                {install && !standalone && (
+              {view === "settings" && settingsPanel === "data" && (
+                <DataTransfer
+                  key={session.activeOrgId}
+                  session={session}
+                  csrf={csrf}
+                  memberId={member}
+                  online={online}
+                  working={busy}
+                  workspaceScope={scope}
+                  runCommand={command}
+                  onDirty={setDirty}
+                  setWorking={setBusy}
+                  onImported={() => refresh(session)}
+                />
+              )}
+              {view === "settings" && settingsPanel === "workspace" && (
+                <WorkspaceRecords
+                  key={session.activeOrgId}
+                  session={session}
+                  online={online}
+                  working={busy}
+                  runCommand={command}
+                  onDirty={setDirty}
+                  setWorking={setBusy}
+                />
+              )}
+              {view === "settings" && settingsPanel === "invitations" && (
+                <InvitationsPanel
+                  key={`${session.userId}:${session.activeOrgId}`}
+                  session={session}
+                  online={online}
+                  working={busy}
+                  transfer={invitationTransfer}
+                  acceptanceJob={
+                    invitationAcceptance?.userId === session.userId ? invitationAcceptance.job : null
+                  }
+                  onAcceptedJob={(job) => setInvitationAcceptance({ userId: session.userId, job })}
+                  runCommand={command}
+                  onDirty={setDirty}
+                  setWorking={setBusy}
+                  onRefresh={async () => {
+                    await readSession();
+                  }}
+                  onContinue={continueInvitation}
+                  onClearTransfer={() => setInvitationTransfer(null)}
+                />
+              )}
+              {view === "settings" && settingsPanel === "crm" && (
+                <CrmConfiguration
+                  key={session.activeOrgId}
+                  session={session}
+                  online={online}
+                  working={busy}
+                  runCommand={command}
+                  onDirty={setDirty}
+                  setWorking={setBusy}
+                  onSaved={() => refresh(session)}
+                />
+              )}
+              {view === "settings" &&
+                settingsPanel === "routing" &&
+                (permission("crm.routing.read") ? (
+                  <RoutingPanel
+                    key={session.activeOrgId}
+                    session={session}
+                    online={online}
+                    working={busy}
+                    runCommand={command}
+                    onDirty={setDirty}
+                    setWorking={setBusy}
+                  />
+                ) : (
+                  <Empty icon={<Kanban size={30} />} title="Routing unavailable">
+                    Your current role cannot read routing configuration.
+                  </Empty>
+                ))}
+              {view === "pipeline" && !dealsTab && !captureTab && cursors.leads && (
+                <div className="pagination">
                   <Button
-                    onClick={async () => {
-                      await install.prompt();
-                      await install.userChoice;
-                      setInstall(null);
-                    }}
+                    variant="secondary"
+                    disabled={loading || busy || !online}
+                    onClick={() => void loadMore("leads")}
                   >
-                    <ArrowDownToLine size={17} />
-                    Install Estate
+                    {loading ? "Loading…" : "Load more leads"}
                   </Button>
-                )}
-                <ol className="install-guide">
-                  <li>
-                    <strong>{ios ? "On this iPhone or iPad" : "On iPhone"}</strong>
-                    <span>
-                      Open in Safari, use the Share or browser menu, then choose Add to Home Screen. Open the
-                      new icon to launch Estate.
-                    </span>
-                  </li>
-                  <li>
-                    <strong>On Android</strong>
-                    <span>
-                      Open in Chrome. Use Install app or Add to Home screen in the browser menu when
-                      available.
-                    </span>
-                  </li>
-                </ol>
-                <p className="muted">
-                  Installation requires a secure HTTPS deployment. Localhost supports development testing.
-                  Physical device acceptance is still pending.
-                </p>
-              </section>
-              <section className="panel settings-card">
-                <span className="settings-icon">
-                  <ShieldCheck size={26} />
-                </span>
-                <h2>Your device & privacy</h2>
-                <p>
-                  Private records stay on the server. This app caches only original icons, a generic offline
-                  page and approved static build assets.
-                </p>
-                <div className="settings-fact">
-                  <strong>Offline saving</strong>
-                  <Badge>Disabled</Badge>
                 </div>
-                <div className="settings-fact">
-                  <strong>App update</strong>
-                  <Badge>{waiting ? "Ready" : "No waiting update"}</Badge>
+              )}
+              {view === "tasks" && cursors.tasks && (
+                <div className="pagination">
+                  <Button
+                    variant="secondary"
+                    disabled={loading || busy || !online}
+                    onClick={() => void loadMore("tasks")}
+                  >
+                    {loading ? "Loading…" : "Load more tasks"}
+                  </Button>
                 </div>
-                <div className="settings-fact">
-                  <strong>Push notifications</strong>
-                  <Badge>Unavailable</Badge>
-                </div>
-                <p className="muted">
-                  Push opt-in will be available after encrypted member-scoped device subscriptions and
-                  no-delivery provider tests are implemented.
-                </p>
-                <Button variant="secondary" disabled={!online || busy} onClick={() => void logout()}>
-                  <LogOut size={17} />
-                  Sign out
-                </Button>
-              </section>
-              <section className="panel settings-card workspace-settings">
-                <h2>Workspace details</h2>
-                <dl>
-                  <div>
-                    <dt>Organization</dt>
-                    <dd>{organization?.name}</dd>
-                  </div>
-                  <div>
-                    <dt>Organization timezone</dt>
-                    <dd>{organization?.timezone}</dd>
-                  </div>
-                  <div>
-                    <dt>Your timezone</dt>
-                    <dd>{timezone}</dd>
-                  </div>
-                  <div>
-                    <dt>Identity mode</dt>
-                    <dd>Synthetic local development</dd>
-                  </div>
-                  <div>
-                    <dt>MLS provider</dt>
-                    <dd>Trestle · Live access disabled</dd>
-                  </div>
-                </dl>
-              </section>
-            </div>
-          )}
-          {view === "settings" && settingsPanel === "account" && (
-            <SettingsAdmin
-              key={session.activeOrgId}
-              session={session}
-              profileVersion={profileVersion}
-              online={online}
-              working={busy}
-              runCommand={command}
-              onRefresh={async () => {
-                await readSession();
-              }}
-              setWorking={setBusy}
-              onDirty={setDirty}
-            />
-          )}
-          {view === "settings" && settingsPanel === "support" && (
-            <SupportPanel
-              key={session.activeOrgId}
-              session={session}
-              online={online}
-              working={busy}
-              runCommand={command}
-              onDirty={setDirty}
-              setWorking={setBusy}
-              ticketId={query.get("ticket")}
-            />
-          )}
-          {view === "settings" && settingsPanel === "billing" && (
-            <BillingPanel
-              key={session.activeOrgId}
-              session={session}
-              syntheticEnabled={syntheticEnabled}
-              online={online}
-              working={busy}
-              runCommand={command}
-              onDirty={setDirty}
-              setWorking={setBusy}
-            />
-          )}
-          {view === "settings" &&
-            settingsPanel === "consent" &&
-            (syntheticEnabled ? (
-              <ConsentPanel
-                key={`${session.userId}:${session.activeOrgId}:${member}:${scope}:${session.permissions.join(",")}:${accessRevision}`}
-                session={session}
-                memberId={member}
-                scope={scope}
-                online={online}
-                working={busy}
-                runCommand={command}
-                onDirty={setDirty}
-                setWorking={setBusy}
-              />
-            ) : (
-              <Empty icon={<ShieldCheck size={30} />} title="Synthetic consent unavailable">
-                This demonstration requires an explicitly enabled local synthetic session.
-              </Empty>
-            ))}
-          {view === "settings" && settingsPanel === "data" && (
-            <DataTransfer
-              key={session.activeOrgId}
-              session={session}
-              csrf={csrf}
-              memberId={member}
-              online={online}
-              working={busy}
-              workspaceScope={scope}
-              runCommand={command}
-              onDirty={setDirty}
-              setWorking={setBusy}
-              onImported={() => refresh(session)}
-            />
-          )}
-          {view === "settings" && settingsPanel === "workspace" && (
-            <WorkspaceRecords
-              key={session.activeOrgId}
-              session={session}
-              online={online}
-              working={busy}
-              runCommand={command}
-              onDirty={setDirty}
-              setWorking={setBusy}
-            />
-          )}
-          {view === "settings" && settingsPanel === "invitations" && (
-            <InvitationsPanel
-              key={`${session.userId}:${session.activeOrgId}`}
-              session={session}
-              online={online}
-              working={busy}
-              transfer={invitationTransfer}
-              acceptanceJob={
-                invitationAcceptance?.userId === session.userId ? invitationAcceptance.job : null
-              }
-              onAcceptedJob={(job) => setInvitationAcceptance({ userId: session.userId, job })}
-              runCommand={command}
-              onDirty={setDirty}
-              setWorking={setBusy}
-              onRefresh={async () => {
-                await readSession();
-              }}
-              onContinue={continueInvitation}
-              onClearTransfer={() => setInvitationTransfer(null)}
-            />
-          )}
-          {view === "settings" && settingsPanel === "crm" && (
-            <CrmConfiguration
-              key={session.activeOrgId}
-              session={session}
-              online={online}
-              working={busy}
-              runCommand={command}
-              onDirty={setDirty}
-              setWorking={setBusy}
-              onSaved={() => refresh(session)}
-            />
-          )}
-          {view === "settings" &&
-            settingsPanel === "routing" &&
-            (permission("crm.routing.read") ? (
-              <RoutingPanel
-                key={session.activeOrgId}
-                session={session}
-                online={online}
-                working={busy}
-                runCommand={command}
-                onDirty={setDirty}
-                setWorking={setBusy}
-              />
-            ) : (
-              <Empty icon={<Kanban size={30} />} title="Routing unavailable">
-                Your current role cannot read routing configuration.
-              </Empty>
-            ))}
-          {view === "pipeline" && !dealsTab && !captureTab && cursors.leads && (
-            <div className="pagination">
-              <Button
-                variant="secondary"
-                disabled={loading || busy || !online}
-                onClick={() => void loadMore("leads")}
-              >
-                {loading ? "Loading…" : "Load more leads"}
-              </Button>
-            </div>
-          )}
-          {view === "tasks" && cursors.tasks && (
-            <div className="pagination">
-              <Button
-                variant="secondary"
-                disabled={loading || busy || !online}
-                onClick={() => void loadMore("tasks")}
-              >
-                {loading ? "Loading…" : "Load more tasks"}
-              </Button>
-            </div>
+              )}
+            </>
           )}
           <footer className="workspace-footer">
             <span>Estate workspace</span>
@@ -3723,6 +4054,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       )}
       {detailId &&
         session &&
+        !stagePending &&
         (!contactSnapshot.command ||
           (detailKind === "contact" &&
             detailId.toLowerCase() === contactSnapshot.command.contactId.toLowerCase())) && (
