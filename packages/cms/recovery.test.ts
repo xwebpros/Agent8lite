@@ -146,4 +146,99 @@ describe("approved closed revision recovery envelope", () => {
       );
     expect(reads).toBe(0);
   });
+  it.each([0, 1, 2])("rejects a hole at index %s instead of converting it to null", (index) => {
+    const blocks = ["first", "second", "third"];
+    delete blocks[index];
+    expect(() => revisionRecovery(id, documentId, { schemaVersion: 7, blocks, seo: {} }, [])).toThrow(
+      RecoveryEnvelopeError,
+    );
+    expect(Object.hasOwn(blocks, index)).toBe(false);
+    expect(blocks.length).toBe(3);
+  });
+  it.each(["extra", "01", "4294967295"])(
+    "rejects array property %s rather than dropping original content",
+    (key) => {
+      const blocks = ["keep"];
+      Object.defineProperty(blocks, key, { enumerable: true, value: "must not disappear" });
+      expect(() => revisionRecovery(id, documentId, { schemaVersion: 7, blocks, seo: {} }, [])).toThrow(
+        RecoveryEnvelopeError,
+      );
+      expect(Object.getOwnPropertyDescriptor(blocks, key)?.value).toBe("must not disappear");
+    },
+  );
+  it("rejects custom array prototypes before reading or invoking inherited JSON hooks", () => {
+    let reads = 0;
+    let calls = 0;
+    const prototype = Object.create(Array.prototype, {
+      toJSON: {
+        get: () => {
+          reads++;
+          return () => {
+            calls++;
+            return ["silently replaced"];
+          };
+        },
+      },
+    });
+    const blocks = ["original"];
+    Object.setPrototypeOf(blocks, prototype);
+    expect(() => revisionRecovery(id, documentId, { schemaVersion: 7, blocks, seo: {} }, [])).toThrow(
+      RecoveryEnvelopeError,
+    );
+    expect(reads).toBe(0);
+    expect(calls).toBe(0);
+    expect(blocks[0]).toBe("original");
+    class ArraySubclass extends Array {}
+    expect(() =>
+      revisionRecovery(id, documentId, { schemaVersion: 7, blocks: new ArraySubclass(), seo: {} }, []),
+    ).toThrow(RecoveryEnvelopeError);
+    expect(() =>
+      revisionRecovery(
+        id,
+        documentId,
+        { schemaVersion: 7, blocks: Object.setPrototypeOf([], null), seo: {} },
+        [],
+      ),
+    ).toThrow(RecoveryEnvelopeError);
+  });
+  it.each([
+    ["array", Array.prototype],
+    ["object", Object.prototype],
+  ] as const)(
+    "serializes detached data without invoking inherited %s prototype hooks",
+    (_kind, prototype) => {
+      const value = response();
+      let reads = 0;
+      let calls = 0;
+      let read: ReturnType<typeof requireRevisionRecovery> | undefined;
+      const previous = Object.getOwnPropertyDescriptor(prototype, "toJSON");
+      try {
+        Object.defineProperty(prototype, "toJSON", {
+          configurable: true,
+          get: () => {
+            reads++;
+            return () => {
+              calls++;
+              return ["replaced"];
+            };
+          },
+        });
+        read = requireRevisionRecovery(value);
+      } finally {
+        if (previous) Object.defineProperty(prototype, "toJSON", previous);
+        else Reflect.deleteProperty(prototype, "toJSON");
+      }
+      expect(reads).toBe(0);
+      expect(calls).toBe(0);
+      expect(read).toEqual(value);
+    },
+  );
+  it("preserves dense arrays and harmless toJSON-named original fields", () => {
+    const data = {
+      schemaVersion: 7,
+      blocks: [{ toJSON: "original metadata", nested: [null, ["", true, 0]] }],
+      seo: {},
+    };
+    expect(revisionRecovery(id, documentId, data, []).data).toEqual(data);
+  });
 });
