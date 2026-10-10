@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import type { components } from "../../../../packages/contracts/generated/api";
 import { api, ApiError } from "../../lib/api";
 import { PropertyCard, PropertyDetail, type PropertyListing } from "./property-view";
+import { propertiesAreCurrent, propertyExpiryDelay, PropertyReads } from "./read-lifecycle";
 import {
   emptyPropertyFilters,
   propertySearchParams,
@@ -45,16 +46,12 @@ export default function PropertiesFeature({
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
   const [notice, setNotice] = useState("");
-  const [denied, setDenied] = useState(false);
+  const [deniedContext, setDeniedContext] = useState<string | null>(null);
   const context = `${session.userId}:${session.activeOrgId}:${accessRevision}:${session.permissions.join(",")}:${syntheticFeaturesEnabled}`;
-  const scope = useRef(context);
-  scope.current = context;
+  const denied = deniedContext === context;
   const revoked = useRef(onAccessRevoked);
   revoked.current = onAccessRevoked;
-  const listEpoch = useRef(0);
-  const detailEpoch = useRef(0);
-  const listRequest = useRef<AbortController | null>(null);
-  const detailRequest = useRef<AbortController | null>(null);
+  const [reads] = useState(() => new PropertyReads());
   const currentSelection = useRef<string | null>(null);
   const applied = useRef(propertySearchParams(emptyPropertyFilters, "updated_desc"));
   const detailHeading = useRef<HTMLHeadingElement>(null);
@@ -63,75 +60,70 @@ export default function PropertiesFeature({
   const permitted =
     syntheticFeaturesEnabled && Boolean(session.activeOrgId) && session.permissions.includes("mls.read");
   const enabled = permitted && online && !denied;
+  const live = useRef({ scope: context, enabled });
+  live.current = { scope: context, enabled };
   const base = `/dev/orgs/${session.activeOrgId}/mls/listings`;
   // Render guards apply before effects, so a changed scope/offline state cannot flash previous private data.
-  const page = enabled && result?.scope === context ? result.page : emptyPage;
-  const currentDetail = enabled && detail?.scope === context ? detail.item : null;
+  const scopedPage = enabled && result?.scope === context ? result.page : emptyPage;
+  const scopedDetail = enabled && detail?.scope === context ? detail.item : null;
+  const expired = !propertiesAreCurrent([...scopedPage.items, ...(scopedDetail ? [scopedDetail] : [])]);
+  const page = expired ? emptyPage : scopedPage;
+  const currentDetail = expired ? null : scopedDetail;
 
   const clearPrivate = useCallback(() => {
-    ++listEpoch.current;
-    ++detailEpoch.current;
-    listRequest.current?.abort();
-    detailRequest.current?.abort();
+    reads.clear();
     setResult(null);
     setDetail(null);
     setLoaded(false);
     setLoading(false);
     setDetailLoading(false);
-  }, []);
+  }, [reads]);
   const failed = useCallback(
     (failure: unknown) => {
       if (failure instanceof ApiError && [401, 403].includes(failure.status)) {
         clearPrivate();
-        setDenied(true);
+        live.current.enabled = false;
+        setDeniedContext(context);
         revoked.current?.();
       }
       return failure instanceof Error
         ? failure.message
         : "Synthetic properties are unavailable. Try refreshing.";
     },
-    [clearPrivate],
+    [clearPrivate, context],
   );
 
   const loadDetail = useCallback(
     async (id: string) => {
-      if (!permitted || !online) return;
-      const generation = ++detailEpoch.current;
-      detailRequest.current?.abort();
-      const controller = new AbortController();
-      detailRequest.current = controller;
+      if (!live.current.enabled || live.current.scope !== context) return;
+      const request = reads.begin("detail", context);
       setDetail(null);
       setDetailLoading(true);
       setDetailError("");
       try {
         const response = await api<PropertyListing>(`${base}/${encodeURIComponent(id)}`, {
-          signal: controller.signal,
+          signal: request.controller.signal,
         });
-        if (scope.current !== context || generation !== detailEpoch.current) return;
-        if (Date.parse(response.data.expiresAt) <= Date.now())
+        if (!reads.current(request, live.current.scope, live.current.enabled)) return;
+        if (!propertiesAreCurrent([response.data]))
           throw new Error("This synthetic property has expired. Refresh the search.");
         setDetail({ scope: context, item: response.data });
       } catch (failure) {
-        if (scope.current !== context || generation !== detailEpoch.current || interrupted(failure)) return;
+        if (!reads.current(request, live.current.scope, live.current.enabled) || interrupted(failure)) return;
+        // Invalidate both pending reads as well as the displayed records.
+        clearPrivate();
         setDetailError(failed(failure));
-        if (failure instanceof ApiError && [404, 422, 503].includes(failure.status)) {
-          setResult(null);
-          setLoaded(false);
-        }
       } finally {
-        if (scope.current === context && generation === detailEpoch.current) setDetailLoading(false);
+        if (reads.current(request, live.current.scope, live.current.enabled)) setDetailLoading(false);
       }
     },
-    [base, context, failed, online, permitted],
+    [base, context, clearPrivate, failed, reads],
   );
 
   const loadPage = useCallback(
     async (params: URLSearchParams, append = false, cursor?: string | null) => {
-      if (!permitted || !online) return;
-      const generation = ++listEpoch.current;
-      listRequest.current?.abort();
-      const controller = new AbortController();
-      listRequest.current = controller;
+      if (!live.current.enabled || live.current.scope !== context) return;
+      const request = reads.begin("list", context);
       const query = new URLSearchParams(params);
       if (append && cursor) query.set("cursor", cursor);
       if (!append) {
@@ -142,11 +134,12 @@ export default function PropertiesFeature({
       setError("");
       setNotice("");
       try {
-        const response = await api<Page>(`${base}?${query}`, { signal: controller.signal });
-        if (scope.current !== context || generation !== listEpoch.current) return;
-        if (response.data.items.some((item) => Date.parse(item.expiresAt) <= Date.now()))
+        const response = await api<Page>(`${base}?${query}`, { signal: request.controller.signal });
+        if (!reads.current(request, live.current.scope, live.current.enabled)) return;
+        if (!propertiesAreCurrent(response.data.items))
           throw new Error("These synthetic results expired while loading. Refresh the search.");
         setResult((previous) => {
+          if (!reads.current(request, live.current.scope, live.current.enabled)) return previous;
           const items =
             append && previous?.scope === context
               ? [...previous.page.items, ...response.data.items]
@@ -158,20 +151,19 @@ export default function PropertiesFeature({
         });
         setLoaded(true);
       } catch (failure) {
-        if (scope.current !== context || generation !== listEpoch.current || interrupted(failure)) return;
+        if (!reads.current(request, live.current.scope, live.current.enabled) || interrupted(failure)) return;
         // Stale cursors and source errors invalidate already displayed pages/details too.
         clearPrivate();
         setError(failed(failure));
       } finally {
-        if (scope.current === context && generation === listEpoch.current) setLoading(false);
+        if (reads.current(request, live.current.scope, live.current.enabled)) setLoading(false);
       }
     },
-    [base, context, clearPrivate, failed, online, permitted],
+    [base, context, clearPrivate, failed, reads],
   );
 
   useEffect(() => {
     clearPrivate();
-    setDenied(false);
     setError("");
     setDetailError("");
     setNotice("");
@@ -181,13 +173,8 @@ export default function PropertiesFeature({
     setSort("updated_desc");
     applied.current = propertySearchParams(emptyPropertyFilters, "updated_desc");
     if (permitted && online) void loadPage(applied.current);
-    return () => {
-      ++listEpoch.current;
-      ++detailEpoch.current;
-      listRequest.current?.abort();
-      detailRequest.current?.abort();
-    };
-  }, [context, online, permitted, clearPrivate, loadPage]);
+    return () => reads.clear();
+  }, [context, online, permitted, clearPrivate, loadPage, reads]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -209,20 +196,18 @@ export default function PropertiesFeature({
   }, [enabled, loadPage, loadDetail]);
 
   useEffect(() => {
-    const expires = [
-      ...page.items.map((item) => Date.parse(item.expiresAt)),
-      ...(currentDetail ? [Date.parse(currentDetail.expiresAt)] : []),
-    ];
-    if (!expires.length) return;
-    const timer = setTimeout(
-      () => {
+    const items = [...scopedPage.items, ...(scopedDetail ? [scopedDetail] : [])];
+    if (!items.length) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = () => {
+      if (!propertiesAreCurrent(items)) {
         clearPrivate();
         setNotice("Current synthetic results expired. Refresh to recheck access and availability.");
-      },
-      Math.max(0, Math.min(...expires) - Date.now()),
-    );
+      } else timer = setTimeout(check, propertyExpiryDelay(items)!);
+    };
+    timer = setTimeout(check, propertyExpiryDelay(items)!);
     return () => clearTimeout(timer);
-  }, [page, currentDetail, clearPrivate]);
+  }, [scopedPage, scopedDetail, clearPrivate]);
 
   useEffect(() => {
     if (currentDetail && focusDetailOnce.current) {
@@ -239,8 +224,9 @@ export default function PropertiesFeature({
       currentSelection.current = null;
       setSelectedId(null);
       setDetail(null);
-      ++detailEpoch.current;
-      detailRequest.current?.abort();
+      reads.cancel("detail");
+      setDetailError("");
+      setDetailLoading(false);
       void loadPage(params);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Check the search filters.");
@@ -249,8 +235,7 @@ export default function PropertiesFeature({
   const field = (key: keyof PropertyFilters, value: string) =>
     setFilters((previous) => ({ ...previous, [key]: value }));
   function closeDetail() {
-    ++detailEpoch.current;
-    detailRequest.current?.abort();
+    reads.cancel("detail");
     currentSelection.current = null;
     setSelectedId(null);
     setDetail(null);
@@ -432,7 +417,9 @@ export default function PropertiesFeature({
       <p role="status" aria-live="polite" className={styles.notice}>
         {loading
           ? "Checking current synthetic properties…"
-          : notice ||
+          : (expired
+              ? "Current synthetic results expired. Refresh to recheck access and availability."
+              : notice) ||
             (enabled && loaded
               ? `${page.items.length} synthetic ${page.items.length === 1 ? "property" : "properties"} loaded${page.hasMore ? " — more available" : ""}.`
               : "")}

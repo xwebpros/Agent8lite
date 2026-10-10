@@ -2,7 +2,7 @@
 
 Branch: `feat/W07-native-mock-search`, from application foundation `38c42a5c5305c3092fdbb9b95fd080745e443111`.
 Owned checkout: `C:/Users/Monar/.codex/worktrees/8509/Agent8lite`.
-Final owned implementation checkpoint: `cbf222f1dcae40d93a65838b7bf6e7e3d455b507` (service capability expiry fix, responsive feature and final executed verification). This subsequent status-only commit records the handoff; implementation files remain at that checkpoint.
+Original owned implementation checkpoint: `cbf222f1dcae40d93a65838b7bf6e7e3d455b507` (service capability expiry fix, responsive feature and executed verification), handed off by `e4d4bb6`. Continued at the user's “keep coding” request with the owned frontend lifecycle/expiry hardening below; branch HEAD carries the follow-on implementation.
 
 ## Prepared and read
 
@@ -41,4 +41,12 @@ Branch/worktree clean before branching; supplied foundation commit exists. Node 
 
 ## Next concrete steps
 
-Coordinator reviews/imports final owned service/feature checkpoint and exact integration documents; applies approved seed/capability/migration allocation and API/BFF/shell/discovery changes centrally, then runs integrated source/API/build checks. Source tests use `*.integration.test.ts` and private disposable verification only. M3/M4 prerequisites, public inquiry/organizer/alerts, lifecycle token/429/crash sync acceptance, browser/device QA and M5 completion remain pending. No merge, push or other-chat messages performed.
+Coordinator reviews/imports final owned service/feature checkpoint and exact integration documents; applies approved seed/capability and API/BFF/shell/discovery changes centrally, then runs integrated source/API/build checks. Coordinator commit `26d80bb` now allocates reviewed MLS migration0014 after CMS0013 and control0012; this worktree still verifies the unchanged candidate against its original foundation. Source tests use `*.integration.test.ts` and private disposable verification only. M3/M4 prerequisites, public inquiry/organizer/alerts, lifecycle token/429/crash sync acceptance, browser/device QA and M5 completion remain pending. No merge, push or other-chat messages performed.
+
+## Continued frontend hardening
+
+Read coordinator integration/migration progress without changing another checkout. Found an owned refresh race: detail failure cleared displayed lists but did not invalidate an overlapping pending list, which could subsequently restore private records. Added browser-only `PropertyReads`, used by the actual component for independent list/detail replacement, shared invalidation, current scope/access checks and queued list state updates. All detail failures now clear both surfaces and abort/invalidate pending list/detail; stale transport completion cannot restore them. Closing or changing selection preserves a current list. Access denial is scoped and survives connectivity toggles until root supplies a new access context.
+
+Expiry is checked on render and on response acceptance as well as by timers; malformed dates deny. Long timer delays are bounded and rearmed after a current deadline check, avoiding signed-32-bit overflow and premature expiry. Submitting filters also clears interrupted detail loading/error state. Stable public feature export/props and all backend/contracts/provider/shared files remain unchanged.
+
+Executed follow-on verification: **177/177 pure/static tests PASS** across seven files (146 W07 plus 31 existing providers), including **16 new lifecycle/expiry cases**. Deferred promises complete out of order and ignore abort deliberately, proving source invalidation remains final in both response orders, superseded reads do not win, changed access/scope denies before cleanup, closing detail preserves list, and earliest/invalid/long expiry handling. W07 scoped, root and web TypeScript checks PASS; 31-file owned Biome check, frozen/generated contracts and diff whitespace check PASS. These are source/unit checks of consumed browser-only helpers, not registered component/browser/device acceptance. Backend code unchanged; prior 17 disposable DB/HTTP cases remain the recorded backend evidence.
