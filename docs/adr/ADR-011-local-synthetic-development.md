@@ -2,7 +2,7 @@
 
 ADR-018 records the reviewed CMS/property/staff route and web integration, explicit BFF identity-context selection, durable run-key cut points and retained privacy/update/rate guards.
 
-ADR-019 defines local synthetic support selection/clear/revoke, requester Job recovery and read-only CRM routes. ADR-020 defines the document-bound synthetic CMS recovery read. Their shared contracts precede dependent consumers; runtime registration follows reviewed policy and acceptance tests.
+ADR-019 defines local synthetic support selection/clear/revoke, requester Job recovery and read-only CRM routes. ADR-020 defines the document-bound synthetic CMS recovery read and closed revision metadata index. Their shared contracts precede dependent consumers; runtime registration follows reviewed policy and acceptance tests.
 
 Accepted for local implementation on 2026-10-10; production identities/providers are not approved by this decision.
 
