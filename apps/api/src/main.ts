@@ -755,6 +755,15 @@ class ApiController {
               status: Number(successEntry?.[0] ?? 200),
               etag: version ? `"${version}"` : undefined,
             };
+          } else if (["contacts", "leads"].includes(resource) && req.method === "POST" && !id && !action) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm[resource === "contacts" ? "postContact" : "postLead"](
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+              revision(req),
+            );
           } else if (resource === "contacts" && req.method === "PATCH" && id && !action) {
             if (Object.keys(req.query).length)
               throw new AccessError(422, "query_invalid", "This command has no query parameters.");

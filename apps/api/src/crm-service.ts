@@ -11,6 +11,13 @@ import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { dashboardClockInstant, dashboardUtcPeriod } from "./dashboard-time";
 import { parseContactQuery } from "./contact-query";
 import { contactCommandJson, contactReceipt, contactRevision, prepareContactPatch } from "./contact-command";
+import {
+  capturePostJson,
+  contactPostReceipt,
+  leadPostReceipt,
+  prepareCapturePost,
+  type CapturePostCommand,
+} from "./capture-post-command";
 
 type Row = Record<string, any>;
 type Body = Record<string, any>;
@@ -711,6 +718,351 @@ export class CrmService {
     await current.contactCommandAuthority();
     await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
     return { body: contact, status: 200, etag };
+  }
+
+  private async beginCapturePost(command: CapturePostCommand) {
+    await this.contactCommandAuthority(true);
+    await requireEntitlement(this.client, `crm.${command.resource}.write`);
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${this.context.organizationId}:${this.context.userId}:${command.routeKey}:${command.key}`,
+    ]);
+    await this.contactCommandAuthority();
+    await requireEntitlement(this.client, `crm.${command.resource}.write`, { lock: false });
+    const receipts = await this.client.query(
+      `SELECT request_hash,response_body,status_code,response_etag,expires_at>clock_timestamp() AS unexpired
+       FROM app.idempotency_record WHERE tenant_id=app.current_tenant()
+         AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+      [this.context.userId, command.routeKey, command.key],
+    );
+    const receipt = receipts.rows[0];
+    if (!receipt) return null;
+    if (receipt.request_hash !== command.requestHash)
+      throw new AccessError(
+        409,
+        "idempotency_conflict",
+        "This idempotency key was used with a different request.",
+      );
+    if (!receipt.unexpired)
+      throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+    if (receipt.status_code !== 201 || (receipt.response_etag !== null && receipt.response_etag !== '"1"'))
+      throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+    return receipt;
+  }
+
+  private async finishCapturePost(command: CapturePostCommand) {
+    await this.contactCommandAuthority();
+    const result = await this.client.query(
+      `SELECT receipt.expires_at>clock_timestamp() AS unexpired,
+        EXISTS(SELECT 1 FROM app.entitlement capability WHERE capability.tenant_id=app.current_tenant()
+          AND capability.feature='crm' AND capability.state='enabled'
+          AND(capability.effective_until IS NULL OR capability.effective_until>clock_timestamp())) AS crm_enabled
+       FROM app.idempotency_record receipt WHERE receipt.tenant_id=app.current_tenant()
+         AND receipt.actor_ref=$1 AND receipt.route_key=$2 AND receipt.key=$3`,
+      [this.context.userId, command.routeKey, command.key],
+    );
+    if (result.rowCount && !result.rows[0].crm_enabled)
+      throw new AccessError(
+        403,
+        "entitlement_disabled",
+        "This organization does not have an active capability.",
+      );
+    if (!result.rowCount || !result.rows[0].unexpired)
+      throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+  }
+
+  private async recordCapturePost(command: CapturePostCommand, body: unknown) {
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
+       VALUES($1,$2,$3,$4,$5,$6,201,'"1"',now()+interval '1 day')`,
+      [
+        this.context.organizationId,
+        this.context.userId,
+        command.routeKey,
+        command.key,
+        command.requestHash,
+        capturePostJson(body),
+      ],
+    );
+  }
+
+  private captureContactStatement(scope: Scope) {
+    return `SELECT r.* FROM app.contact r WHERE r.tenant_id=app.current_tenant()
+      AND r.id=$1 AND r.archived_at IS NULL AND $2::uuid IS NOT NULL
+      AND ${this.scopeSql("contacts", scope, "$2")}`;
+  }
+
+  private async lockCaptureContact(id: string, scope: Scope) {
+    const statement = this.captureContactStatement(scope);
+    const parameters = [id, this.context.memberId];
+    if (!(await this.client.query(`${statement} FOR UPDATE OF r`, parameters)).rowCount) notFound();
+    // Contact FOR UPDATE also blocks new lead FK references; all existing links stay stable after SHARE.
+    const leads = await this.client.query(
+      `SELECT id,contact_id,source_id,stage_id,owner_member_id,archived_at FROM app.lead
+       WHERE tenant_id=app.current_tenant() AND contact_id=$1 ORDER BY id FOR SHARE`,
+      [id],
+    );
+    if (scope === "team") {
+      const members = new Set<string>([this.context.memberId]);
+      for (const lead of leads.rows) if (lead.owner_member_id) members.add(lead.owner_member_id);
+      await this.lockCaptureOffices([...members]);
+    }
+    if (!(await this.client.query(statement, parameters)).rowCount) notFound();
+    return leads.rows;
+  }
+
+  private async lockCaptureOffices(members: string[]) {
+    await this.client.query(
+      `SELECT office_id,member_id FROM app.office_member WHERE tenant_id=app.current_tenant()
+       AND member_id=ANY($1::uuid[]) ORDER BY office_id,member_id FOR SHARE`,
+      [members],
+    );
+  }
+
+  private captureOwnerStatement(scope: Scope) {
+    return `SELECT r.id FROM app.membership r WHERE r.tenant_id=app.current_tenant()
+      AND r.id=$1 AND r.status='active' AND $2::uuid IS NOT NULL
+      AND ${this.memberScope("r.id", scope, "$2")}`;
+  }
+
+  private async captureAudit(resource: "contact" | "lead", id: string) {
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff)
+       VALUES($1,$2,$3,$4,$5,$6,'{"resourceVersion":1}')`,
+      [this.context.organizationId, this.context.userId, `${resource}.created`, resource, id, this.traceId],
+    );
+  }
+
+  /** Published Contact POST: a durable creation receipt is independent of current detail. */
+  async postContact(
+    body: unknown,
+    key: string | undefined,
+    routeKey: string,
+    legacyExpectedVersion?: string,
+  ): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "contact");
+    const command = prepareCapturePost(
+      "contacts",
+      body,
+      key,
+      routeKey,
+      context.organizationId,
+      legacyExpectedVersion,
+    );
+    const current = new CrmService(this.client, context, this.traceId);
+    const scope = requirePermission(context, "crm.contacts.write");
+    const saved = await current.beginCapturePost(command);
+    if (saved) {
+      const receipt = contactPostReceipt(saved.response_body, command);
+      await current.lockCaptureContact(receipt.id, scope);
+      await current.finishCapturePost(command);
+      return { body: receipt, status: 201, etag: '"1"' };
+    }
+    const inserted = await this.client.query(
+      `INSERT INTO app.contact(tenant_id,display_name,birthday,created_by_member_id)
+       VALUES($1,$2,$3,$4) RETURNING id`,
+      [
+        context.organizationId,
+        command.body.displayName.trim(),
+        command.body.birthday ?? null,
+        context.memberId,
+      ],
+    );
+    const id = inserted.rows[0].id;
+    await current.channels(id, command.body);
+    const projection =
+      (
+        await this.client.query(
+          `SELECT ${current.select("contacts")} FROM app.contact r
+       WHERE r.tenant_id=app.current_tenant() AND r.id=$1 AND r.archived_at IS NULL
+         AND $2::uuid IS NOT NULL AND ${current.scopeSql("contacts", scope, "$2")}`,
+          [id, context.memberId],
+        )
+      ).rows[0] ?? notFound();
+    const receipt = contactPostReceipt(models.contact(projection), command);
+    await current.captureAudit("contact", id);
+    await current.recordCapturePost(command, receipt);
+    await current.finishCapturePost(command);
+    return { body: receipt, status: 201, etag: '"1"' };
+  }
+
+  /** Published Lead POST; the approved native/import create ports retain their separate transactions. */
+  async postLead(
+    body: unknown,
+    key: string | undefined,
+    routeKey: string,
+    legacyExpectedVersion?: string,
+  ): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "contact");
+    const command = prepareCapturePost(
+      "leads",
+      body,
+      key,
+      routeKey,
+      context.organizationId,
+      legacyExpectedVersion,
+    );
+    const current = new CrmService(this.client, context, this.traceId);
+    const scope = requirePermission(context, "crm.leads.write");
+    const contactScope = requirePermission(context, "crm.contacts.write");
+    const saved = await current.beginCapturePost(command);
+    const receipt = saved ? leadPostReceipt(saved.response_body, command, context.memberId) : null;
+    const leadStatement = `SELECT r.* FROM app.lead r WHERE r.tenant_id=app.current_tenant()
+      AND r.id=$1 AND r.archived_at IS NULL AND $2::uuid IS NOT NULL
+      AND ${current.scopeSql("leads", scope, "$2")}`;
+    const peek = receipt
+      ? ((await this.client.query(leadStatement, [receipt.id, context.memberId])).rows[0] ?? notFound())
+      : null;
+    if (
+      peek &&
+      (peek.contact_id !== command.body.contactId.toLowerCase() ||
+        peek.source_id !== command.body.sourceId.toLowerCase())
+    )
+      notFound();
+    const links = await current.lockCaptureContact(command.body.contactId, contactScope);
+    const locked = peek ? (links.find((lead) => lead.id === peek.id) ?? notFound()) : null;
+    if (
+      locked &&
+      (locked.archived_at !== null ||
+        locked.contact_id !== peek!.contact_id ||
+        locked.source_id !== peek!.source_id ||
+        locked.owner_member_id !== peek!.owner_member_id ||
+        locked.stage_id !== peek!.stage_id)
+    )
+      notFound();
+    // Historical receipts may retain an earlier owner/stage; only current source authority is used.
+    const owner = locked
+      ? locked.owner_member_id
+      : command.body.ownerMemberId === undefined
+        ? context.memberId
+        : command.body.ownerMemberId;
+    const ownerParameters = [owner, context.memberId];
+    const ownerStatement = current.captureOwnerStatement(scope);
+    if (owner) {
+      assertUuid(owner);
+      if (!(await this.client.query(`${ownerStatement} FOR SHARE OF r`, ownerParameters)).rowCount) {
+        if (receipt) notFound();
+        throw new AccessError(
+          422,
+          "assignee_invalid",
+          "Owner must be an active eligible organization member.",
+        );
+      }
+    } else if (scope !== "organization") {
+      if (receipt) notFound();
+      throw new AccessError(422, "owner_required", "Own scope requires an assigned owner.");
+    }
+    if (scope === "team")
+      await current.lockCaptureOffices(owner ? [context.memberId, owner] : [context.memberId]);
+    const source = await this.client.query(
+      "SELECT id FROM app.lead_source WHERE tenant_id=app.current_tenant() AND id=$1 FOR SHARE",
+      [command.body.sourceId],
+    );
+    if (!source.rowCount) {
+      if (receipt) notFound();
+      throw new AccessError(422, "source_invalid", "Source must belong to this organization.");
+    }
+    if (!receipt)
+      await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+        `${context.organizationId}:pipeline-configuration`,
+      ]);
+    const stage = await this.client.query(
+      receipt
+        ? "SELECT id FROM app.pipeline_stage WHERE tenant_id=app.current_tenant() AND id=$1 FOR SHARE"
+        : "SELECT id FROM app.pipeline_stage WHERE tenant_id=app.current_tenant() ORDER BY position,id LIMIT 1 FOR SHARE",
+      receipt ? [locked!.stage_id] : [],
+    );
+    if (!stage.rowCount) {
+      if (receipt) notFound();
+      throw new AccessError(409, "pipeline_unavailable", "Configure a pipeline before capturing leads.");
+    }
+    if (
+      !(
+        await this.client.query(current.captureContactStatement(contactScope), [
+          command.body.contactId,
+          context.memberId,
+        ])
+      ).rowCount
+    )
+      notFound();
+    if (owner && !(await this.client.query(ownerStatement, ownerParameters)).rowCount) {
+      if (receipt) notFound();
+      throw new AccessError(422, "assignee_invalid", "Owner must be an active eligible organization member.");
+    }
+    await current.contactCommandAuthority();
+    await requireEntitlement(this.client, "crm.leads.write", { lock: false });
+    if (receipt) {
+      if (!(await this.client.query(leadStatement, [receipt.id, context.memberId])).rowCount) notFound();
+      await current.finishCapturePost(command);
+      return { body: receipt, status: 201, etag: '"1"' };
+    }
+    const firstStage = await this.client.query(
+      "SELECT id FROM app.pipeline_stage WHERE tenant_id=app.current_tenant() ORDER BY position,id LIMIT 1",
+    );
+    if (firstStage.rows[0]?.id !== stage.rows[0].id)
+      throw new AccessError(409, "pipeline_changed", "The pipeline changed while creating this lead.");
+    const inserted = await this.client.query(
+      `INSERT INTO app.lead(tenant_id,contact_id,source_id,stage_id,owner_member_id,intent,timeline,attribution)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [
+        context.organizationId,
+        command.body.contactId,
+        command.body.sourceId,
+        stage.rows[0].id,
+        owner,
+        command.body.intent,
+        command.body.timeline ?? null,
+        capturePostJson({ source: "manual-synthetic-workspace", sourceId: command.body.sourceId }),
+      ],
+    );
+    const lead = leadPostReceipt(models.lead(inserted.rows[0]), command, context.memberId);
+    if (!(await this.client.query(leadStatement, [lead.id, context.memberId])).rowCount) notFound();
+    if (
+      !(
+        await this.client.query(current.captureContactStatement(contactScope), [
+          command.body.contactId,
+          context.memberId,
+        ])
+      ).rowCount
+    )
+      notFound();
+    const eventId = randomUUID();
+    const eventClock = await this.client.query(
+      "SELECT date_trunc('milliseconds',clock_timestamp()) AS instant",
+    );
+    const instant = new Date(eventClock.rows[0].instant).toISOString();
+    const envelope = capturePostJson({
+      eventId,
+      type: "lead.captured",
+      version: 1,
+      tenantId: context.organizationId,
+      occurredAt: instant,
+      ingestedAt: instant,
+      producer: "crm",
+      aggregateType: "lead",
+      aggregateId: lead.id,
+      correlationId: current.traceId,
+      payload: { resourceId: lead.id, resourceVersion: 1, relatedResourceIds: [command.body.contactId] },
+    });
+    await this.client.query(
+      `INSERT INTO app.outbox(tenant_id,id,event_type,aggregate_id,payload,initiating_actor_id)
+       VALUES($1,$2,'lead.captured',$3,$4,$5)`,
+      [context.organizationId, eventId, lead.id, envelope, context.userId],
+    );
+    await this.client.query(
+      `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data)
+       VALUES($1,$2,'lead.captured',$3,now(),$4)`,
+      [
+        context.organizationId,
+        lead.id,
+        randomUUID(),
+        capturePostJson({ resourceId: lead.id, resourceVersion: 1 }),
+      ],
+    );
+    await current.captureAudit("lead", lead.id);
+    await current.recordCapturePost(command, lead);
+    await current.finishCapturePost(command);
+    return { body: lead, status: 201, etag: '"1"' };
   }
 
   async idempotent(

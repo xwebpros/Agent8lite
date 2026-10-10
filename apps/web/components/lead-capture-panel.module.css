@@ -1,0 +1,81 @@
+.root {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  font-size: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.root p {
+  margin: 0;
+  line-height: 1.6;
+}
+.root fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.root legend {
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.root label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.root input,
+.root select {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  font-size: 16px;
+}
+.root button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border: 1px solid var(--color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.root button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.root button:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.root .secondary {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border-color: var(--color-border);
+}
+.status {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  background: var(--color-canvas);
+  border-radius: 8px;
+}
+.error {
+  color: var(--color-danger);
+}
+.note {
+  color: var(--color-muted);
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.actions > button {
+  flex: 1 1 150px;
+}

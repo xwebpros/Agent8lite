@@ -317,6 +317,38 @@ try {
     invalidEdit.status === 422 && (await invalidEdit.json()).code === "query_invalid",
     "runtime_local_contact_edit_query_failed",
   );
+  // Missing idempotency keys keep these probes non-mutating even against an older generic route.
+  // The dedicated compiled POST boundaries must reject undeclared queries first.
+  const createHeaders = {
+    cookie,
+    origin,
+    "content-type": "application/json",
+    "x-csrf-token": csrf,
+  };
+  const invalidContactCreate = await request(synthetic, `${contactPath}?scope=own`, {
+    method: "POST",
+    headers: createHeaders,
+    body: JSON.stringify({ displayName: "Synthetic non-mutating boundary probe" }),
+  });
+  check(
+    invalidContactCreate.status === 422 && (await invalidContactCreate.json()).code === "query_invalid",
+    "runtime_local_contact_create_query_failed",
+  );
+  const invalidLeadCreate = await request(synthetic, `/v1/orgs/${identity.activeOrgId}/leads?scope=own`, {
+    method: "POST",
+    headers: createHeaders,
+    body: JSON.stringify({
+      contactId: randomUUID(),
+      sourceId: randomUUID(),
+      ownerMemberId: identity.memberId,
+      intent: "unknown",
+      timeline: null,
+    }),
+  });
+  check(
+    invalidLeadCreate.status === 422 && (await invalidLeadCreate.json()).code === "query_invalid",
+    "runtime_local_lead_create_query_failed",
+  );
   const appointmentPage = ajv.compile({ $ref: "contract#/components/schemas/PageAppointment" });
   const appointmentPath = `/v1/orgs/${identity.activeOrgId}/appointments`;
   const appointments = await request(synthetic, `${appointmentPath}?limit=25`, { headers: { cookie } });
@@ -469,6 +501,7 @@ if (failure) {
       dashboardReport: "contract-valid-member-utc-measurement-and-query-denial",
       contactNameSearch: "contract-valid-private-filtered-page-and-query-denial",
       contactEditBoundary: "proved-absent-record-and-query-denied-without-domain-write",
+      leadCaptureBoundary: "contact-and-lead-create-query-denied-without-domain-write",
       forwardedRequestsDenied: 4,
       productionModesDenied: 2,
       cliListenFailure: "closed",

@@ -72,6 +72,15 @@ import {
   type ContactEditCommand,
 } from "./contact-edit";
 import ContactEditPanel, { type ContactEditDraft } from "./contact-edit-panel";
+import {
+  LeadCaptureProtocol,
+  leadCaptureContext,
+  leadCaptureEligible,
+  leadCaptureRequest,
+  type LeadCaptureCommand,
+  type LeadCaptureTemplate,
+} from "./lead-capture";
+import LeadCapturePanel, { emptyLeadCaptureDraft, type LeadCaptureDraft } from "./lead-capture-panel";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -218,6 +227,22 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   contactEdit.current.bind(contactEditBinding);
   const contactSnapshot = contactEdit.current.getSnapshot();
   const contactPending = Boolean(contactSnapshot.command);
+  const leadCapture = useRef(new LeadCaptureProtocol());
+  const activeLeadCapture = useRef<LeadCaptureCommand | null>(null);
+  const [, updateLeadCapture] = useState(0);
+  const [leadCaptureDenied, setLeadCaptureDenied] = useState(false);
+  const [leadCaptureDraft, setLeadCaptureDraft] = useState<LeadCaptureDraft | null>(null);
+  const currentLeadCaptureDraft = useRef(leadCaptureDraft);
+  currentLeadCaptureDraft.current = leadCaptureDraft;
+  const leadDraftBinding = useRef<string | null>(null);
+  const leadCaptureBinding = leadCaptureDenied
+    ? null
+    : leadCaptureContext({ session, memberId: member, csrf, accessRevision });
+  const currentLeadCaptureBinding = useRef(leadCaptureBinding);
+  currentLeadCaptureBinding.current = leadCaptureBinding;
+  leadCapture.current.bind(leadCaptureBinding);
+  const leadSnapshot = leadCapture.current.getSnapshot();
+  const leadPending = Boolean(leadSnapshot.sequence);
   const unsaved =
     dirty ||
     noteDirty ||
@@ -227,6 +252,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     notificationPending ||
     taskPending ||
     contactPending ||
+    leadPending ||
     Boolean(invitationTransfer);
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
@@ -282,6 +308,30 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     dirty,
     modal,
   };
+  const currentLeadCaptureUI = useRef({
+    binding: leadCaptureBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    modal,
+    busy,
+    loading,
+    detailLoading,
+    member,
+    csrf,
+  });
+  currentLeadCaptureUI.current = {
+    binding: leadCaptureBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    modal,
+    busy,
+    loading,
+    detailLoading,
+    member,
+    csrf,
+  };
   const [invitationAcceptance, setInvitationAcceptance] = useState<{
     userId: string;
     job: Schema<"Job">;
@@ -289,7 +339,6 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const commandKeys = useRef(new Map<string, string>());
   const commandContext = useRef("");
   commandContext.current = `${session?.userId || ""}:${session?.activeOrgId || ""}:${member}`;
-  const capturedContact = useRef<Contact | null>(null);
   const updateAccepted = useRef(false);
   const reloadProtected = useRef(false);
   reloadProtected.current =
@@ -299,7 +348,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     campaignProtected.current ||
     notificationProtected.current ||
     Boolean(taskCompletion.current.getSnapshot().command) ||
-    Boolean(contactEdit.current.getSnapshot().command);
+    Boolean(contactEdit.current.getSnapshot().command) ||
+    Boolean(leadCapture.current.getSnapshot().sequence);
   const protectCms = useCallback((value: boolean) => {
     cmsProtected.current = value;
     if (value) reloadProtected.current = true;
@@ -326,7 +376,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const timezone = session?.profile.timezone || "America/Los_Angeles";
   const permission = (name: string) => session?.permissions.includes(name) === true;
   const syntheticEnabled = syntheticFeaturesEnabled && syntheticIdentity && Boolean(session);
-  const canCapture = permission("crm.contacts.write") && permission("crm.leads.write");
+  const canCapture = Boolean(leadCaptureBinding);
   const canTask = permission("crm.tasks.write");
   const taskAgendaContext = JSON.stringify([
     session?.userId,
@@ -397,7 +447,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         campaignProtected.current ||
         notificationProtected.current ||
         taskCompletion.current.getSnapshot().command ||
-        contactEdit.current.getSnapshot().command
+        contactEdit.current.getSnapshot().command ||
+        leadCapture.current.getSnapshot().sequence
       ) {
         setLoading(false);
         return;
@@ -482,7 +533,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           setDirty(false);
           setNoteDirty(false);
           setTagDirty(false);
-          capturedContact.current = null;
+          leadCapture.current.bind(null);
+          currentLeadCaptureBinding.current = null;
+          activeLeadCapture.current = null;
+          leadDraftBinding.current = null;
+          currentLeadCaptureDraft.current = null;
+          setLeadCaptureDraft(null);
+          setLeadCaptureDenied(true);
           setDetailError("Access changed. Refresh access before reopening this record.");
         }
         if (
@@ -549,6 +606,23 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         contactEdit.current.bind(nextContactBinding);
         currentContactBinding.current = nextContactReadBinding;
         setContactDenied(false);
+        const nextLeadBinding = leadCaptureContext({
+          session: result.data,
+          memberId: result.headers.get("X-Member-Id") || "",
+          csrf: result.headers.get("X-CSRF-Token") || "",
+          accessRevision: currentAccessRevision.current,
+        });
+        if (currentLeadCaptureBinding.current !== nextLeadBinding) {
+          activeLeadCapture.current = null;
+          leadDraftBinding.current = null;
+          currentLeadCaptureDraft.current = null;
+          setLeadCaptureDraft(null);
+          setBusy(false);
+        }
+        leadCapture.current.bind(nextLeadBinding);
+        currentLeadCaptureBinding.current = nextLeadBinding;
+        setLeadCaptureDenied(false);
+        updateLeadCapture((value) => value + 1);
         updateTaskCompletion((value) => value + 1);
         setSession(result.data);
         retainedSession.current = result.data;
@@ -575,6 +649,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         setSession(null);
         taskCompletion.current.bind(null);
         contactEdit.current.bind(null);
+        leadCapture.current.bind(null);
+        currentLeadCaptureBinding.current = null;
+        activeLeadCapture.current = null;
+        leadDraftBinding.current = null;
+        currentLeadCaptureDraft.current = null;
+        setLeadCaptureDraft(null);
         activeContactEdit.current = null;
         currentContactBinding.current = null;
         selectedContactBinding.current = null;
@@ -608,6 +688,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     return () => {
       contactLifetimeActive.current = false;
       contactEdit.current.bind(null);
+      leadCapture.current.bind(null);
+      currentLeadCaptureBinding.current = null;
+      activeLeadCapture.current = null;
+      leadDraftBinding.current = null;
+      currentLeadCaptureDraft.current = null;
       currentContactBinding.current = null;
       activeContactEdit.current = null;
       ++detailEpoch.current;
@@ -624,10 +709,14 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     const visibility = () => {
       setContactVisible(document.visibilityState === "visible");
       updateContactEdit((value) => value + 1);
+      updateLeadCapture((value) => value + 1);
     };
     visibility();
     const clock = window.setInterval(() => {
-      if (document.visibilityState === "visible") updateContactEdit((value) => value + 1);
+      if (document.visibilityState === "visible") {
+        updateContactEdit((value) => value + 1);
+        updateLeadCapture((value) => value + 1);
+      }
     }, 30000);
     document.addEventListener("visibilitychange", visibility);
     return () => {
@@ -643,6 +732,14 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       setDirty(false);
     }
   }, [contactReadBinding, contactDenied, detailKind]);
+  useEffect(() => {
+    if (leadDraftBinding.current !== leadCaptureBinding) {
+      leadDraftBinding.current = null;
+      currentLeadCaptureDraft.current = null;
+      setLeadCaptureDraft(null);
+      if (modal === "lead") setDirty(false);
+    }
+  }, [leadCaptureBinding, modal]);
   useEffect(() => {
     setOnline(navigator.onLine);
     const on = () => {
@@ -799,11 +896,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         setNotice(
           contactEdit.current.getSnapshot().command
             ? "The app update activated. Reconcile the unconfirmed contact save before reloading."
-            : taskCompletion.current.getSnapshot().command
-              ? "The app update activated. Reconcile the unconfirmed task completion before reloading."
-              : notificationProtected.current
-                ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
-                : "The app update activated. Finish or discard your current draft before reloading.",
+            : leadCapture.current.getSnapshot().sequence
+              ? "The app update activated. Resolve the unfinished lead capture before reloading."
+              : taskCompletion.current.getSnapshot().command
+                ? "The app update activated. Reconcile the unconfirmed task completion before reloading."
+                : notificationProtected.current
+                  ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
+                  : "The app update activated. Finish or discard your current draft before reloading.",
         );
         return;
       }
@@ -839,6 +938,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     receiveHeaders?: (headers: Headers) => void,
     explicitKey?: string,
   ) {
+    if (leadCapture.current.getSnapshot().sequence)
+      throw new Error("Resolve the unfinished lead capture before starting another command.");
     if (contactEdit.current.getSnapshot().command)
       throw new Error("Reconcile the unconfirmed contact save before starting another command.");
     if (!online) throw new Error("You’re offline. Your draft is still in this tab; reconnect before saving.");
@@ -914,6 +1015,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   }
   async function continueInvitation(transfer: InvitationTransfer, identity: "owner" | "agent") {
     if (busy || !online) return;
+    if (leadCapture.current.getSnapshot().sequence) {
+      setError("Resolve the unfinished lead capture before changing identity.");
+      return;
+    }
     if (contactEdit.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed contact save before changing identity.");
       return;
@@ -951,12 +1056,22 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     await signIn(identity);
   }
   function closeModal() {
+    if (leadCapture.current.getSnapshot().sequence) {
+      setError("Resolve the unfinished lead capture in this editor before closing it.");
+      return;
+    }
     if (busy || (dirty && !window.confirm("Discard the unsaved draft?"))) return;
     setModal(null);
     setDirty(false);
-    capturedContact.current = null;
+    leadDraftBinding.current = null;
+    currentLeadCaptureDraft.current = null;
+    setLeadCaptureDraft(null);
   }
   function closeDetail() {
+    if (leadCapture.current.getSnapshot().sequence) {
+      setError("Resolve the unfinished lead capture before leaving this view.");
+      return;
+    }
     if (contactEdit.current.getSnapshot().command) {
       setError(
         "Reconcile the unconfirmed contact save before leaving contact details. Current-record review does not end its unconfirmed outcome.",
@@ -1337,6 +1452,14 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   function openModal(next: "lead" | "task") {
+    if (leadCapture.current.getSnapshot().sequence) {
+      setError("Return to the unfinished lead capture before starting another edit.");
+      return;
+    }
+    if (busy || loading || detailLoading || reloadProtected.current) {
+      setError("Resolve the current draft or command before starting another edit.");
+      return;
+    }
     if (contactEdit.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed contact save before starting another edit.");
       return;
@@ -1348,44 +1471,204 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     setError("");
     setNotice("");
     setDirty(false);
-    capturedContact.current = null;
+    if (next === "lead") {
+      if (!leadCaptureBinding) return;
+      leadDraftBinding.current = leadCaptureBinding;
+      currentLeadCaptureDraft.current = { ...emptyLeadCaptureDraft };
+      setLeadCaptureDraft({ ...emptyLeadCaptureDraft });
+    }
     setModal(next);
   }
-  async function saveLead(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!session?.activeOrgId) return;
-    const fields = new FormData(event.currentTarget);
+  function leadCaptureAllowed(binding: string | null, ownCommand?: LeadCaptureCommand) {
+    const ui = currentLeadCaptureUI.current;
+    return (
+      leadCapture.current.isBoundTo(binding) &&
+      leadCaptureEligible(binding, {
+        binding: currentLeadCaptureBinding.current,
+        active: contactLifetimeActive.current,
+        online: ui.online && navigator.onLine,
+        visible: ui.visible && document.visibilityState === "visible",
+        changingOrganization: ui.changingOrganization,
+        modal: ui.modal,
+        busy: ui.busy && (!ownCommand || activeLeadCapture.current !== ownCommand),
+        loading: ui.loading,
+        detailLoading: ui.detailLoading,
+        otherProtected:
+          cmsProtected.current ||
+          campaignProtected.current ||
+          notificationProtected.current ||
+          Boolean(taskCompletion.current.getSnapshot().command) ||
+          Boolean(contactEdit.current.getSnapshot().command) ||
+          currentContactUI.current.noteDirty ||
+          currentContactUI.current.tagDirty,
+      })
+    );
+  }
+  function invalidateLeadCapture() {
+    leadCapture.current.bind(null);
+    currentLeadCaptureBinding.current = null;
+    activeLeadCapture.current = null;
+    leadDraftBinding.current = null;
+    currentLeadCaptureDraft.current = null;
+    setLeadCaptureDraft(null);
+    setLeadCaptureDenied(true);
+    setDirty(false);
+    setBusy(false);
+    updateLeadCapture((value) => value + 1);
+  }
+  async function sendLeadCapture(snapshot: LeadCaptureCommand, continuation?: LeadCaptureCommand) {
+    const active = retainedSession.current;
+    if (
+      !active?.activeOrgId ||
+      !leadCapture.current.isCurrent(snapshot) ||
+      !leadCaptureAllowed(snapshot.context, continuation) ||
+      (continuation &&
+        (continuation.step !== "contact" ||
+          continuation.context !== snapshot.context ||
+          activeLeadCapture.current !== continuation)) ||
+      !leadCapture.current.canRetry(snapshot)
+    ) {
+      if (
+        contactLifetimeActive.current &&
+        leadCapture.current.isCurrent(snapshot) &&
+        !activeLeadCapture.current
+      ) {
+        leadCapture.current.reject(snapshot, new Error("Capture send unavailable."));
+        updateLeadCapture((value) => value + 1);
+      }
+      return;
+    }
+    activeLeadCapture.current = snapshot;
+    reloadProtected.current = true;
     setBusy(true);
     setError("");
+    updateLeadCapture((value) => value + 1);
     try {
-      const base = `/v1/orgs/${session.activeOrgId}`;
-      const contactInput: Schema<"ContactWrite"> = {
-        displayName: String(fields.get("displayName")).trim(),
-        emails: fields.get("email") ? [String(fields.get("email")).trim()] : [],
-        phones: fields.get("phone") ? [String(fields.get("phone")).trim()] : [],
-      };
-      const contact = capturedContact.current || (await command<Contact>(`${base}/contacts`, contactInput));
-      capturedContact.current = contact;
-      const input: Schema<"LeadCreate"> = {
-        contactId: contact.id,
-        sourceId: String(fields.get("sourceId")),
-        ownerMemberId: member || null,
-        intent: String(fields.get("intent")) as Lead["intent"],
-        timeline: String(fields.get("timeline")).trim() || null,
-      };
-      await command<Lead>(`${base}/leads`, input);
-      capturedContact.current = null;
-      setModal(null);
-      setDirty(false);
-      setNotice("Lead saved and assigned to you.");
-      await refresh(session);
-    } catch (err) {
-      setError(
-        `${err instanceof Error ? err.message : "Lead could not be saved."}${capturedContact.current ? " Contact saved. Retry this lead to finish capturing the opportunity." : " Retry with the same input to reconcile an interrupted command."}`,
+      const result = await leadCaptureRequest(
+        active.activeOrgId,
+        snapshot,
+        currentLeadCaptureUI.current.csrf,
       );
+      if (!contactLifetimeActive.current || !leadCapture.current.isCurrent(snapshot)) return;
+      const acknowledgement = leadCapture.current.acknowledge(snapshot, result.data, result.etag);
+      updateLeadCapture((value) => value + 1);
+      if (!acknowledgement) {
+        setError("The creation receipt could not be verified. Reconcile only the original unconfirmed step.");
+        return;
+      }
+      if (acknowledgement === "contact") {
+        if (leadCaptureAllowed(snapshot.context, snapshot)) {
+          const next = leadCapture.current.startLead();
+          await sendLeadCapture(next, snapshot);
+        }
+        return;
+      }
+      leadDraftBinding.current = null;
+      currentLeadCaptureDraft.current = null;
+      setLeadCaptureDraft(null);
+      setDirty(false);
+      setNotice("Lead creation acknowledged. Current lists are read separately.");
+      if (leadCaptureAllowed(snapshot.context, snapshot)) {
+        setModal(null);
+        await refresh(active);
+      }
+    } catch (err) {
+      if (!contactLifetimeActive.current) return;
+      const outcome = leadCapture.current.reject(snapshot, err);
+      if (outcome === "ignored") return;
+      if (err instanceof ApiError && [401, 403].includes(err.status)) {
+        invalidateLeadCapture();
+        setError(
+          "Lead capture access changed. Private captured fields are cleared; no interrupted outcome is inferred.",
+        );
+      } else
+        setError(
+          outcome === "unknown"
+            ? "Creation is unconfirmed. Reconcile only the original step; do not begin another capture."
+            : snapshot.step === "lead"
+              ? "The contact is saved, but this first lead attempt was rejected. Review the lead fields or keep the saved contact."
+              : "This first contact attempt was rejected. Review the contact fields before saving again.",
+        );
+      updateLeadCapture((value) => value + 1);
     } finally {
-      setBusy(false);
+      if (activeLeadCapture.current === snapshot && contactLifetimeActive.current) {
+        activeLeadCapture.current = null;
+        setBusy(false);
+      }
     }
+  }
+  async function saveLead() {
+    if (!leadCaptureAllowed(leadCaptureBinding) || activeLeadCapture.current) return;
+    const state = leadCapture.current.getSnapshot();
+    try {
+      if (state.phase === "lead-ready") {
+        await sendLeadCapture(leadCapture.current.startLead());
+        return;
+      }
+      const draft = currentLeadCaptureDraft.current;
+      if (!draft || leadDraftBinding.current !== leadCaptureBinding) return;
+      const template: LeadCaptureTemplate = {
+        sourceId: draft.sourceId,
+        ownerMemberId: currentLeadCaptureUI.current.member,
+        intent: draft.intent,
+        timeline: draft.timeline || null,
+      };
+      if (state.phase === "lead-rejected") {
+        leadCapture.current.correctLead(template, crypto.randomUUID());
+        reloadProtected.current = true;
+        await sendLeadCapture(leadCapture.current.startLead());
+      } else {
+        const snapshot = leadCapture.current.begin(
+          {
+            contact: {
+              displayName: draft.displayName,
+              emails: draft.email ? [draft.email] : [],
+              phones: draft.phone ? [draft.phone] : [],
+            },
+            lead: template,
+          },
+          crypto.randomUUID(),
+          crypto.randomUUID(),
+        );
+        reloadProtected.current = true;
+        await sendLeadCapture(snapshot);
+      }
+    } catch {
+      if (leadCapture.current.isBoundTo(leadCaptureBinding)) {
+        setError(
+          "Review the captured name, channels, source, intent and timeline before continuing. An unresolved step cannot be replaced.",
+        );
+        updateLeadCapture((value) => value + 1);
+      }
+    }
+  }
+  async function reconcileLeadCapture() {
+    const binding = leadCaptureBinding;
+    if (!leadCaptureAllowed(binding) || activeLeadCapture.current) return;
+    try {
+      await sendLeadCapture(leadCapture.current.retry());
+    } catch {
+      if (leadCapture.current.isBoundTo(binding))
+        setError("The original step cannot be resent. Its outcome remains unconfirmed.");
+    }
+  }
+  async function keepCapturedContact() {
+    const binding = leadCaptureBinding;
+    if (
+      !leadCaptureAllowed(binding) ||
+      activeLeadCapture.current ||
+      !leadCapture.current.keepContactAndClose()
+    )
+      return;
+    leadDraftBinding.current = null;
+    currentLeadCaptureDraft.current = null;
+    setLeadCaptureDraft(null);
+    setDirty(false);
+    setModal(null);
+    setError("");
+    setNotice("The saved contact is kept. No lead was created by a confirmed command in this capture.");
+    updateLeadCapture((value) => value + 1);
+    if (retainedSession.current) await refresh(retainedSession.current);
   }
   async function saveTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1554,6 +1837,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function switchOrganization(id: string) {
+    if (leadCapture.current.getSnapshot().sequence) {
+      setError(
+        "Resolve the unfinished lead capture before switching organizations. A saved contact is kept unless you explicitly close its known partial capture.",
+      );
+      return;
+    }
     if (contactEdit.current.getSnapshot().command) {
       setError(
         "Reconcile the unconfirmed contact save before switching organizations. Current-record review does not confirm its outcome.",
@@ -1620,6 +1909,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function logout() {
+    if (leadCapture.current.getSnapshot().sequence) {
+      setError(
+        "Resolve the unfinished lead capture before signing out. An unconfirmed step cannot be discarded.",
+      );
+      return;
+    }
     if (contactEdit.current.getSnapshot().command) {
       setError(
         "Reconcile the unconfirmed contact save before signing out. Current-record review does not confirm its outcome.",
@@ -1899,7 +2194,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       className="workspace"
       onClickCapture={(event) => {
         if (
-          (!taskCompletion.current.getSnapshot().command && !contactEdit.current.getSnapshot().command) ||
+          (!taskCompletion.current.getSnapshot().command &&
+            !contactEdit.current.getSnapshot().command &&
+            !leadCapture.current.getSnapshot().sequence) ||
           !(event.target instanceof Element)
         )
           return;
@@ -1918,7 +2215,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         setError(
           contactEdit.current.getSnapshot().command
             ? "Reconcile the unconfirmed contact save before navigating away. Current-record review does not confirm its outcome."
-            : "Reconcile the unconfirmed task completion before navigating away.",
+            : leadCapture.current.getSnapshot().sequence
+              ? "Resolve the unfinished lead capture before navigating away. An unconfirmed step cannot be discarded."
+              : "Reconcile the unconfirmed task completion before navigating away.",
         );
       }}
     >
@@ -2284,6 +2583,41 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 </Button>
               </div>
             )}
+          {leadPending && modal !== "lead" && (
+            <div className="connection-banner" role="status">
+              <span>An unfinished lead capture remains in this tab.</span>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy || !online || changingOrganization || !contactVisible}
+                onClick={() => {
+                  const ui = currentLeadCaptureUI.current;
+                  if (
+                    !leadCapture.current.getSnapshot().sequence ||
+                    !leadCapture.current.isBoundTo(leadCaptureBinding) ||
+                    currentLeadCaptureBinding.current !== leadCaptureBinding ||
+                    !ui.online ||
+                    !navigator.onLine ||
+                    !ui.visible ||
+                    document.visibilityState !== "visible" ||
+                    ui.busy ||
+                    ui.loading ||
+                    ui.detailLoading ||
+                    ui.changingOrganization ||
+                    cmsProtected.current ||
+                    campaignProtected.current ||
+                    notificationProtected.current ||
+                    taskCompletion.current.getSnapshot().command ||
+                    contactEdit.current.getSnapshot().command
+                  )
+                    return;
+                  setModal("lead");
+                }}
+              >
+                Return to unfinished lead capture
+              </Button>
+            </div>
+          )}
           {notificationPending && view !== "notifications" && (
             <div className="connection-banner" role="status">
               <Bell size={18} aria-hidden="true" />
@@ -2301,6 +2635,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   Boolean(invitationTransfer)
                 }
                 onClick={() => {
+                  if (leadCapture.current.getSnapshot().sequence) {
+                    setError("Resolve the unfinished lead capture before opening Notifications.");
+                    return;
+                  }
                   if (taskCompletion.current.getSnapshot().command) {
                     setError("Reconcile the unconfirmed task completion before opening Notifications.");
                     return;
@@ -3191,92 +3529,53 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <X size={21} />
             </button>
           </div>
-          <form onSubmit={modal === "lead" ? saveLead : saveTask} onChange={() => setDirty(true)}>
-            <div className="editor-body">
-              {error && (
-                <div className="error" role="alert">
-                  {error}
-                </div>
-              )}
-              {!online && (
-                <div className="connection-banner">
-                  <WifiOff size={17} />
-                  Offline — your draft has not been saved.
-                </div>
-              )}
-              {modal === "lead" ? (
-                <>
-                  <p className="muted">
-                    Create a contact and a separate opportunity assigned to you. Communication consent remains
-                    unknown.
-                  </p>
-                  <label>
-                    Full name
-                    <input
-                      name="displayName"
-                      autoComplete="name"
-                      required
-                      maxLength={120}
-                      placeholder="e.g. Jordan Lee"
-                      readOnly={Boolean(capturedContact.current)}
-                    />
-                  </label>
-                  <label>
-                    Email
-                    <input
-                      name="email"
-                      type="email"
-                      autoComplete="email"
-                      maxLength={254}
-                      placeholder="jordan@example.com"
-                      readOnly={Boolean(capturedContact.current)}
-                    />
-                  </label>
-                  <label>
-                    Phone (optional)
-                    <input
-                      name="phone"
-                      type="tel"
-                      autoComplete="tel"
-                      maxLength={32}
-                      placeholder="+1 702 555 0100"
-                      readOnly={Boolean(capturedContact.current)}
-                    />
-                  </label>
-                  <div className="form-columns">
-                    <label>
-                      Intent
-                      <select name="intent" defaultValue="unknown">
-                        <option value="unknown">Unknown</option>
-                        <option value="buyer">Buyer</option>
-                        <option value="seller">Seller</option>
-                        <option value="both">Buyer & seller</option>
-                      </select>
-                    </label>
-                    <label>
-                      Source
-                      <select name="sourceId" required defaultValue={data.sources[0]?.id || ""}>
-                        <option value="" disabled>
-                          Select source
-                        </option>
-                        {data.sources.map((source) => (
-                          <option key={source.id} value={source.id}>
-                            {source.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+          {modal === "lead" ? (
+            <LeadCapturePanel
+              draft={leadDraftBinding.current === leadCaptureBinding ? leadCaptureDraft : null}
+              snapshot={leadSnapshot}
+              sources={data.sources}
+              online={online && !changingOrganization}
+              visible={
+                contactVisible && (typeof document === "undefined" || document.visibilityState === "visible")
+              }
+              busy={busy || loading || detailLoading}
+              canCapture={Boolean(leadCaptureBinding) && !leadCaptureDenied}
+              canRetry={leadCapture.current.canRetry()}
+              error={error}
+              onDraftChange={(draft) => {
+                const current = leadCapture.current.getSnapshot();
+                if (
+                  !leadCaptureAllowed(leadCaptureBinding) ||
+                  activeLeadCapture.current ||
+                  current.command ||
+                  (current.sequence && current.phase !== "lead-rejected")
+                )
+                  return;
+                leadDraftBinding.current = leadCaptureBinding;
+                currentLeadCaptureDraft.current = draft;
+                setLeadCaptureDraft(draft);
+                setDirty(true);
+                reloadProtected.current = true;
+              }}
+              onSave={() => void saveLead()}
+              onReconcile={() => void reconcileLeadCapture()}
+              onKeepContact={() => void keepCapturedContact()}
+              onClose={closeModal}
+            />
+          ) : (
+            <form onSubmit={saveTask} onChange={() => setDirty(true)}>
+              <div className="editor-body">
+                {error && (
+                  <div className="error" role="alert">
+                    {error}
                   </div>
-                  <label>
-                    Timeline (optional)
-                    <input name="timeline" maxLength={80} placeholder="Only what the person has shared" />
-                  </label>
-                  <div className="form-note">
-                    <ShieldCheck size={16} />
-                    No email or SMS is sent when you save.
+                )}
+                {!online && (
+                  <div className="connection-banner">
+                    <WifiOff size={17} />
+                    Offline — your draft has not been saved.
                   </div>
-                </>
-              ) : (
+                )}
                 <>
                   <p className="muted">This follow-up will be assigned to you.</p>
                   <label>
@@ -3316,21 +3615,18 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                     </select>
                   </label>
                 </>
-              )}
-            </div>
-            <div className="editor-footer">
-              <Button type="button" variant="secondary" disabled={busy} onClick={closeModal}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={busy || !online || !member || (modal === "lead" && !data.sources.length)}
-              >
-                {busy ? "Saving…" : modal === "lead" ? "Save lead" : "Save task"}
-                <ArrowRight size={16} />
-              </Button>
-            </div>
-          </form>
+              </div>
+              <div className="editor-footer">
+                <Button type="button" variant="secondary" disabled={busy} onClick={closeModal}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={busy || !online || !member}>
+                  {busy ? "Saving…" : "Save task"}
+                  <ArrowRight size={16} />
+                </Button>
+              </div>
+            </form>
+          )}
         </dialog>
       )}
       {detailId &&
