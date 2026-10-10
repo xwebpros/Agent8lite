@@ -5,6 +5,10 @@ import { ApiError, type Schema } from "../lib/api";
 
 export const contactEditRetryWindowMs = 23 * 60 * 60 * 1000;
 export const contactEditBodyLimit = 64 * 1024;
+export const localRecoveryForgettingExplanation =
+  "The earlier command may or may not have completed. Clearing this tab’s recovery data does not cancel or undo it. Review current records before attempting related work.";
+export const localRecoveryForgottenWarning =
+  "An earlier command outcome is unconfirmed and its local recovery data was cleared. Clearing did not cancel or undo it. Review current records before related work. Another command is blocked in this verified context. Reloading or changing context may allow a new attempt and cannot prevent a possible duplicate.";
 export type ContactEditCommand = Readonly<{
   context: string;
   contactId: string;
@@ -17,7 +21,7 @@ export type ContactEditCommand = Readonly<{
 }>;
 export type ContactEditSnapshot = Readonly<{
   command: ContactEditCommand | null;
-  phase: "idle" | "sending" | "unknown" | "acknowledged" | "conflict" | "denied" | "rejected";
+  phase: "idle" | "sending" | "unknown" | "acknowledged" | "conflict" | "denied" | "rejected" | "forgotten";
 }>;
 const ajv = new Ajv2020({ strict: false, ownProperties: true });
 addFormats(ajv);
@@ -223,14 +227,21 @@ export class ContactEditProtocol {
   }
   bind(context: string | null): void {
     if (context !== this.context) {
-      this.clear();
+      this.reset();
       this.context = context;
     }
   }
   clear(): void {
+    // Reading current records cannot remove a forgotten-command warning or unlock a replacement.
+    if (this.snapshot.phase === "forgotten") return;
+    this.reset();
+  }
+  private reset(): void {
     this.snapshot = Object.freeze({ command: null, phase: "idle" });
     this.reconciling = false;
     this.clockInvalid = false;
+    this.lastWall = 0;
+    this.lastMonotonic = 0;
   }
   getSnapshot(): ContactEditSnapshot {
     return this.snapshot;
@@ -245,6 +256,8 @@ export class ContactEditProtocol {
     input: { contactId: string; version: number; body: Schema<"ContactWrite"> },
     key: string,
   ): ContactEditCommand {
+    if (this.snapshot.phase === "forgotten")
+      throw new Error("The earlier outcome is unconfirmed. Another contact save is blocked in this context.");
     const captured = jsonSnapshot(input).value;
     const firstWall = this.wallNow(),
       firstMonotonic = this.monotonicNow();
@@ -311,6 +324,18 @@ export class ContactEditProtocol {
     this.reconciling = true;
     this.snapshot = Object.freeze({ command, phase: "sending" });
     return command;
+  }
+  canForget(): boolean {
+    const command = this.snapshot.command;
+    return (
+      this.snapshot.phase === "unknown" && Boolean(command && this.isCurrent(command)) && !this.canRetry()
+    );
+  }
+  forget(): boolean {
+    if (!this.canForget()) return false;
+    this.reset();
+    this.snapshot = Object.freeze({ command: null, phase: "forgotten" });
+    return true;
   }
   acknowledge(command: ContactEditCommand, input: unknown, etag: string | null): boolean {
     if (!this.isCurrent(command)) return false;

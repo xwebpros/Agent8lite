@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import type { Schema } from "../lib/api";
+import { localRecoveryForgottenWarning, localRecoveryForgettingExplanation } from "./contact-edit";
 import type { LeadCaptureSnapshot } from "./lead-capture";
 import styles from "./lead-capture-panel.module.css";
 
@@ -36,12 +37,36 @@ export type LeadCaptureViewProps = {
   onReconcile(): void;
   onKeepContact(): void;
   onClose(): void;
+  onForget?(): void;
 };
 export function LeadCaptureView(props: LeadCaptureViewProps) {
   const { snapshot, draft } = props;
   const contactSaved = Boolean(snapshot.sequence?.contactId);
   const unknown = snapshot.phase === "contact-unknown" || snapshot.phase === "lead-unknown";
   const sending = snapshot.phase === "contact-sending" || snapshot.phase === "lead-sending";
+  if (snapshot.phase === "forgotten")
+    return (
+      <section className={styles.root} aria-label="Cleared lead recovery data">
+        <p role="status">{localRecoveryForgottenWarning}</p>
+        <button type="button" className={styles.secondary} onClick={props.onClose} disabled={props.busy}>
+          Close editor
+        </button>
+      </section>
+    );
+  const forgetting =
+    unknown && !props.canRetry && props.onForget ? (
+      <div className={styles.status}>
+        <p>{localRecoveryForgettingExplanation}</p>
+        <button
+          type="button"
+          className={styles.secondary}
+          onClick={props.onForget}
+          disabled={props.busy || !props.visible || !props.canCapture}
+        >
+          Clear this tab’s recovery data
+        </button>
+      </div>
+    ) : null;
   const partial =
     contactSaved && !snapshot.command && ["lead-ready", "lead-rejected"].includes(snapshot.phase);
   const disabled = props.busy || sending || unknown;
@@ -72,6 +97,7 @@ export function LeadCaptureView(props: LeadCaptureViewProps) {
         </p>
         <p>Reconnect and return to this view to review the current state. No request is sent offline.</p>
         {unknown && <p>Creation is unconfirmed; do not begin a replacement capture.</p>}
+        {forgetting}
         <button type="button" className={styles.secondary} disabled>
           Reconcile original step
         </button>
@@ -140,6 +166,7 @@ export function LeadCaptureView(props: LeadCaptureViewProps) {
           <button type="button" onClick={props.onReconcile} disabled={props.busy || !props.canRetry}>
             Reconcile original step
           </button>
+          {forgetting}
         </div>
       )}
       <fieldset disabled={disabled || frozenLead}>

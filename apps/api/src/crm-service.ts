@@ -11,6 +11,7 @@ import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { dashboardClockInstant, dashboardUtcPeriod } from "./dashboard-time";
 import { parseContactQuery } from "./contact-query";
 import { contactCommandJson, contactReceipt, contactRevision, prepareContactPatch } from "./contact-command";
+import { appendContactCreatedEvent } from "./contact-created-event";
 import {
   capturePostJson,
   contactPostReceipt,
@@ -881,6 +882,7 @@ export class CrmService {
       ).rows[0] ?? notFound();
     const receipt = contactPostReceipt(models.contact(projection), command);
     await current.captureAudit("contact", id);
+    await appendContactCreatedEvent(this.client, context, this.traceId, id);
     await current.recordCapturePost(command, receipt);
     await current.finishCapturePost(command);
     return { body: receipt, status: 201, etag: '"1"' };
@@ -1305,6 +1307,8 @@ export class CrmService {
       row = result.rows[0];
     } else notFound();
     await this.audit(`${config.table}.created`, config.table, row.id, Number(row.row_version));
+    if (resource === "contacts")
+      await appendContactCreatedEvent(this.client, this.context, this.traceId, row.id);
     return { body: config.mapper(row), status: 201, etag: '"1"' };
   }
 

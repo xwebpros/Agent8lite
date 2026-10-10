@@ -213,6 +213,7 @@ describe("ADR040 independent durable Contact POST and Lead POST", () => {
       channels: before.channels + 2,
       audits: before.audits + 1,
       receipts: before.receipts + 1,
+      outbox: before.outbox + 1,
     });
     expect(
       (

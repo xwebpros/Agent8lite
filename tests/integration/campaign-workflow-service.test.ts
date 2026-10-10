@@ -1514,25 +1514,19 @@ describe("actual0017–0019 immutable native workflow draft service", () => {
     });
   });
 
-  it("the real lead-only dispatcher defers this unknown family without receipt acknowledgement or delivery", async () => {
+  it("the real lead-only dispatcher leaves this unsupported family untouched without receipt acknowledgement or delivery", async () => {
     const campaign = await parent(),
       fixture = await create(campaign.body.id);
-    // This owned disposable fixture narrows scheduling without changing producer data or delivery state.
-    await admin.query(
-      "UPDATE app.outbox SET lease_until=clock_timestamp()+interval '1 hour'WHERE tenant_id=$1 AND initiating_actor_id=$2 AND aggregate_id<>$3",
-      [fixtures.orgA, fixtures.ownerUser, fixture.response.body.id],
-    );
     const event = (
       await admin.query("SELECT id FROM app.outbox WHERE aggregate_id=$1", [fixture.response.body.id])
     ).rows[0];
-    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: 1 });
+    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: 0 });
     const row = (
-      await admin.query(
-        "SELECT published_at,attempt_count,lease_until>clock_timestamp()AS future FROM app.outbox WHERE id=$1",
-        [event.id],
-      )
+      await admin.query("SELECT published_at,attempt_count,lease_until FROM app.outbox WHERE id=$1", [
+        event.id,
+      ])
     ).rows[0];
-    expect(row).toEqual({ published_at: null, attempt_count: 1, future: true });
+    expect(row).toEqual({ published_at: null, attempt_count: 0, lease_until: null });
     expect(
       (await admin.query("SELECT event_id FROM app.outbox_consumer_receipt WHERE event_id=$1", [event.id]))
         .rowCount,

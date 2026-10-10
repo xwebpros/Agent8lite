@@ -43,7 +43,8 @@ export type LeadCaptureSnapshot = Readonly<{
     | "lead-unknown"
     | "lead-rejected"
     | "acknowledged"
-    | "denied";
+    | "denied"
+    | "forgotten";
 }>;
 const ajv = new Ajv2020({ strict: false, ownProperties: true });
 addFormats(ajv);
@@ -257,6 +258,8 @@ export class LeadCaptureProtocol {
     this.reconciling = false;
     this.clockInvalid = false;
     this.keys.clear();
+    this.lastWall = 0;
+    this.lastMonotonic = 0;
   }
   getSnapshot(): LeadCaptureSnapshot {
     return this.state;
@@ -300,6 +303,7 @@ export class LeadCaptureProtocol {
   begin(input: LeadCaptureInput, contactKey: string, leadKey: string): LeadCaptureCommand {
     if (
       !this.context ||
+      this.state.phase === "forgotten" ||
       this.state.sequence ||
       !validId(contactKey) ||
       !validId(leadKey) ||
@@ -369,6 +373,20 @@ export class LeadCaptureProtocol {
       phase: command.step === "contact" ? "contact-sending" : "lead-sending",
     });
     return command;
+  }
+  canForget(): boolean {
+    const command = this.state.command;
+    return (
+      ["contact-unknown", "lead-unknown"].includes(this.state.phase) &&
+      Boolean(command && this.isCurrent(command)) &&
+      !this.canRetry()
+    );
+  }
+  forget(): boolean {
+    if (!this.canForget()) return false;
+    this.reset();
+    this.state = Object.freeze({ sequence: null, command: null, phase: "forgotten" });
+    return true;
   }
   acknowledge(command: LeadCaptureCommand, input: unknown, etag: string | null): "contact" | "lead" | false {
     if (!this.isCurrent(command)) return false;

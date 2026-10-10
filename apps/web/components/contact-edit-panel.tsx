@@ -1,5 +1,9 @@
 import type { Schema } from "../lib/api";
-import type { ContactEditSnapshot } from "./contact-edit";
+import {
+  type ContactEditSnapshot,
+  localRecoveryForgottenWarning,
+  localRecoveryForgettingExplanation,
+} from "./contact-edit";
 import styles from "./contact-edit-panel.module.css";
 
 export type ContactEditDraft = Readonly<{ displayName: string; email: string; phone: string }>;
@@ -18,17 +22,34 @@ export type ContactEditViewProps = {
   onDraftChange(value: ContactEditDraft): void;
   onReconcile(): void;
   onReview(): void;
+  onForget?(): void;
 };
 
 /** Private values stay out of hidden/offline markup; the parent retains the tab-only draft. */
 export function ContactEditView(props: ContactEditViewProps) {
   const pending = Boolean(props.snapshot.command);
+  if (props.snapshot.phase === "forgotten") return <p role="status">{localRecoveryForgottenWarning}</p>;
+  const forgetting =
+    props.snapshot.phase === "unknown" && !props.canRetry && props.onForget ? (
+      <div className={styles.notice}>
+        <p>{localRecoveryForgettingExplanation}</p>
+        <button
+          type="button"
+          className="button button-secondary"
+          disabled={props.busy || props.reading || !props.visible || !props.canRead || !props.canEdit}
+          onClick={props.onForget}
+        >
+          Clear this tab’s recovery data
+        </button>
+      </div>
+    ) : null;
   if (!props.online || !props.visible)
     return (
       <div className="empty" role="status">
         {pending
           ? "A contact save is unconfirmed. Its original command remains in this tab; reconnect and return to this view to review it."
           : "Contact details and unsaved edits are hidden while offline or this page is not visible."}
+        {forgetting}
       </div>
     );
   if (!props.canRead || props.snapshot.phase === "denied")
@@ -76,6 +97,7 @@ export function ContactEditView(props: ContactEditViewProps) {
             Reading current details cannot prove whether the earlier save completed. Reconciliation keeps the
             original input and record version.
           </p>
+          {forgetting}
         </div>
       )}
       {phase === "acknowledged" && (

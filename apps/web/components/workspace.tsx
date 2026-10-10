@@ -68,6 +68,7 @@ import {
   contactEditRequest,
   contactEditReadGuard,
   contactEditReadFailureDisposition,
+  localRecoveryForgottenWarning,
   readContactEditContact,
   type ContactEditCommand,
 } from "./contact-edit";
@@ -376,7 +377,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const timezone = session?.profile.timezone || "America/Los_Angeles";
   const permission = (name: string) => session?.permissions.includes(name) === true;
   const syntheticEnabled = syntheticFeaturesEnabled && syntheticIdentity && Boolean(session);
-  const canCapture = Boolean(leadCaptureBinding);
+  const canCapture = Boolean(leadCaptureBinding) && leadSnapshot.phase !== "forgotten";
   const canTask = permission("crm.tasks.write");
   const taskAgendaContext = JSON.stringify([
     session?.userId,
@@ -826,7 +827,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             selectedContactBinding.current = capturedContactBinding;
             setSelectedContact(response.data);
             setContactReviewed(Boolean(contactEdit.current.getSnapshot().command));
-            if (!contactEdit.current.getSnapshot().command)
+            if (
+              !contactEdit.current.getSnapshot().command &&
+              contactEdit.current.getSnapshot().phase !== "forgotten"
+            )
               setContactDraft({
                 displayName: response.data.displayName,
                 email: response.data.emails[0] || "",
@@ -1185,7 +1189,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       selectedContactBinding.current = binding;
       setSelectedContact(response.data);
       setContactReviewed(pending);
-      if (!pending) {
+      if (!pending && contactEdit.current.getSnapshot().phase !== "forgotten") {
         setContactDraft({
           displayName: response.data.displayName,
           email: response.data.emails[0] || "",
@@ -1344,6 +1348,56 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       );
     }
   }
+  function releaseForgottenRecoveryProtection() {
+    currentContactUI.current.dirty = false;
+    // Preserve unrelated editors and commands; forgetting removes only this recovery's protection.
+    reloadProtected.current = Boolean(
+      currentContactUI.current.busy ||
+        currentContactUI.current.noteDirty ||
+        currentContactUI.current.tagDirty ||
+        cmsProtected.current ||
+        campaignProtected.current ||
+        notificationProtected.current ||
+        invitationTransfer ||
+        taskCompletion.current.getSnapshot().command ||
+        contactEdit.current.getSnapshot().command ||
+        leadCapture.current.getSnapshot().sequence,
+    );
+  }
+  function forgetContactRecovery(expectedCommand = contactSnapshot.command) {
+    const ui = currentContactUI.current;
+    const original = contactEdit.current.getSnapshot().command;
+    if (
+      !contactLifetimeActive.current ||
+      !contactEdit.current.isBoundTo(contactEditBinding) ||
+      ui.binding !== contactEditBinding ||
+      !original ||
+      original !== expectedCommand ||
+      ui.detailKind !== "contact" ||
+      ui.detailId?.toLowerCase() !== original.contactId.toLowerCase() ||
+      !ui.visible ||
+      document.visibilityState !== "visible" ||
+      ui.changingOrganization ||
+      ui.busy ||
+      ui.loading ||
+      ui.detailLoading ||
+      activeContactEdit.current ||
+      !contactEdit.current.forget()
+    )
+      return;
+    activeContactEdit.current = null;
+    ++detailEpoch.current;
+    selectedContactBinding.current = null;
+    setSelectedContact(null);
+    setContactDraft(null);
+    setContactReviewed(false);
+    setDetailError("");
+    setError("");
+    setNotice("");
+    setDirty(false);
+    releaseForgottenRecoveryProtection();
+    updateContactEdit((value) => value + 1);
+  }
   async function saveDetail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session?.activeOrgId || busy || !online || noteDirty || tagDirty) return;
@@ -1367,7 +1421,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         changingOrganization ||
         detailLoading ||
         document.visibilityState !== "visible" ||
-        contactEdit.current.getSnapshot().phase === "conflict" ||
+        ["conflict", "forgotten"].includes(contactEdit.current.getSnapshot().phase) ||
         contactEdit.current.getSnapshot().command ||
         taskCompletion.current.getSnapshot().command ||
         cmsProtected.current ||
@@ -1472,7 +1526,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     setNotice("");
     setDirty(false);
     if (next === "lead") {
-      if (!leadCaptureBinding) return;
+      if (!leadCaptureBinding || leadCapture.current.getSnapshot().phase === "forgotten") return;
       leadDraftBinding.current = leadCaptureBinding;
       currentLeadCaptureDraft.current = { ...emptyLeadCaptureDraft };
       setLeadCaptureDraft({ ...emptyLeadCaptureDraft });
@@ -1483,6 +1537,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     const ui = currentLeadCaptureUI.current;
     return (
       leadCapture.current.isBoundTo(binding) &&
+      leadCapture.current.getSnapshot().phase !== "forgotten" &&
       leadCaptureEligible(binding, {
         binding: currentLeadCaptureBinding.current,
         active: contactLifetimeActive.current,
@@ -1669,6 +1724,35 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     setNotice("The saved contact is kept. No lead was created by a confirmed command in this capture.");
     updateLeadCapture((value) => value + 1);
     if (retainedSession.current) await refresh(retainedSession.current);
+  }
+  function forgetLeadRecovery(expectedCommand = leadSnapshot.command) {
+    const ui = currentLeadCaptureUI.current;
+    if (
+      !contactLifetimeActive.current ||
+      !leadCapture.current.isBoundTo(leadCaptureBinding) ||
+      currentLeadCaptureBinding.current !== leadCaptureBinding ||
+      ui.binding !== leadCaptureBinding ||
+      ui.modal !== "lead" ||
+      !ui.visible ||
+      document.visibilityState !== "visible" ||
+      ui.changingOrganization ||
+      ui.busy ||
+      ui.loading ||
+      ui.detailLoading ||
+      activeLeadCapture.current ||
+      leadCapture.current.getSnapshot().command !== expectedCommand ||
+      !leadCapture.current.forget()
+    )
+      return;
+    activeLeadCapture.current = null;
+    leadDraftBinding.current = null;
+    currentLeadCaptureDraft.current = null;
+    setLeadCaptureDraft(null);
+    setDirty(false);
+    setError("");
+    setNotice("");
+    releaseForgottenRecoveryProtection();
+    updateLeadCapture((value) => value + 1);
   }
   async function saveTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2501,6 +2585,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             <div className="success" role="status">
               <CircleCheck size={17} />
               {notice}
+            </div>
+          )}
+          {(contactSnapshot.phase === "forgotten" || leadSnapshot.phase === "forgotten") && (
+            <div className="connection-banner" role="status">
+              <ShieldCheck size={18} aria-hidden="true" />
+              <span>{localRecoveryForgottenWarning}</span>
             </div>
           )}
           {view !== "properties" &&
@@ -3539,7 +3629,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 contactVisible && (typeof document === "undefined" || document.visibilityState === "visible")
               }
               busy={busy || loading || detailLoading}
-              canCapture={Boolean(leadCaptureBinding) && !leadCaptureDenied}
+              canCapture={canCapture && !leadCaptureDenied}
               canRetry={leadCapture.current.canRetry()}
               error={error}
               onDraftChange={(draft) => {
@@ -3547,6 +3637,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 if (
                   !leadCaptureAllowed(leadCaptureBinding) ||
                   activeLeadCapture.current ||
+                  current.phase === "forgotten" ||
                   current.command ||
                   (current.sequence && current.phase !== "lead-rejected")
                 )
@@ -3560,6 +3651,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               onSave={() => void saveLead()}
               onReconcile={() => void reconcileLeadCapture()}
               onKeepContact={() => void keepCapturedContact()}
+              onForget={() => forgetLeadRecovery(leadSnapshot.command)}
               onClose={closeModal}
             />
           ) : (
@@ -3689,13 +3781,16 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       visible={contactVisible}
                       busy={busy}
                       reading={detailLoading}
-                      canEdit={Boolean(contactEditBinding) && !contactDenied}
+                      canEdit={
+                        Boolean(contactEditBinding) && !contactDenied && contactSnapshot.phase !== "forgotten"
+                      }
                       canRead={Boolean(contactReadBinding) && !contactDenied}
                       canRetry={contactEdit.current.canRetry()}
                       currentReviewed={contactReviewed}
                       onDraftChange={(value) => {
                         if (
                           !contactEdit.current.isBoundTo(contactEditBinding) ||
+                          contactEdit.current.getSnapshot().phase === "forgotten" ||
                           contactEdit.current.getSnapshot().command ||
                           selectedContactBinding.current !== currentContactBinding.current ||
                           !currentContactUI.current.online ||
@@ -3708,6 +3803,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       }}
                       onReconcile={() => void reconcileContactEdit()}
                       onReview={() => void reviewContact()}
+                      onForget={() => forgetContactRecovery(contactSnapshot.command)}
                     />
                   )}
                   {detailKind === "lead" && selectedLead && (
@@ -3851,7 +3947,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                           changingOrganization ||
                           !contactEditBinding ||
                           selectedContactBinding.current !== currentContactBinding.current ||
-                          contactSnapshot.phase === "conflict")) ||
+                          ["conflict", "forgotten"].includes(contactSnapshot.phase))) ||
                       !(detailKind === "contact"
                         ? permission("crm.contacts.write") && selectedContact
                         : detailKind === "lead"

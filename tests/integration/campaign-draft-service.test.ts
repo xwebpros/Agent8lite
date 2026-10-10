@@ -1119,7 +1119,7 @@ describe("actual0016 native campaign draft service", () => {
     });
   });
 
-  it("the real lead-only dispatcher defers the unknown campaign family without acknowledgments or delivery", async () => {
+  it("the real lead-only dispatcher leaves the unsupported campaign family untouched without acknowledgments or delivery", async () => {
     const events = (
       await admin.query(
         "SELECT id FROM app.outbox WHERE tenant_id=$1 AND initiating_actor_id=$2 AND event_type='campaign.draft_metadata_changed'AND published_at IS NULL",
@@ -1128,14 +1128,14 @@ describe("actual0016 native campaign draft service", () => {
     ).rows.map((row) => row.id);
     expect(events.length).toBeGreaterThan(0);
     expect(events.length).toBeLessThanOrEqual(100);
-    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: events.length });
+    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: 0 });
     const rows = (
       await admin.query(
-        "SELECT published_at,attempt_count,lease_until>clock_timestamp()AS future FROM app.outbox WHERE id=ANY($1::uuid[])",
+        "SELECT published_at,attempt_count,lease_until FROM app.outbox WHERE id=ANY($1::uuid[])",
         [events],
       )
     ).rows;
-    for (const row of rows) expect(row).toEqual({ published_at: null, attempt_count: 1, future: true });
+    for (const row of rows) expect(row).toEqual({ published_at: null, attempt_count: 0, lease_until: null });
     expect(
       (
         await admin.query("SELECT event_id FROM app.outbox_consumer_receipt WHERE event_id=ANY($1::uuid[])", [

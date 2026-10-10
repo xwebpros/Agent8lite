@@ -13,6 +13,7 @@ const ajv = new Ajv2020({ strict: false, allErrors: true });
 addFormats(ajv);
 const validate = ajv.compile(envelopeSchema);
 const CONSUMER = "synthetic-reference-ledger-v1";
+const supportedEventTypes = Object.freeze(["lead.captured", "lead.assigned", "lead.stage_changed"]);
 
 export type OutboxRun = { dispatched: number; deferred: number };
 
@@ -30,8 +31,9 @@ export async function dispatchOutbox(
       const selected = await client.query(
         `SELECT id,payload,event_type,aggregate_id FROM app.outbox
       WHERE tenant_id=$1 AND initiating_actor_id=$2 AND published_at IS NULL
-      AND (lease_until IS NULL OR lease_until<now()) ORDER BY created_at,id LIMIT $3 FOR UPDATE SKIP LOCKED`,
-        [identity.organizationId, identity.userId, limit],
+      AND event_type=ANY($3::text[]) AND (lease_until IS NULL OR lease_until<now())
+      ORDER BY created_at,id LIMIT $4 FOR UPDATE SKIP LOCKED`,
+        [identity.organizationId, identity.userId, supportedEventTypes, limit],
       );
       let dispatched = 0;
       let deferred = 0;
