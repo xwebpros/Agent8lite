@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { instantiateTemplate, listTemplateDefinitions } from "../templates/catalog";
 import { inspectDraft } from "../templates/registry";
-import { browserDocumentVersion, copyBrowserJson, inspectBrowserDraft } from "./browser";
+import { BrowserContentError, browserDocumentVersion, copyBrowserJson, inspectBrowserDraft } from "./browser";
 
 const policy = { approvedLinkOrigins: new Set(["https://trusted.example"]) };
 const starter = () => instantiateTemplate("agent-introduction", "1.0.0")!;
@@ -98,4 +98,79 @@ describe("browser registered-content adapter", () => {
     (etag) => expect(() => browserDocumentVersion(etag)).toThrow(),
   );
   it("reads a strong safe document ETag", () => expect(browserDocumentVersion('"12"')).toBe(12));
+  it.each([0, 1, 2])("rejects an array hole at index %s without substituting null", (index) => {
+    const value = ["first", "second", "third"];
+    delete value[index];
+    expect(() => copyBrowserJson(value)).toThrow(BrowserContentError);
+    expect(Object.hasOwn(value, index)).toBe(false);
+    expect(value.length).toBe(3);
+  });
+  it.each(["extra", "01"])("rejects array property %s without silently discarding it", (key) => {
+    const value = ["keep"];
+    Object.defineProperty(value, key, { enumerable: true, value: "original data" });
+    expect(() => copyBrowserJson(value)).toThrow(BrowserContentError);
+    expect(Object.getOwnPropertyDescriptor(value, key)?.value).toBe("original data");
+  });
+  it("rejects custom array prototypes without reading their JSON hooks", () => {
+    let reads = 0;
+    const value = ["original"];
+    Object.setPrototypeOf(
+      value,
+      Object.create(Array.prototype, {
+        toJSON: {
+          get: () => {
+            reads++;
+            return () => ["replacement"];
+          },
+        },
+      }),
+    );
+    expect(() => copyBrowserJson(value)).toThrow(BrowserContentError);
+    expect(reads).toBe(0);
+    class ArraySubclass extends Array {}
+    expect(() => copyBrowserJson(new ArraySubclass())).toThrow(BrowserContentError);
+    expect(() => copyBrowserJson(Object.setPrototypeOf([], null))).toThrow(BrowserContentError);
+  });
+  it.each([
+    ["array", Array.prototype],
+    ["object", Object.prototype],
+  ] as const)(
+    "copies original JSON without invoking inherited %s serialization hooks",
+    (_kind, prototype) => {
+      const value = { nested: ["original", { toJSON: "harmless metadata" }] };
+      let reads = 0;
+      let calls = 0;
+      let copied: typeof value | undefined;
+      const previous = Object.getOwnPropertyDescriptor(prototype, "toJSON");
+      try {
+        Object.defineProperty(prototype, "toJSON", {
+          configurable: true,
+          get: () => {
+            reads++;
+            return () => {
+              calls++;
+              return "replacement";
+            };
+          },
+        });
+        copied = copyBrowserJson(value);
+      } finally {
+        if (previous) Object.defineProperty(prototype, "toJSON", previous);
+        else Reflect.deleteProperty(prototype, "toJSON");
+      }
+      expect(reads).toBe(0);
+      expect(calls).toBe(0);
+      expect(copied).toEqual(value);
+      expect(copied).not.toBe(value);
+    },
+  );
+  it("preserves dense arrays and prototype-named plain JSON fields in detached copies", () => {
+    const value = JSON.parse('{"__proto__":{"keep":true},"toJSON":"metadata","items":[null,["",false,0]]}');
+    const copied = copyBrowserJson(value);
+    expect(copied).toEqual(value);
+    expect(Object.hasOwn(copied, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(copied)).toBe(Object.prototype);
+    copied.items[1][0] = "changed";
+    expect(value.items[1][0]).toBe("");
+  });
 });

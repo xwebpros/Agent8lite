@@ -6,6 +6,7 @@ import {
   copyBrowserJson,
   inspectBrowserDraft,
   requireBrowserShape,
+  serializeBrowserJson,
   type BrowserDraft,
   type BrowserIssue,
   type BrowserLinkPolicy,
@@ -144,7 +145,7 @@ export class CmsDraftController {
     this.future.length = 0;
   }
   private captureEdit(): LocalEdit {
-    const json = JSON.stringify(this.state.draft);
+    const json = serializeBrowserJson(this.state.draft);
     return { json, bytes: new TextEncoder().encode(json).byteLength };
   }
   private boundHistory() {
@@ -270,7 +271,7 @@ export class CmsDraftController {
     } catch (error) {
       if (!(error instanceof BrowserContentError)) throw error;
       this.update({
-        message: "That change exceeds the supported content limits. Your previous draft is retained.",
+        message: "That change is not supported. Your previous draft is retained.",
       });
       return false;
     }

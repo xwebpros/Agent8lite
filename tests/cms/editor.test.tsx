@@ -560,6 +560,80 @@ describe("bounded local CMS edit recovery", () => {
     expect(controller.undo()).toBe(true);
     expect(controller.getSnapshot().dirty).toBe(false);
   });
+  it.each(["hole", "additional property"])(
+    "retains the previous draft and undo history after an array %s",
+    (kind) => {
+      const { controller, client } = setup();
+      edited(controller);
+      const previous = controller.getSnapshot();
+      expect(
+        controller.edit((draft) => {
+          const paragraphs = draft.blocks[1].props.paragraphs as string[];
+          if (kind === "hole") delete paragraphs[0];
+          else Object.defineProperty(paragraphs, "extra", { enumerable: true, value: "must not disappear" });
+        }),
+      ).toBe(false);
+      expect(controller.getSnapshot()).toMatchObject({
+        draft: previous.draft,
+        dirty: true,
+        canUndo: true,
+        canRedo: false,
+        etag: previous.etag,
+        selectedRevisionId: previous.selectedRevisionId,
+      });
+      expect(controller.getSnapshot().draft).toBe(previous.draft);
+      expect(controller.getSnapshot().message).toContain("Your previous draft is retained");
+      expect(controller.undo()).toBe(true);
+      expect(controller.getSnapshot().draft?.blocks[0].props.heading).toBe("Original heading");
+      expect(controller.redo()).toBe(true);
+      expect(controller.getSnapshot().draft).toEqual(previous.draft);
+      expect(client.saveDraft).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    ["array", Array.prototype],
+    ["object", Object.prototype],
+  ] as const)(
+    "preserves edits and undo/redo without invoking inherited %s JSON hooks",
+    (_kind, prototype) => {
+      const { controller, client } = setup();
+      controller.selectRevision(revision());
+      let reads = 0;
+      let calls = 0;
+      let changed = false;
+      let undone = false;
+      let redone = false;
+      let restored: ReturnType<typeof controller.getSnapshot>["draft"];
+      const previous = Object.getOwnPropertyDescriptor(prototype, "toJSON");
+      try {
+        Object.defineProperty(prototype, "toJSON", {
+          configurable: true,
+          get: () => {
+            reads++;
+            return () => {
+              calls++;
+              return "replacement";
+            };
+          },
+        });
+        changed = controller.edit((draft) => {
+          draft.blocks[0].props.heading = "Keep this edit";
+        });
+        undone = controller.undo();
+        redone = controller.redo();
+        restored = controller.getSnapshot().draft;
+      } finally {
+        if (previous) Object.defineProperty(prototype, "toJSON", previous);
+        else Reflect.deleteProperty(prototype, "toJSON");
+      }
+      expect(reads).toBe(0);
+      expect(calls).toBe(0);
+      expect([changed, undone, redone]).toEqual([true, true, true]);
+      expect(restored?.blocks[0].props.heading).toBe("Keep this edit");
+      expect(restored?.blocks[1].props.paragraphs).toEqual(["Original paragraph"]);
+      expect(client.saveDraft).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("approved document-bound recovery browser projection", () => {

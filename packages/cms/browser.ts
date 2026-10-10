@@ -4,6 +4,7 @@ import addFormats from "ajv-formats";
 import contract from "../contracts/openapi.json";
 import type { components } from "../contracts/generated/api";
 import propertySchemas from "../templates/block-schema-v1.json";
+import { boundedCmsJson } from "./json";
 
 export type BrowserDraft = components["schemas"]["RevisionWrite"];
 export type BrowserRevision = components["schemas"]["Revision"];
@@ -31,35 +32,17 @@ export class BrowserContentError extends Error {
   }
 }
 
-/** Detached bounded JSON; recovery never executes, truncates or removes unfamiliar fields. */
-export function copyBrowserJson<T>(value: T): T {
+/** Serialize bounded descriptor values without invoking input or inherited JSON hooks. */
+export function serializeBrowserJson(value: unknown): string {
   try {
-    const ancestors = new Set<object>();
-    let nodes = 0;
-    function check(item: unknown, depth: number) {
-      if (++nodes > 20_000 || depth > 32) throw new Error();
-      if (item === null || typeof item === "string" || typeof item === "boolean") return;
-      if (typeof item === "number" && Number.isFinite(item)) return;
-      if (!item || typeof item !== "object" || ancestors.has(item)) throw new Error();
-      if (!Array.isArray(item) && ![Object.prototype, null].includes(Object.getPrototypeOf(item)))
-        throw new Error();
-      ancestors.add(item);
-      for (const key of Reflect.ownKeys(item)) {
-        if (Array.isArray(item) && key === "length") continue;
-        if (typeof key !== "string") throw new Error();
-        const descriptor = Object.getOwnPropertyDescriptor(item, key)!;
-        if (!descriptor.enumerable || descriptor.get || descriptor.set) throw new Error();
-        check(descriptor.value, depth + 1);
-      }
-      ancestors.delete(item);
-    }
-    check(value, 0);
-    const serialized = JSON.stringify(value);
-    if (!serialized || new TextEncoder().encode(serialized).byteLength > 256 * 1024) throw new Error();
-    return JSON.parse(serialized) as T;
+    return boundedCmsJson(value, { maxDepth: 32, maxNodes: 20_000, maxBytes: 256 * 1024 });
   } catch {
     throw new BrowserContentError("document_invalid_or_too_large");
   }
+}
+/** Detached bounded JSON; recovery never executes, truncates or removes unfamiliar fields. */
+export function copyBrowserJson<T>(value: T): T {
+  return JSON.parse(serializeBrowserJson(value)) as T;
 }
 
 function object(value: unknown): value is Record<string, unknown> {
