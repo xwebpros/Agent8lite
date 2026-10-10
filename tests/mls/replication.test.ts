@@ -10,7 +10,7 @@ import {
 } from "../../packages/mls";
 import { MOCK_CLOCK } from "../../packages/providers/mls/mock";
 import type { ChangePage } from "../../packages/providers/mls/port";
-import { nativeRights, providerContext } from "./fixtures";
+import { nativeRights, providerContext, syntheticAttributionContacts } from "./fixtures";
 import { deferred, page, replicationHarness, ScriptedMock, upsert, watermark } from "./replication-fixtures";
 
 const blocked = (code: string) => ({ status: "blocked", code });
@@ -674,6 +674,52 @@ describe("commit authorization binding", () => {
 });
 
 describe("mock normalization and receipt identity", () => {
+  it.each([...syntheticAttributionContacts, null])(
+    "accepts the reviewed nullable canonical contact %j",
+    async (contact) => {
+      const h = await replicationHarness([]);
+      const listing = { ...h.records[0], attribution: { ...h.records[0].attribution, contact } };
+      (h.adapter as ScriptedMock).script.push(page([upsert(listing)]));
+      let plan!: MockReplicationPagePlan;
+      h.ports.commitPage = async (value) => {
+        plan = value;
+        return h.store.commitPage(value);
+      };
+      await finishCycle(h);
+      expect(h.store.listings.get(listing.sourceListingKey)?.canonical.attribution.contact).toEqual(contact);
+      expect(plan.changes[0].listing?.attribution.contact).toEqual(contact);
+      if (contact) expect(Object.isFrozen(plan.changes[0].listing?.attribution.contact)).toBe(true);
+    },
+  );
+
+  it("accepts old canonical attribution without contact", async () => {
+    const h = await replicationHarness([]);
+    const listing = structuredClone(h.records[0]);
+    delete listing.attribution.contact;
+    (h.adapter as ScriptedMock).script.push(page([upsert(listing)]));
+    await finishCycle(h);
+    expect(h.store.listings.get(listing.sourceListingKey)?.canonical.attribution).not.toHaveProperty(
+      "contact",
+    );
+  });
+
+  it.each([
+    { kind: "email", value: "not-an-email" },
+    { kind: "phone", value: "123" },
+    { kind: "phone", value: "123 ext4567" },
+    { kind: "email", value: "agent@example.invalid", extra: "unreviewed" },
+  ])("rejects an entire canonical page with malformed contact %j", async (contact) => {
+    const h = await replicationHarness([]);
+    const listing = {
+      ...h.records[0],
+      attribution: { ...h.records[0].attribution, contact },
+    } as (typeof h.records)[0];
+    (h.adapter as ScriptedMock).script.push(page([upsert(listing)]));
+    expect(await stepMockReplication(h.store.checkpoint, h.ports)).toEqual(blocked("invalid_page"));
+    expect(h.store.listings.size).toBe(0);
+    expect(h.store.checkpoint.revision).toBe(0);
+  });
+
   it("strips only the existing mock's known fixture fields from committed canonical records", async () => {
     const h = await replicationHarness([]);
     (h.adapter as ScriptedMock).script.push(page([upsert(h.records[0])]));

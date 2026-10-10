@@ -19,7 +19,7 @@ import {
   runtime,
   signingKey,
 } from "./database";
-import { nativeRights } from "./fixtures";
+import { displayPolicy, nativeRights, syntheticAttributionContacts } from "./fixtures";
 
 beforeAll(async () => {
   await prepareDatabase();
@@ -47,6 +47,88 @@ async function waitForLock(pid: number) {
 }
 
 describe("W07 approved candidate — real runtime role and current locked projection", () => {
+  it("reads supplied fictional email/phone and preserves absent/null historical attribution", async () => {
+    const response = await list(filter({ feedIds: [feedA] }));
+    for (const [index, contact] of syntheticAttributionContacts.entries()) {
+      const id = nativeId(`SYNTHETIC-VEGAS-${String(index + 1).padStart(3, "0")}`);
+      expect(response.items.find((item) => item.id === id)?.attribution.contact).toEqual(contact);
+      expect((await detail(id)).attribution.contact).toEqual(contact);
+    }
+    const id = nativeId("SYNTHETIC-VEGAS-001");
+    await admin.query(
+      "UPDATE app.listing SET brokerage_attribution=brokerage_attribution-'contact' WHERE id=$1",
+      [id],
+    );
+    const absent = await detail(id);
+    expect(absent.attribution.brokerageName).toBeTruthy();
+    expect(absent.attribution.agentName).toBeTruthy();
+    expect(absent.attribution).not.toHaveProperty("contact");
+    await admin.query(
+      "UPDATE app.listing SET brokerage_attribution=jsonb_set(brokerage_attribution,'{contact}','null'::jsonb) WHERE id=$1",
+      [id],
+    );
+    expect((await detail(id)).attribution.contact).toBeNull();
+  });
+
+  it("omits contact independently when either current field policy denies or does not know it", async () => {
+    for (const [column, policy] of [
+      [
+        "native_rights",
+        {
+          ...nativeRights,
+          allowedFields: nativeRights.allowedFields.filter((field) => field !== "attribution.contact"),
+        },
+      ],
+      [
+        "display_policy",
+        {
+          ...displayPolicy,
+          displayFields: displayPolicy.displayFields.filter((field) => field !== "attribution.contact"),
+        },
+      ],
+    ] as const) {
+      await resetDatabase();
+      await admin.query(`UPDATE app.mls_feed SET ${column}=$2 WHERE id=$1`, [feedA, policy]);
+      const response = await list(filter({ feedIds: [feedA] }));
+      expect(response.items.length).toBeGreaterThan(0);
+      expect(response.items.every((item) => !Object.hasOwn(item.attribution, "contact"))).toBe(true);
+      expect((await detail()).attribution).not.toHaveProperty("contact");
+      for (const contact of syntheticAttributionContacts)
+        expect(JSON.stringify(response)).not.toContain(contact.value);
+    }
+  });
+
+  it("suppresses malformed/extra contact JSON without unrelated agent or office fallback", async () => {
+    const id = nativeId("SYNTHETIC-VEGAS-001");
+    for (const contact of [
+      { kind: "email", value: "not-an-email" },
+      { kind: "phone", value: "123" },
+      { kind: "phone", value: "123 ext4567" },
+      { kind: "owner", value: "owner@example.invalid" },
+      { kind: "email", value: "agent@example.invalid", private: "unreviewed" },
+    ]) {
+      await admin.query(
+        "UPDATE app.listing SET brokerage_attribution=jsonb_set(brokerage_attribution,'{contact}',$2::jsonb) WHERE id=$1",
+        [id, JSON.stringify(contact)],
+      );
+      expect((await list(filter({ feedIds: [feedA] }))).items.some((item) => item.id === id)).toBe(false);
+      await expect(detail(id)).rejects.toMatchObject({ status: 404, code: "listing_unavailable" });
+    }
+  });
+
+  it("invalidates a signed cursor after a contact-only source change", async () => {
+    const first = await list({ ...filter({ feedIds: [feedA] }), limit: "1" });
+    expect(first.nextCursor).not.toBeNull();
+    await admin.query(
+      "UPDATE app.listing SET brokerage_attribution=jsonb_set(brokerage_attribution,'{contact}',$2::jsonb) WHERE id=$1",
+      [nativeId("SYNTHETIC-VEGAS-001"), JSON.stringify(syntheticAttributionContacts[1])],
+    );
+    await expect(
+      list({ ...filter({ feedIds: [feedA] }), limit: "1", cursor: first.nextCursor }),
+    ).rejects.toMatchObject({ code: "cursor_invalid" });
+    expect((await detail()).attribution.contact).toEqual(syntheticAttributionContacts[1]);
+  });
+
   it("reads frozen native DTOs through PostgreSQL/PostGIS and keeps feed/tenant identities separate", async () => {
     const response = await list(filter({ feedIds: [feedA], bbox: [-115.16, 36.11, -115.1, 36.13] }));
     assertContract("PageListing", response);

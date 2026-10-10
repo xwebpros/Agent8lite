@@ -1,5 +1,5 @@
 import type { CanonicalListing, FeedContext } from "../providers/mls/port";
-import { isUuid } from "./contracts";
+import { isAttributionContact, isUuid } from "./contracts";
 
 export const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -92,10 +92,12 @@ export function isSyntheticCanonical(value: unknown): value is CanonicalListing 
     typeof value.displayAllowed === "boolean" &&
     typeof value.addressAllowed === "boolean" &&
     record(attribution) &&
-    closed(attribution, ["brokerage", "agent", "disclaimer"]) &&
+    (closed(attribution, ["brokerage", "agent", "disclaimer"]) ||
+      closed(attribution, ["brokerage", "agent", "disclaimer", "contact"])) &&
     nullableText(attribution.brokerage, 200) &&
     nullableText(attribution.agent, 200) &&
     text(attribution.disclaimer, 2000) &&
+    (!Object.hasOwn(attribution, "contact") || isAttributionContact(attribution.contact)) &&
     value.synthetic === true
   );
 }

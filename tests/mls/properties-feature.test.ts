@@ -1,13 +1,68 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PropertyCard, PropertyDetail } from "../../apps/web/features/properties/property-view";
+import {
+  PropertyCard,
+  PropertyDetail,
+  propertyPrice,
+} from "../../apps/web/features/properties/property-view";
 import { emptyPropertyFilters, propertySearchParams } from "../../apps/web/features/properties/search-input";
 import { projectNativeMockListing } from "../../packages/mls";
 import { normalizeListingCriteria } from "../../packages/mls/criteria";
-import { mockSnapshot, options } from "./fixtures";
+import { mockSnapshot, options, syntheticAttributionContacts } from "./fixtures";
 
 describe("W07 responsive feature request/presentation seams (no browser acceptance)", () => {
+  it.each(["list", "detail"])(
+    "places supplied firm/contact beside primary facts in %s without contact links",
+    async (view) => {
+      const snapshot = await mockSnapshot();
+      for (const contact of syntheticAttributionContacts) {
+        const item = projectNativeMockListing(snapshot.listings[0], snapshot.feeds[0], options.now)!;
+        item.attribution.contact = contact;
+        const markup = renderToStaticMarkup(
+          view === "list"
+            ? createElement(PropertyCard, { item, timezone: "America/Los_Angeles", onOpen: () => {} })
+            : createElement(PropertyDetail, { item, timezone: "America/Los_Angeles" }),
+        );
+        const attribution = markup.indexOf('aria-label="Listing attribution"');
+        expect(attribution).toBeGreaterThan(markup.indexOf(propertyPrice(item)));
+        expect(attribution).toBeLessThan(markup.indexOf("<dl"));
+        expect(markup).toContain(`Listing firm: ${item.attribution.brokerageName}`);
+        expect(markup).toContain(contact.value);
+        expect(markup).not.toMatch(/<a\b|mailto:|tel:|href=/);
+        expect(markup.split(contact.value)).toHaveLength(2);
+      }
+    },
+  );
+
+  it.each(["list", "detail"])("escapes participant firm and contact text in %s", async (view) => {
+    const snapshot = await mockSnapshot();
+    const item = projectNativeMockListing(snapshot.listings[0], snapshot.feeds[0], options.now)!;
+    item.attribution.brokerageName = '<img src="https://example.invalid/logo" onerror="private()">';
+    item.attribution.contact = { kind: "email", value: "<script>private()</script>@example.invalid" };
+    const markup = renderToStaticMarkup(
+      view === "list"
+        ? createElement(PropertyCard, { item, timezone: "America/Los_Angeles", onOpen: () => {} })
+        : createElement(PropertyDetail, { item, timezone: "America/Los_Angeles" }),
+    );
+    expect(markup).toContain("&lt;img");
+    expect(markup).toContain("&lt;script&gt;");
+    expect(markup).not.toMatch(/<script|<img|<a\b/);
+  });
+
+  it.each(["list", "detail"])("does not infer a missing contact from agent text in %s", async (view) => {
+    const snapshot = await mockSnapshot();
+    const item = projectNativeMockListing(snapshot.listings[0], snapshot.feeds[0], options.now)!;
+    delete item.attribution.contact;
+    item.attribution.agentName = "Unrelated sample agent";
+    const markup = renderToStaticMarkup(
+      view === "list"
+        ? createElement(PropertyCard, { item, timezone: "America/Los_Angeles", onOpen: () => {} })
+        : createElement(PropertyDetail, { item, timezone: "America/Los_Angeles" }),
+    );
+    expect(markup).toContain("Unrelated sample agent");
+    expect(markup).not.toMatch(/Email:|Phone:|@|tel:|mailto:/);
+  });
   it("sends only frozen read filters/sorts and validates the produced criteria through the contract", () => {
     const query = propertySearchParams(
       {

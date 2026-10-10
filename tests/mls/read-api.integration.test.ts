@@ -26,6 +26,7 @@ import {
   runtime,
   signingKey,
 } from "./database";
+import { nativeRights, syntheticAttributionContacts } from "./fixtures";
 
 let server: Server;
 let origin: string;
@@ -156,6 +157,36 @@ describe("W07 unregistered dev handler — real sessions, HTTP and PostgreSQL ro
       expect(body.attribution.disclaimer).toMatch(/^SYNTHETIC DEMO DATA/);
       expect(body.media).toEqual([]);
     }
+  });
+
+  it("serves supplied email/phone and omits contact after current field-right revocation", async () => {
+    const response = await request(base + query({ feedIds: [feedA] }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    const page: PageListing = await response.json();
+    assertContract("PageListing", page);
+    for (const [index, contact] of syntheticAttributionContacts.entries()) {
+      const id = nativeId(`SYNTHETIC-VEGAS-${String(index + 1).padStart(3, "0")}`);
+      expect(page.items.find((item) => item.id === id)?.attribution.contact).toEqual(contact);
+      const details = await request(`${base}/${id}`);
+      expect(details.status).toBe(200);
+      expect((await details.json()).attribution.contact).toEqual(contact);
+    }
+    await admin.query("UPDATE app.mls_feed SET native_rights=$2 WHERE id=$1", [
+      feedA,
+      {
+        ...nativeRights,
+        allowedFields: nativeRights.allowedFields.filter((field) => field !== "attribution.contact"),
+      },
+    ]);
+    const revoked = await request(base + query({ feedIds: [feedA] }));
+    expect(revoked.status).toBe(200);
+    expect(revoked.headers.get("cache-control")).toContain("no-store");
+    const body: PageListing = await revoked.json();
+    expect(body.items.length).toBeGreaterThan(0);
+    expect(body.items.every((item) => !Object.hasOwn(item.attribution, "contact"))).toBe(true);
+    for (const contact of syntheticAttributionContacts)
+      expect(JSON.stringify(body)).not.toContain(contact.value);
   });
 
   it("denies missing/expired/revoked sessions and inactive membership", async () => {

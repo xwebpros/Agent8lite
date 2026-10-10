@@ -25,7 +25,6 @@ function date(value: string | null | undefined, timezone: string) {
 export function PropertyAttribution({ item, timezone }: { item: PropertyListing; timezone: string }) {
   return (
     <footer className={styles.attribution}>
-      {item.attribution.brokerageName && <p>Brokerage: {item.attribution.brokerageName}</p>}
       {item.attribution.agentName && <p>Agent: {item.attribution.agentName}</p>}
       <p>{item.attribution.disclaimer}</p>
       <p>
@@ -33,6 +32,20 @@ export function PropertyAttribution({ item, timezone }: { item: PropertyListing;
         <time dateTime={item.expiresAt}>{date(item.expiresAt, timezone)}</time>
       </p>
     </footer>
+  );
+}
+export function PropertyParticipantAttribution({ item }: { item: PropertyListing }) {
+  const { brokerageName, contact } = item.attribution;
+  if (!brokerageName && !contact) return null;
+  return (
+    <section className={styles.participantAttribution} aria-label="Listing attribution">
+      {brokerageName && <p>Listing firm: {brokerageName}</p>}
+      {contact && (
+        <p>
+          {contact.kind === "email" ? "Email" : "Phone"}: {contact.value}
+        </p>
+      )}
+    </section>
   );
 }
 export function PropertyFacts({ item }: { item: PropertyListing }) {
@@ -81,6 +94,7 @@ export function PropertyCard({
       <p className={styles.price}>
         {propertyPrice(item)} <span className={styles.status}>{item.status}</span>
       </p>
+      <PropertyParticipantAttribution item={item} />
       <PropertyFacts item={item} />
       <button
         ref={(button) => (button ? registerControl?.(item.id, button) : undefined)}
@@ -105,6 +119,7 @@ export function PropertyDetail({ item, timezone }: { item: PropertyListing; time
       <p className={styles.price}>
         {propertyPrice(item)} <span className={styles.status}>{item.status}</span>
       </p>
+      <PropertyParticipantAttribution item={item} />
       <PropertyFacts item={item} />
       <p className={styles.remarks}>{item.remarks ?? "Remarks withheld by current policy."}</p>
       {item.latitude != null && item.longitude != null && (

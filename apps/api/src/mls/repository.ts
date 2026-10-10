@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import type { NativeMockFeed, NativeMockListing, NativeMockSnapshot } from "../../../../packages/mls";
 import { MAX_NATIVE_MOCK_RECORDS } from "../../../../packages/mls/search";
 import { MlsReadError } from "../../../../packages/mls";
+import { isAttributionContact } from "../../../../packages/mls/contracts";
 import type { CanonicalListing } from "../../../../packages/providers/mls/port";
 
 type Row = Record<string, unknown>;
@@ -23,15 +24,16 @@ function closedAddress(value: unknown): value is { displayAddress: string | null
     (value.displayAddress === null || typeof value.displayAddress === "string")
   );
 }
-function closedAttribution(
-  value: unknown,
-): value is { brokerage: string | null; agent: string | null; disclaimer: string } {
+function closedAttribution(value: unknown): value is CanonicalListing["attribution"] {
   return (
     object(value) &&
-    Object.keys(value).sort().join(",") === "agent,brokerage,disclaimer" &&
+    ["agent,brokerage,disclaimer", "agent,brokerage,contact,disclaimer"].includes(
+      Object.keys(value).sort().join(","),
+    ) &&
     (value.brokerage === null || typeof value.brokerage === "string") &&
     (value.agent === null || typeof value.agent === "string") &&
-    typeof value.disclaimer === "string"
+    typeof value.disclaimer === "string" &&
+    (!Object.hasOwn(value, "contact") || isAttributionContact(value.contact))
   );
 }
 
