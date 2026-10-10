@@ -8,4 +8,6 @@ COMMENT ON COLUMN app.mls_feed.native_rights IS
 COMMENT ON COLUMN app.listing.ingested_at IS
   'Actual adapter ingestion time; null denies native display and cannot use row update time as refresh.';
 GRANT SELECT ON app.mls_feed, app.listing TO estate_runtime;
+-- Minimal metadata privilege allows current-rights/withdrawal SHARE locks, never business writes.
+GRANT UPDATE (row_version) ON app.mls_feed, app.listing, app.integration_connection TO estate_runtime;
 COMMIT;
