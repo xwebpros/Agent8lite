@@ -107,4 +107,52 @@ describe("administration-owned CMS profile reference port", () => {
       client.release();
     }
   });
+
+  it("denies capability expiry while the profile lock blocks, using the current database clock", async () => {
+    await admin.query(
+      "UPDATE app.entitlement SET effective_until=clock_timestamp()+interval '2 seconds' WHERE id=$1",
+      [capability],
+    );
+    const blocker = await admin.connect();
+    let pending: Promise<unknown> | undefined;
+    let readerPid: number | undefined;
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("UPDATE app.business_profile SET row_version=row_version+1 WHERE id=$1", [own]);
+      pending = withTenantTransaction(runtime, identity, async (client, context) => {
+        readerPid = (await client.query("SELECT pg_backend_pid() pid")).rows[0].pid;
+        return createCmsProfileReferencePort(client, context).requireActiveReference(own);
+      });
+      const outcome = pending.then(
+        () => ({ succeeded: true }),
+        (error) => ({ succeeded: false, error }),
+      );
+      const deadline = Date.now() + 1500;
+      let blocked = false;
+      while (Date.now() < deadline) {
+        if (readerPid) {
+          blocked = (
+            await blocker.query(
+              "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=$1 AND wait_event_type='Lock') blocked",
+              [readerPid],
+            )
+          ).rows[0].blocked;
+          if (blocked) break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(blocked, "The real runtime reader must wait on the held profile row").toBe(true);
+      await blocker.query("SELECT pg_sleep(2.1)");
+      await blocker.query("ROLLBACK");
+      expect(await outcome).toMatchObject({
+        succeeded: false,
+        error: { status: 403, code: "entitlement_disabled" },
+      });
+    } finally {
+      await blocker.query("ROLLBACK");
+      blocker.release();
+      await pending?.catch(() => {});
+      await admin.query("UPDATE app.entitlement SET effective_until=NULL WHERE id=$1", [capability]);
+    }
+  });
 });

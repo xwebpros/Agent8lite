@@ -27,6 +27,8 @@ export function createCmsProfileReferencePort(
       );
       if (!result.rowCount)
         throw new AccessError(404, "resource_unavailable", "Resource unavailable or out of scope.");
+      // Time can expire while the source lock blocks even though capability state is locked.
+      await requireEntitlement(client, permission.code);
       return { id: result.rows[0].id, organizationId: result.rows[0].tenant_id };
     },
   };

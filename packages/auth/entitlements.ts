@@ -23,7 +23,7 @@ export async function requireEntitlement(
                 : null;
   if (!feature) return;
   const result = await client.query(
-    `SELECT id FROM app.entitlement WHERE tenant_id=app.current_tenant() AND feature=$1 AND state='enabled' AND (effective_until IS NULL OR effective_until>now()) ${options.lock === false ? "" : "FOR SHARE"}`,
+    `SELECT id FROM app.entitlement WHERE tenant_id=app.current_tenant() AND feature=$1 AND state='enabled' AND (effective_until IS NULL OR effective_until>clock_timestamp()) ${options.lock === false ? "" : "FOR SHARE"}`,
     [feature],
   );
   if (!result.rowCount)

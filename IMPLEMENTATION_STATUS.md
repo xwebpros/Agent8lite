@@ -17,6 +17,8 @@ The old “worktree init failed” notices are earlier attempts from before the 
 
 Shared administration reference and synthetic identity seams are implemented under ADR-016. `CmsProfileReferencePort` exposes only ID/tenant under the caller's transaction, current organization CMS permission and websites capability. Four isolated real-role tests passed (2026-10-10 09:39 local), including cross-tenant denial, capability/scope denial, row-lock rollback and detached context/pool reuse. Sixteen mock OIDC protocol tests passed with separate closed member/staff subject families; staff API/pool consumers are not yet enabled. These six additional cases have not yet been included in a new full-suite aggregate; the last combined baseline remains 415/415.
 
+A further current-clock fix now replaces transaction-start `now()` in capability expiry checks and rechecks after the profile source lock. Five profile reference tests plus billing/consent regressions passed together in a fresh disposable database (31/31, 09:42 local); the additional race proves a reader blocked on a real profile lock denies after websites capability expiry. CMS/MLS owners are adding the equivalent recheck after their later source/command locks. No full-suite aggregate rerun has yet included this fix.
+
 Working local application: Next.js web/PWA on `http://localhost:3000`, Nest API on `http://127.0.0.1:3001`, and PostgreSQL/PostGIS on loopback port 55432. M1 foundations and substantial M2 vertical slices are implemented and exercised against real database roles. No milestone is marked complete while its remaining exit gates are unverified. Live Trestle, real messaging, payments and production rollout are disabled.
 
 ## Specifications and decisions
