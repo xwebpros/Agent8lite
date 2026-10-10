@@ -1,5 +1,5 @@
 -- PROPOSAL ONLY, 2026-10-10. Not a migration; no sequence is allocated.
--- Companion: publication-storage-review.md. Correction responds to root review287e9cd.
+-- Companion: publication-storage-review.md. Follow-up to root review9a95e93.
 -- Root must review ports, owners, grants, lock/fence probes and promotion first.
 -- The guard and final ROLLBACK are intentional. Never run this file against a DB.
 BEGIN;
@@ -78,6 +78,7 @@ CREATE TABLE app.cms_synthetic_namespace_permit (
   minter_role name NOT NULL DEFAULT current_user,
   hostname text NOT NULL,
   action text NOT NULL CHECK (action IN ('bind','detach','domain_write')),
+  domain_operation text CHECK (domain_operation IN ('INSERT','UPDATE','DELETE')),
   expected_generation bigint NOT NULL CHECK (expected_generation BETWEEN 0 AND 9007199254740990),
   next_generation bigint NOT NULL CHECK (next_generation=expected_generation+1),
   old_binding_id uuid,
@@ -96,6 +97,17 @@ CREATE TABLE app.cms_synthetic_namespace_permit (
   consumed boolean NOT NULL DEFAULT false,
   PRIMARY KEY (backend_pid,transaction_id,nonce),
   CHECK (valid_until>created_at AND valid_until<=created_at+interval '5 seconds'),
+  CHECK ((action IN ('bind','detach') AND minter_role='estate_cms_namespace_owner')
+    OR (action='domain_write' AND minter_role='estate_cms_domain_source_owner')),
+  CHECK ((action='domain_write' AND domain_operation IS NOT NULL AND domain_id IS NOT NULL
+      AND target_tenant_id IS NOT NULL AND target_site_id IS NOT NULL
+      AND old_binding_id IS NULL AND old_binding_generation IS NULL
+      AND old_tenant_id IS NULL AND old_site_id IS NULL AND old_enabled IS NULL
+      AND next_binding_id IS NULL AND binding_expires_at IS NULL)
+    OR (action<>'domain_write' AND domain_operation IS NULL)),
+  CHECK (action<>'domain_write'
+    OR (domain_operation='INSERT' AND domain_row_version IS NULL)
+    OR (domain_operation IN ('UPDATE','DELETE') AND domain_row_version IS NOT NULL AND domain_row_version>0)),
   CHECK (action<>'bind' OR (next_binding_id IS NOT NULL AND target_tenant_id IS NOT NULL
     AND target_site_id IS NOT NULL AND domain_id IS NOT NULL AND domain_row_version IS NOT NULL
     AND domain_row_version BETWEEN 1 AND 9007199254740991 AND binding_expires_at IS NOT NULL)),
@@ -304,15 +316,65 @@ CREATE TABLE app.cms_publication_context (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   valid_until timestamptz NOT NULL,
   PRIMARY KEY (backend_pid,transaction_id,nonce),
+  CHECK (isfinite(created_at) AND isfinite(valid_until)),
   CHECK (valid_until>created_at AND valid_until<=created_at+interval '5 seconds'),
+  CHECK (fence IS NULL OR fence>0),
+  CHECK ((binding_id IS NULL)=(binding_generation IS NULL)),
+  CHECK (binding_generation IS NULL OR binding_generation BETWEEN 1 AND 9007199254740991),
   CHECK (purpose<>'public' OR (actor_id IS NULL AND job_id IS NULL AND fence IS NULL
     AND authority IS NOT NULL AND route IS NOT NULL AND binding_id IS NOT NULL AND binding_generation IS NOT NULL
     AND release_id IS NOT NULL AND prepared_id IS NOT NULL)),
   CHECK (purpose<>'public_lookup' OR (actor_id IS NULL AND job_id IS NULL AND fence IS NULL
-    AND authority IS NOT NULL AND route IS NOT NULL AND binding_id IS NOT NULL AND binding_generation IS NOT NULL)),
+    AND authority IS NOT NULL AND route IS NOT NULL AND binding_id IS NOT NULL AND binding_generation IS NOT NULL
+    AND release_id IS NULL AND prepared_id IS NULL)),
   CHECK (purpose<>'command' OR actor_id IS NOT NULL),
   CHECK (purpose<>'execution' OR (actor_id IS NOT NULL AND job_id IS NOT NULL AND fence IS NOT NULL AND fence>0))
 );
+-- Lifecycle/provenance only: source rights and exact owner roles remain CLOSED
+-- shared prerequisites. No grant, minting entry point or eligibility decision.
+-- Only a lookup capsule can advance once to public; preserve every scope field
+-- and the original mint clock, narrowing expiry to current source limits.
+-- Command/execution capsules are immutable; a new authorized attempt mints a
+-- new nonce rather than rewriting actor/job/fence or renewing an old capsule.
+CREATE FUNCTION app.guard_cms_publication_context() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $context_lifecycle$
+DECLARE checked_clock timestamptz:=clock_timestamp(); expected app.cms_publication_context;
+BEGIN
+  IF NEW.backend_pid IS DISTINCT FROM pg_backend_pid()
+    OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() OR NEW.nonce IS NULL
+    OR NEW.created_at IS NULL OR NEW.valid_until IS NULL
+    OR NOT isfinite(NEW.created_at) OR NOT isfinite(NEW.valid_until)
+    OR NEW.created_at>checked_clock OR NEW.valid_until<=checked_clock THEN
+    RAISE EXCEPTION 'CMS publication context unavailable' USING ERRCODE='42501';
+  END IF;
+  IF NEW.valid_until<=NEW.created_at OR NEW.valid_until>NEW.created_at+interval '5 seconds' THEN
+    RAISE EXCEPTION 'CMS publication context unavailable' USING ERRCODE='42501';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    IF NEW.purpose IS NOT DISTINCT FROM 'public' THEN
+      RAISE EXCEPTION 'CMS public lookup context required' USING ERRCODE='42501';
+    END IF;
+  ELSE
+    IF OLD.purpose IS DISTINCT FROM 'public_lookup' OR NEW.purpose IS DISTINCT FROM 'public'
+      OR NEW.release_id IS NULL OR NEW.prepared_id IS NULL
+      OR NEW.valid_until>OLD.valid_until THEN
+      RAISE EXCEPTION 'CMS publication context transition unavailable' USING ERRCODE='42501';
+    END IF;
+    expected:=OLD;
+    expected.purpose:='public';
+    expected.release_id:=NEW.release_id;
+    expected.prepared_id:=NEW.prepared_id;
+    expected.valid_until:=NEW.valid_until;
+    IF NEW IS DISTINCT FROM expected THEN
+      RAISE EXCEPTION 'CMS publication context scope is immutable' USING ERRCODE='42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$context_lifecycle$;
+REVOKE ALL ON FUNCTION app.guard_cms_publication_context() FROM PUBLIC;
+CREATE TRIGGER cms_publication_context_guard BEFORE INSERT OR UPDATE ON app.cms_publication_context
+  FOR EACH ROW EXECUTE FUNCTION app.guard_cms_publication_context();
 -- Resolver deletes its capsule before return; ROLLBACK/connection reset removes
 -- authority. Owner-only bounded TTL cleanup handles exceptional committed rows.
 
@@ -324,6 +386,45 @@ BEGIN
 END;
 $immutable$;
 REVOKE ALL ON FUNCTION app.reject_cms_publication_history_change() FROM PUBLIC;
+-- Permit provenance is immutable after minting. Its only UPDATE is one current
+-- false -> true consumption; callers cannot extend expiry or rewrite a proof.
+-- No source/prefix lookup or lock is acquired from this private-row trigger.
+CREATE FUNCTION app.guard_cms_synthetic_namespace_permit() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,app,pg_temp AS $permit_provenance$
+DECLARE checked_clock timestamptz:=clock_timestamp(); expected app.cms_synthetic_namespace_permit;
+BEGIN
+  IF current_user NOT IN ('estate_cms_namespace_owner','estate_cms_domain_source_owner')
+    OR NEW.minter_role IS DISTINCT FROM current_user
+    OR NEW.backend_pid IS DISTINCT FROM pg_backend_pid()
+    OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() OR NEW.nonce IS NULL
+    OR ((current_user='estate_cms_namespace_owner' AND NEW.action IN ('bind','detach'))
+      OR (current_user='estate_cms_domain_source_owner' AND NEW.action='domain_write')) IS DISTINCT FROM true
+    OR NEW.created_at IS NULL OR NEW.created_at>checked_clock
+    OR NEW.valid_until IS NULL OR NEW.valid_until<=checked_clock THEN
+    RAISE EXCEPTION 'Synthetic namespace permit provenance unavailable' USING ERRCODE='42501';
+  END IF;
+  -- Validate timestamps before interval arithmetic; no future/expired proof.
+  IF NEW.valid_until<=NEW.created_at OR NEW.valid_until>NEW.created_at+interval '5 seconds' THEN
+    RAISE EXCEPTION 'Synthetic namespace permit provenance unavailable' USING ERRCODE='42501';
+  END IF;
+  IF TG_OP='INSERT' THEN
+    IF NEW.consumed IS DISTINCT FROM false THEN
+      RAISE EXCEPTION 'Synthetic namespace permit provenance unavailable' USING ERRCODE='42501';
+    END IF;
+  ELSE
+    expected:=OLD;
+    expected.consumed:=true;
+    IF OLD.consumed IS DISTINCT FROM false OR NEW IS DISTINCT FROM expected THEN
+      RAISE EXCEPTION 'Synthetic namespace permit provenance is immutable' USING ERRCODE='42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$permit_provenance$;
+REVOKE ALL ON FUNCTION app.guard_cms_synthetic_namespace_permit() FROM PUBLIC;
+CREATE TRIGGER cms_synthetic_namespace_permit_guard BEFORE INSERT OR UPDATE ON app.cms_synthetic_namespace_permit
+  FOR EACH ROW EXECUTE FUNCTION app.guard_cms_synthetic_namespace_permit();
+
 -- Hosting-private receipt reader. No prefix locks here: a BEFORE row trigger
 -- already owns its statement's implicit row lock. A GUC alone is not a permit.
 CREATE FUNCTION app.cms_current_namespace_permit(p_hostname text)
@@ -342,7 +443,9 @@ BEGIN
   SELECT p.* INTO receipt FROM app.cms_synthetic_namespace_permit p
     WHERE p.backend_pid=pg_backend_pid() AND p.transaction_id=pg_current_xact_id()
       AND p.nonce=selector AND p.hostname=p_hostname AND p.minter_role=current_user
-      AND NOT p.consumed AND p.valid_until>clock_timestamp();
+      AND ((current_user='estate_cms_namespace_owner' AND p.action IN ('bind','detach'))
+        OR (current_user='estate_cms_domain_source_owner' AND p.action='domain_write'))
+      AND NOT p.consumed AND p.created_at<=clock_timestamp() AND p.valid_until>clock_timestamp();
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Synthetic namespace command required' USING ERRCODE='42501';
   END IF;
@@ -404,7 +507,11 @@ BEGIN
   END IF;
   IF receipt.action='detach' AND TG_OP='DELETE' THEN
     UPDATE app.cms_synthetic_namespace_permit SET consumed=true
-      WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+      WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce
+        AND minter_role=current_user AND NOT consumed AND valid_until>clock_timestamp();
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Synthetic namespace permit unavailable' USING ERRCODE='42501';
+    END IF;
     RETURN OLD;
   END IF;
   IF receipt.action<>'bind' OR TG_OP NOT IN ('INSERT','UPDATE') THEN
@@ -428,7 +535,11 @@ BEGIN
     RAISE EXCEPTION 'Current synthetic domain unavailable' USING ERRCODE='40001';
   END IF;
   UPDATE app.cms_synthetic_namespace_permit SET consumed=true
-    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce
+      AND minter_role=current_user AND NOT consumed AND valid_until>clock_timestamp();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Synthetic namespace permit unavailable' USING ERRCODE='42501';
+  END IF;
   RETURN NEW;
 END;
 $head$;
@@ -466,7 +577,8 @@ BEGIN
   receipt:=app.cms_current_namespace_permit(namespace_name);
   SELECT s.last_generation INTO actual_generation FROM app.cms_synthetic_host_sequence s
     WHERE s.hostname=namespace_name;
-  IF receipt.action<>'domain_write' OR actual_generation IS DISTINCT FROM receipt.next_generation
+  IF receipt.action<>'domain_write' OR receipt.domain_operation IS DISTINCT FROM TG_OP
+    OR actual_generation IS DISTINCT FROM receipt.next_generation
     OR EXISTS (SELECT 1 FROM app.cms_synthetic_host_current h WHERE h.hostname=namespace_name) THEN
     RAISE EXCEPTION 'Synthetic domain must be detached first' USING ERRCODE='42501';
   END IF;
@@ -494,7 +606,11 @@ BEGIN
     END IF;
   END IF;
   UPDATE app.cms_synthetic_namespace_permit SET consumed=true
-    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce
+      AND minter_role=current_user AND NOT consumed AND valid_until>clock_timestamp();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Synthetic namespace permit unavailable' USING ERRCODE='42501';
+  END IF;
   IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END;
 $domain_guard$;
@@ -613,7 +729,11 @@ BEGIN
     RAISE EXCEPTION 'Current synthetic source unavailable' USING ERRCODE='42501';
   END IF;
   DELETE FROM app.cms_synthetic_namespace_permit
-    WHERE backend_pid=pg_backend_pid() AND transaction_id=pg_current_xact_id() AND nonce=selector;
+    WHERE backend_pid=pg_backend_pid() AND transaction_id=pg_current_xact_id() AND nonce=selector
+      AND minter_role=current_user AND consumed;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Synthetic namespace permit cleanup unavailable' USING ERRCODE='42501';
+  END IF;
   PERFORM set_config('app.cms_namespace_nonce','',true);
   RETURN QUERY SELECT next_value,next_binding,p_action='bind';
   -- Errors abort the statement: no counter-only/head-only success or TTL reset.
