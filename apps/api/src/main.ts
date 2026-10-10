@@ -100,6 +100,9 @@ function localAccess(req: Request) {
   const forwarded = req.headers["x-forwarded-for"];
   if (
     !loopback(req.socket.remoteAddress) ||
+    req.headers.forwarded ||
+    req.headers["x-real-ip"] ||
+    req.headers["x-forwarded-host"] ||
     (forwarded &&
       String(forwarded)
         .split(",")
