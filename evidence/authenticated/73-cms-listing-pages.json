@@ -1,0 +1,153 @@
+{
+  "buttons": [
+    "Search Listing Pages",
+    "Apply",
+    "Filter",
+    "Quick Edit"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "search"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "options": [
+        "Bulk actions",
+        "Edit",
+        "Move to Trash"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "options": [
+        "All dates",
+        "October 2026",
+        "September 2026",
+        "August 2026",
+        "July 2026",
+        "May 2026",
+        "November 2025"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "options": [
+        "All SEO Scores",
+        "SEO: Needs improvement",
+        "SEO: OK",
+        "SEO: Good",
+        "SEO: No Focus Keyphrase",
+        "SEO: Post Noindexed"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "options": [
+        "Bulk actions",
+        "Edit",
+        "Move to Trash"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    }
+  ],
+  "headings": [
+    "Listing Pages",
+    "Filter posts list",
+    "Posts list"
+  ],
+  "labels": [
+    "Search Listing Pages:",
+    "Select bulk action",
+    "Filter by date",
+    "Filter by SEO Score",
+    "Select All",
+    "Select 11677 Emerald Lake Avenue, Las Vegas, NV 89138",
+    "Select 84 Marco Island Street, Las Vegas, NV 89148",
+    "Select 2723 Chinaberry Hill Street, Laughlin, NV 89029",
+    "Select 1033 Via Panfilo Avenue, Henderson, NV 89011",
+    "Select 11462 Bargetto Court, Las Vegas, NV 89141",
+    "Select 3105 Twilight Hills Avenue, Henderson, NV 89052",
+    "Select 1716 Chapman Drive, Las Vegas, NV 89104",
+    "Select All",
+    "Select bulk action"
+  ],
+  "queryKeys": [
+    "post_type"
+  ],
+  "route": "/wp-admin/edit.php",
+  "tableHeaders": [
+    "Listing\nSort ascending.",
+    "SEO score\nSort ascending.",
+    "Date Listed",
+    "Photo",
+    "Page Status",
+    "Select 11677 Emerald Lake Avenue, Las Vegas, NV 89138",
+    "Select 84 Marco Island Street, Las Vegas, NV 89148",
+    "Select 2723 Chinaberry Hill Street, Laughlin, NV 89029",
+    "Select 1033 Via Panfilo Avenue, Henderson, NV 89011",
+    "Select 11462 Bargetto Court, Las Vegas, NV 89141",
+    "Select 3105 Twilight Hills Avenue, Henderson, NV 89052",
+    "Select 1716 Chapman Drive, Las Vegas, NV 89104",
+    "Listing\nSort ascending.",
+    "SEO score\nSort ascending.",
+    "Date Listed",
+    "Photo",
+    "Page Status"
+  ]
+}

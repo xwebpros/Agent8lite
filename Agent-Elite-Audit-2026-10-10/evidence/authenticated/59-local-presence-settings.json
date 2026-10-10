@@ -1,0 +1,81 @@
+{
+  "buttons": [
+    "ANDREA ARTHUR",
+    "General",
+    "Settings",
+    "Connect Google Business Profile",
+    "Core Information",
+    "Edit listing name",
+    "Edit categories",
+    "Edit address",
+    "Edit main phone",
+    "Business Details",
+    "Contact Information",
+    "Media",
+    "Social Media",
+    "Additional Attributes",
+    "Landing Pages",
+    "Competitors",
+    "Search Tracker",
+    "Feedback"
+  ],
+  "fields": [
+    {
+      "label": "Select account",
+      "options": [
+        "Great Start Realty"
+      ],
+      "required": false,
+      "tag": "SELECT",
+      "type": null
+    }
+  ],
+  "headings": [
+    "Local Presence",
+    "Core Information",
+    "Business Details",
+    "Contact Information",
+    "Media",
+    "Social Media",
+    "Additional Attributes",
+    "Landing Pages",
+    "Competitors",
+    "Search Tracker"
+  ],
+  "links": [
+    {
+      "path": "/",
+      "text": "Dashboard"
+    },
+    {
+      "path": "/Website",
+      "text": "Websites"
+    },
+    {
+      "path": "/Products",
+      "text": "Real Estate IDX"
+    },
+    {
+      "path": "/Products",
+      "text": "Design Studio"
+    },
+    {
+      "path": "/Products",
+      "text": "Local Presence"
+    },
+    {
+      "path": "/tickets",
+      "text": "Support"
+    },
+    {
+      "path": "/Marketplace",
+      "text": "Marketplace"
+    }
+  ],
+  "tableHeaders": [],
+  "tabs": [
+    "General",
+    "Settings"
+  ],
+  "url": "https://home.agentelite.com/Products"
+}

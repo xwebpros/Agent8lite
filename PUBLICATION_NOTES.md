@@ -1,0 +1,9 @@
+# Reference publication notes
+
+Published on 10 October 2026 from the owner-requested project artifacts. The publication preserves the existing executive-document history and adds the design, blueprint, audit, evidence, generator sources and deliverable archives. Application code and the Trestle scaffold remain on their respective workstream branches for coordinator review.
+
+A captured third-party browser bundle contained a credential-like `client_secret` literal. It was replaced with `REDACTED_THIRD_PARTY_CLIENT_SECRET` in both extracted published copies and all four enclosing/nested archive copies. Six occurrences were removed, and recursive verification found no surviving occurrence in the publication set. Local source artifacts were not modified. The bundle is research evidence and is not executable application code or a usable credential source.
+
+Published archives are sanitized snapshots. Original asset/archive hashes recorded in the audit describe the original captured files; they must not be used to assert byte identity for redacted publication copies. Existing screenshots and observations describe the original audit. A scan of 997 text/archive members found no private-key, GitHub-token, AWS-access-key, Stripe-live-secret, long bearer-token or JWT pattern. This targeted check is not a guarantee that arbitrary third-party source assets contain no public identifiers.
+
+No credentials, production environment files, customer exports, source Trestle PDF manuals, dependency directories, databases, screenshots from the private Trestle contract inspection or transient rendering/test caches are added. Public documentation is linked in the provider runbook. No licensed listing feed request has been executed, and no deployment, contract acceptance or paid connection creation occurred as part of publication.

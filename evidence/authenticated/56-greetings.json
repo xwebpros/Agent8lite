@@ -1,0 +1,39 @@
+{
+  "buttons": [
+    "Marketing Automation",
+    "Mobile App Login",
+    "Birthday",
+    "Transaction Anniversary",
+    "Save"
+  ],
+  "fields": [
+    {
+      "label": "Enter subject line here",
+      "required": true,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "On",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "Off",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    }
+  ],
+  "headings": [
+    "Automated Greetings"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [
+    "Birthday",
+    "Transaction Anniversary"
+  ],
+  "url": "https://account.idxhome.com/campaign/automated-greetings"
+}

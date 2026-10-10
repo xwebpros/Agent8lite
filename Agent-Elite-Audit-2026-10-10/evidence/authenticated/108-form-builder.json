@@ -1,0 +1,123 @@
+{
+  "buttons": [
+    "Attorney's Divorce Real Estate Intake Packet",
+    "Embed",
+    "Save Form",
+    "Open editor preferences",
+    "Duplicate",
+    "Settings",
+    "Delete",
+    "Submit",
+    "Standard Fields",
+    "Single Line Text",
+    "Paragraph Text",
+    "Drop Down",
+    "Number",
+    "Checkboxes",
+    "Radio Buttons",
+    "Hidden",
+    "HTML",
+    "Section",
+    "Page",
+    "CAPTCHA",
+    "File Upload",
+    "Multiple Choice",
+    "Image Choice",
+    "List",
+    "Multi Select",
+    "Range Slider",
+    "Radio Custom",
+    "Advanced Fields",
+    "Name",
+    "Date",
+    "Time",
+    "Phone",
+    "Address",
+    "Website",
+    "Email",
+    "Consent",
+    "Device",
+    "Timezone",
+    "Post Fields",
+    "Title",
+    "Body",
+    "Excerpt",
+    "Tags",
+    "Category",
+    "Post Image",
+    "Custom Field",
+    "Pricing Fields",
+    "Product",
+    "Quantity",
+    "Option",
+    "Shipping",
+    "Total"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "email"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "placeholder": "Search for a field",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    }
+  ],
+  "headings": [
+    "Edit Form",
+    "The Form",
+    "Form Options and Settings",
+    "Standard Fields",
+    "Advanced Fields",
+    "Post Fields",
+    "Pricing Fields"
+  ],
+  "labels": [
+    "Name\n(Required)",
+    "Email\n(Required)",
+    "Referral URL",
+    "Property",
+    "I have an active case right now that could use CDRE support",
+    "I don’t have a case today, but I expect to need CDRE expertise in the next 3–6 months",
+    "I’m just gathering information at this stage, no immediate need",
+    "Search a form field by name"
+  ],
+  "queryKeys": [
+    "page",
+    "id"
+  ],
+  "route": "/wp-admin/admin.php",
+  "tableHeaders": []
+}

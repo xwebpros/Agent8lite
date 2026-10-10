@@ -1,0 +1,98 @@
+{
+  "buttons": [
+    "Listings",
+    "Mobile App Login",
+    "Cancel",
+    "Save Changes"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    }
+  ],
+  "headings": [
+    "Listing Details"
+  ],
+  "labels": [
+    "Standard\n\nDisplays one large photo at a time.",
+    "Centered Preview\n\nShows the main photo centered with partial previews of the next and previous images.",
+    "Show thumbnails under photo carousel\n\nWhen enabled, thumbnail images will display below the main photo carousel for easy navigation. When disabled, website visitors can scroll through photos individually.",
+    "Show virtual tour player\n\nWhen enabled, listings with a virtual tour link will display an embedded player directly on the property details page. When disabled, the embedded player will not display.",
+    "Similar Listings",
+    "Area Map",
+    "Mortgage Calculator",
+    "Walk Score",
+    "Schools",
+    "\"Schedule a Showing\" Form",
+    "Display below listing data and description",
+    "Display as tabs",
+    "Display lead capture sidebar alongside listing details\n\nWhen enabled, a lead capture sidebar will display alongside your listing details content. We recommend disabling this if you already have a sidebar built into your page outside of the listing details content.",
+    "Right of content",
+    "Left of content",
+    "Make lead capture actions sticky\n\nWhen enabled, lead capture options will be fixed to the top of the browser window as visitors scroll. When disabled, lead capture options will scroll with the rest of the page content."
+  ],
+  "queryKeys": [],
+  "route": "/settings/listing-details",
+  "tableHeaders": []
+}

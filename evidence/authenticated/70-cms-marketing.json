@@ -1,0 +1,24 @@
+{
+  "buttons": [
+    "Update"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    }
+  ],
+  "headings": [
+    "Marketing Tools"
+  ],
+  "labels": [],
+  "queryKeys": [
+    "page"
+  ],
+  "route": "/wp-admin/admin.php",
+  "tableHeaders": []
+}

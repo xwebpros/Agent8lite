@@ -1,0 +1,28 @@
+﻿{
+    "pageCount":  20,
+    "functionalRequirements":  76,
+    "checks":  {
+                   "expected20Pages":  true,
+                   "all76Requirements":  true,
+                   "all19SectionsOnIntendedPages":  true,
+                   "pdfBookmarks":  true,
+                   "noReplacementGlyphs":  true,
+                   "noParagraphBorders":  true,
+                   "nineVisualsWithAltText":  true,
+                   "allTableHeadersMarked":  true
+               },
+    "files":  [
+                  {
+                      "file":  "Agent8lite-Application-Requirements-and-Features-2026-10-10.docx",
+                      "bytes":  400279,
+                      "sha256":  "39bdcff5517cc8d9d2e1d2e369cc0cd689bf285853801c8c72353a7d51539e5b"
+                  },
+                  {
+                      "file":  "Agent8lite-Application-Requirements-and-Features-2026-10-10.pdf",
+                      "bytes":  654392,
+                      "sha256":  "2a22b7583bc3813ecd99bb140946443415e812d202d02a63c61c8b3fa3c9a6ac"
+                  }
+              ],
+    "renderer":  "Microsoft Word PDF export and PyMuPDF PNG rendering",
+    "visualReview":  "Passed for all 20 final pages at full resolution"
+}

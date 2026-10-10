@@ -1,0 +1,13 @@
+{
+  "buttons": [],
+  "fields": [],
+  "headings": [
+    "Achievements"
+  ],
+  "labels": [],
+  "queryKeys": [
+    "page"
+  ],
+  "route": "/wp-admin/admin.php",
+  "tableHeaders": []
+}

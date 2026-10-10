@@ -1,0 +1,1162 @@
+[
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/Products",
+    "queryKeys": [
+      "type"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/Products",
+    "queryKeys": [
+      "type"
+    ],
+    "status": 200,
+    "mime": "text/html",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.googleapis.com",
+    "path": "/css2",
+    "queryKeys": [
+      "family",
+      "display"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.googleapis.com",
+    "path": "/css2",
+    "queryKeys": [
+      "family",
+      "display"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "ESF"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/bootstrap/dist/css/bootstrap.min.css",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/bootstrap/dist/css/bootstrap.min.css",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/font-awesome/css/all.min.css",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/font-awesome/css/all.min.css",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/agent-elite/agent-elite-tokens.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/agent-elite/agent-elite-tokens.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/portal-tokens.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/portal-tokens.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/agent-elite/agent-elite-components.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/agent-elite/agent-elite-components.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/agent-elite-overrides.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/agent-elite-overrides.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/site.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/site.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/marketing-banners.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/marketing-banners.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/payment-status-banner.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/payment-status-banner.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/upgrade-modal.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/upgrade-modal.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/purchase-gate.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/purchase-gate.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/confirm-gate.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/confirm-gate.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/visibility-system.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/visibility-system.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/visibility-checklist.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/visibility-checklist.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/activity-tracker.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/activity-tracker.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/homeportal.styles.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/homeportal.styles.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/local-presence.css",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/agent_elite_long_white.png",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/agent_elite_long_white.png",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/png",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.googleapis.com",
+    "path": "/css2",
+    "queryKeys": [
+      "family",
+      "display"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.googleapis.com",
+    "path": "/css2",
+    "queryKeys": [
+      "family",
+      "display"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "ESF"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/css/local-presence.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff2",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff2",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/ae-round-flat-white.png",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/ae-round-flat-white.png",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/png",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLGT9Z1xlFQ.woff2",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLGT9Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://cdn.jsdelivr.net",
+    "path": "/npm/chart.js@4.4.1/dist/chart.umd.min.js",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/lp-metrics.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/lp-metrics.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://cdn.jsdelivr.net",
+    "path": "/npm/chart.js@4.4.1/dist/chart.umd.min.js",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/javascript",
+    "server": "cloudflare"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://code.iconify.design",
+    "path": "/iconify-icon/1.0.7/iconify-icon.min.js",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_facebook.svg",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_facebook.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_linkedin.svg",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_linkedin.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_instagram.svg",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_instagram.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_x.svg",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_x.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_youtube.svg",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_youtube.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/jquery/dist/jquery.min.js",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/bootstrap/dist/js/bootstrap.bundle.min.js",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/site.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/sync-manager.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/track.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/marketing-banners.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/payment-status-banner.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/confirm-gate.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/upgrade-modal.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/lucide.min.js",
+    "queryKeys": [
+      "v"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://feedback.agentelite.com",
+    "path": "/widget.js",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://code.iconify.design",
+    "path": "/iconify-icon/1.0.7/iconify-icon.min.js",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/javascript",
+    "server": "cloudflare"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/jquery/dist/jquery.min.js",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/site.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/bootstrap/dist/js/bootstrap.bundle.min.js",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/sync-manager.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/track.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/marketing-banners.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/payment-status-banner.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/confirm-gate.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/upgrade-modal.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/js/lucide.min.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://feedback.agentelite.com",
+    "path": "/widget.js",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/javascript",
+    "server": "cloudflare"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-entity",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-analytics/listings",
+    "queryKeys": [
+      "range"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLDD4Z1xlFQ.woff2",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-analytics/search",
+    "queryKeys": [
+      "range"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-analytics/profile-health",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/listing-updates",
+    "queryKeys": [
+      "range"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-listings",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/marketplace/tiers",
+    "queryKeys": [
+      "productType"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/Billing",
+    "queryKeys": [
+      "handler"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLDD4Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-analytics/listings",
+    "queryKeys": [
+      "range"
+    ],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-analytics/search",
+    "queryKeys": [
+      "range"
+    ],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-analytics/profile-health",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-listings",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/listing-updates",
+    "queryKeys": [
+      "range"
+    ],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/Billing",
+    "queryKeys": [
+      "handler"
+    ],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/marketplace/tiers",
+    "queryKeys": [
+      "productType"
+    ],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-entity",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/data",
+    "queryKeys": [],
+    "method": "PUT"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/data",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/google-business/{assetId}/status",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/yext-categories",
+    "queryKeys": [
+      "ids"
+    ],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-media",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://a.mktgcdn.com",
+    "path": "/p/xszr50cHOtJZKfFmWqKOu_9fTMfRlyt5h-Jh1GupNks/500x500.png",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.requestWillBeSent",
+    "origin": "https://a.mktgcdn.com",
+    "path": "/p/j4yxpPrxvxUyK5pfzwKCokSr1DAjUP_q_1ma7cJDJHM/1024x1024.jpg",
+    "queryKeys": [],
+    "method": "GET"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://a.mktgcdn.com",
+    "path": "/p/j4yxpPrxvxUyK5pfzwKCokSr1DAjUP_q_1ma7cJDJHM/1024x1024.jpg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/jpeg",
+    "server": "cloudflare"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://a.mktgcdn.com",
+    "path": "/p/xszr50cHOtJZKfFmWqKOu_9fTMfRlyt5h-Jh1GupNks/500x500.png",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/png",
+    "server": "cloudflare"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/yext-categories",
+    "queryKeys": [
+      "ids"
+    ],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/google-business/{assetId}/status",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "event": "Network.responseReceived",
+    "origin": "https://home.agentelite.com",
+    "path": "/api/asset-settings/{assetId}/yext-media",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  }
+]

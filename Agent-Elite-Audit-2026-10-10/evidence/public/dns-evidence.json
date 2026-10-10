@@ -1,0 +1,32 @@
+[
+    {
+        "Name":  "home.agentelite.com",
+        "Type":  5,
+        "NameHost":  "aetech-azwu2-homeportal-app.azurewebsites.net",
+        "IPAddress":  null
+    },
+    {
+        "Name":  "aetech-azwu2-homeportal-app.azurewebsites.net",
+        "Type":  5,
+        "NameHost":  "waws-prod-mwh-041.sip.azurewebsites.windows.net",
+        "IPAddress":  null
+    },
+    {
+        "Name":  "waws-prod-mwh-041.sip.azurewebsites.windows.net",
+        "Type":  5,
+        "NameHost":  "waws-prod-mwh-041.westus2.cloudapp.azure.com",
+        "IPAddress":  null
+    },
+    {
+        "Name":  "waws-prod-mwh-041.westus2.cloudapp.azure.com",
+        "Type":  1,
+        "NameHost":  null,
+        "IPAddress":  "13.66.138.104"
+    },
+    {
+        "Name":  "westus2.cloudapp.azure.com",
+        "Type":  6,
+        "NameHost":  null,
+        "IPAddress":  null
+    }
+]

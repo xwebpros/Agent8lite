@@ -1,0 +1,1791 @@
+{
+  "title": "Agent Elite Platform — Technical and Functional Audit",
+  "date": "2026-10-10",
+  "timezone": "Asia/Bangkok",
+  "target": "https://home.agentelite.com/",
+  "scope": "Authenticated authorized account; read-only inspection and public assets. No application rebuild.",
+  "inventory": [
+    [
+      "Portal",
+      "Authentication",
+      "/Login",
+      "Google and email sign-in, account creation links, external identity-provider flow.",
+      "Sign-in choices; identity-provider-managed email.",
+      "Identity precedes tenant/product access.",
+      "Observed flow; account creation not executed.",
+      "public/authentication-evidence.json"
+    ],
+    [
+      "Portal",
+      "Dashboard and action center",
+      "/",
+      "Local search and profile-completion metrics, caught-up state, suggested Facebook Ads, product launch cards.",
+      "Local Presence drill-down; billing; CRM and website launches; add-on links.",
+      "Combines subscription entitlements, product assets and Local Presence data.",
+      "Live dashboard and empty action state inspected.",
+      "screenshots/87-dashboard-wide.jpg"
+    ],
+    [
+      "Portal",
+      "Activity and estimated value",
+      "/",
+      "Nine monthly activity narratives and estimated hours saved; explanations open in popovers.",
+      "Information buttons; Facebook Ads support request.",
+      "Marketing/value presentation references listing, CRM and campaign activity.",
+      "Popover inspected; estimates are not verified labor measurements.",
+      "screenshots/02-dashboard.jpg"
+    ],
+    [
+      "Portal",
+      "Navigation and feedback",
+      "All portal pages",
+      "Seven primary modules, account menu, support link, social footer, feedback widget.",
+      "Persistent sidebar or off-canvas menu; feedback page-context question.",
+      "Shared portal shell, feedback.agentelite.com script.",
+      "Navigation and first feedback step inspected; no submission.",
+      "authenticated/89-feedback.json"
+    ],
+    [
+      "Account",
+      "Personal profile",
+      "/AccountSettings#profile",
+      "Name, phone and structured postal address; email delegated to the identity provider.",
+      "Save Profile.",
+      "Portal account identity; external authentication.",
+      "Fields inspected; no save.",
+      "authenticated/03-account-profile.txt"
+    ],
+    [
+      "Account",
+      "Business profiles",
+      "/AccountSettings#business",
+      "Named business/brand profiles with type, contact, address, website and logo URL.",
+      "Add profile modal, cancel/save; empty profile collection.",
+      "Intended asset grouping across offices/brands.",
+      "Empty state and creation modal inspected.",
+      "authenticated/05-business-profile-modal.txt"
+    ],
+    [
+      "Account",
+      "Users and roles",
+      "/AccountSettings#users",
+      "Owner, Member and Custom roles; add member form; remove controls.",
+      "First/last name, email, optional phone and role; invitation submission.",
+      "Portal roles and module permissions; independent from CRM team records.",
+      "Role controls and invitation fields inspected; no invitation or role change.",
+      "authenticated/06-users-roles.json"
+    ],
+    [
+      "Account",
+      "Custom-role permissions",
+      "/AccountSettings#users",
+      "Frontend enumerates websites, CRM, design, local presence, ads, support, marketplace, billing and user administration permissions.",
+      "Module-level permission selection in source.",
+      "Server model is named in a public frontend comment.",
+      "Source-supported; permissions were not changed or enforcement tested.",
+      "assets/account-settings.js"
+    ],
+    [
+      "Account",
+      "Recent activity and full history",
+      "/AccountSettings#activity; /account/activity",
+      "Recent 30-day activity and grouped UTC timeline with security, action and payment categories.",
+      "Date range, category filter, details disclosure, export control.",
+      "Access telemetry includes CRM and billing opening events.",
+      "Timeline and controls inspected; no data export.",
+      "authenticated/10-full-activity.json"
+    ],
+    [
+      "Billing",
+      "Subscription overview",
+      "/AccountSettings#billing",
+      "Account status, recurring total, next charge, cycle, masked payment method, billing contact, product rows and invoice preview.",
+      "Product management menus; billing-cycle and payment dialogs.",
+      "Tenant has Team Website IDX, additional MLS board, included hosting and Local Presence Lite.",
+      "Read-only billing overview; financial values omitted from report.",
+      "authenticated/09-billing.json"
+    ],
+    [
+      "Billing",
+      "Product lifecycle and cycle changes",
+      "/AccountSettings#billing",
+      "Product details, change plan, add additional and cancel controls; monthly, annual and two-year options.",
+      "Cycle modal; detail dialog; source also defines retention/relaunch/subscription cancellation flows.",
+      "Stripe-backed subscription and marketplace catalog.",
+      "Details and cycle dialog opened; cancellation and acceptance flows not executed.",
+      "assets/billing-panel.js"
+    ],
+    [
+      "Billing",
+      "Invoices and payment method",
+      "/AccountSettings#billing",
+      "Invoice line items, tax, paid/remaining amounts, history and receipt download.",
+      "Payment handoff dialog; receipt links.",
+      "Stripe explicitly named; receipt host pay.stripe.com.",
+      "One invoice disclosure and payment explanation inspected; no receipt URL copied or payment update.",
+      "authenticated/09-billing.json"
+    ],
+    [
+      "Websites",
+      "Site overview and launch",
+      "/Website#general",
+      "Site selector, display name, live/staging URLs, live status, view/edit links, onboarding completion and product cross-links.",
+      "Edit name; View Site; Edit Site; upgrade.",
+      "Launches authenticated WordPress editor; ties website to IDX and Local Presence.",
+      "Existing live site inspected; no name or publication change.",
+      "authenticated/11-website-dns.json"
+    ],
+    [
+      "Websites",
+      "DNS management",
+      "/Website#dnsrecords",
+      "A, AAAA, CNAME, MX, TXT, NS and SRV entry types; record listing and Cloudflare protection state.",
+      "Refresh; add/edit/delete; name, value, TTL, priority and proxy fields.",
+      "Branded root/www records are staff-managed; mail DNS includes third-party provider records.",
+      "Add modal inspected; no DNS operation submitted.",
+      "authenticated/12-dns-form.json"
+    ],
+    [
+      "IDX",
+      "CRM product account and asset settings",
+      "/Products?type=IDX",
+      "CRM asset selector, display label, company contact and web designer information.",
+      "Asset settings; CRM launch; additional account request; upgrade.",
+      "SSO to iHomefinder; shared product asset model.",
+      "Settings structure and successful launch inspected; no saves.",
+      "authenticated/14-crm-asset-settings.json"
+    ],
+    [
+      "CRM",
+      "Lead dashboard",
+      "/lead-dashboard",
+      "Activity/subscription percentages, pipeline counts, sources, 12-month comparisons, team stats, weekly tasks and upcoming dates.",
+      "All-agent viewing selector; chart tabs; links to lead records.",
+      "Lead activity, agents, subscriptions and tasks.",
+      "Live dashboard inspected; contact names excluded from retained summary.",
+      "authenticated/16-crm-dashboard.json"
+    ],
+    [
+      "CRM",
+      "Lead list and search",
+      "/leads",
+      "Sortable paginated contact table with lead name, stage, type, last activity, subscription, engagement, source, agent and tags.",
+      "Search, row selection, bulk actions, import and add.",
+      "Canonical CRM contacts and team assignment.",
+      "Live list inspected; no selection, bulk change or export.",
+      "authenticated/17-lead-list.json"
+    ],
+    [
+      "CRM",
+      "Lead filters and columns",
+      "/leads",
+      "Filters by agents, type, status, rating, source, stage, bookmarks, subscriptions and tags; configurable columns.",
+      "Filter drawer and column menu; page size and pagination.",
+      "Pipeline stages include Uncontacted, Attempted Contact, Nurturing, Dead, Under Contract and Closed.",
+      "Menus inspected; preferences unchanged.",
+      "authenticated/18-lead-filters.json"
+    ],
+    [
+      "CRM",
+      "Lead add, import and export",
+      "/leads; /leads/export",
+      "Add contact with required email, multiple emails/phones, address, birthday, anniversary, assigned agent and readiness attributes. CSV import and configurable export.",
+      "CSV template/file chooser; export filters, disabled/deleted inclusion; submit buttons.",
+      "Contact identity, lead readiness and agent ownership.",
+      "Forms inspected; no files uploaded, leads created or private records exported.",
+      "authenticated/20-add-lead.json"
+    ],
+    [
+      "CRM",
+      "Lead detail and pipeline",
+      "/lead/{id}",
+      "Contact summary, bookmark, tags, pipeline actions, edit and task creation; previous/next navigation.",
+      "Stage buttons; Edit; Add Task.",
+      "Lead activities, owner and subscription collections.",
+      "One existing lead inspected; no customer data edited.",
+      "authenticated/22-lead-detail.json"
+    ],
+    [
+      "CRM",
+      "Lead activity and notes",
+      "/lead/{id}; /lead-activity",
+      "Activity events with search criteria, listing views and email interactions; notes tab; overall recent activity and monthly comparisons.",
+      "Activity-type selector, additional criteria, notes add/edit.",
+      "Event history and property behavior feed engagement.",
+      "Activity and notes structure inspected; no note created.",
+      "authenticated/24-lead-activity.json"
+    ],
+    [
+      "CRM",
+      "Lead subscriptions and organizer",
+      "/lead/{id}",
+      "Campaign enrollment, market subscriptions and email alerts; saved searches and favorite properties.",
+      "Add campaign/subscription/alert; search add/edit; favorites tab.",
+      "Website organizer, MLS listings and marketing delivery.",
+      "Tabs inspected; subscriptions and searches unchanged.",
+      "authenticated/22-lead-detail.json"
+    ],
+    [
+      "CRM",
+      "Tasks",
+      "/tasks; lead task modal",
+      "Title, description, type, lead, agent, start/due dates and times, priority.",
+      "Task search/filter/sort and Add Task; empty list state.",
+      "Assigned CRM agent and optionally a lead.",
+      "Task form and empty overview inspected.",
+      "authenticated/23-tasks.json"
+    ],
+    [
+      "Markets",
+      "Saved markets",
+      "/markets; /market/{id}",
+      "Named market definitions with IDs, subscriber counts and public view links.",
+      "Search, pagination, add market name and type.",
+      "Reusable searches drive public pages, subscriptions and campaign smart content.",
+      "List and add modal inspected; market not created.",
+      "authenticated/27-add-market.json"
+    ],
+    [
+      "Markets",
+      "Market display settings",
+      "/markets/settings",
+      "List versus grid layout.",
+      "Save control.",
+      "Public market rendering.",
+      "Settings page inspected; no save.",
+      "authenticated/28-market-settings.json"
+    ],
+    [
+      "Listings",
+      "Active, off-market and supplemental",
+      "/listings/active; /listings/off-market; /listings/supplemental",
+      "Listings by lifecycle, address/MLS search, price, MLS/agent info and page-view reporting; manual supplemental listing control.",
+      "Search/pagination; listing actions; Add a Supplemental.",
+      "MLS feed, featured listings and website pages.",
+      "Lists opened; active list and supplemental empty-state controls inspected.",
+      "authenticated/29-listings.json"
+    ],
+    [
+      "Reports",
+      "Overview and email activity",
+      "/reports/overview; /reports/email-activity",
+      "CRM reporting overview and email reporting category.",
+      "Reporting navigation.",
+      "Email and lead engagement datasets.",
+      "Pages opened; detailed overview/email chart metrics not independently reconciled.",
+      "authenticated/32-reports.json"
+    ],
+    [
+      "Reports",
+      "Organizer, lead and mobile activity",
+      "/reports/saved-searches; /reports/leads; /reports/mobile",
+      "Saved-search activity, contact event report and mobile statistics.",
+      "Date ranges, report type selectors, Submit, pagination and listing links.",
+      "Website organizer, lead capture and mobile website.",
+      "Report controls inspected; no customer report exported.",
+      "authenticated/35-leads-report.json"
+    ],
+    [
+      "Setup",
+      "IDX embedding",
+      "/settings/idx",
+      "Version 9/10 choices and embedding configuration/copy controls.",
+      "Edit, copy and save; version selection.",
+      "iHomefinder search experience installed on WordPress site.",
+      "Existing settings inspected; no embed or version change.",
+      "authenticated/38-idx-settings.json"
+    ],
+    [
+      "Setup",
+      "IDX display theme",
+      "/settings/display",
+      "Primary color plus light, dark or automatically detected background.",
+      "Color chooser, mode radios and save.",
+      "Public property search styling.",
+      "Controls inspected; theme unchanged.",
+      "authenticated/39-display-settings.json"
+    ],
+    [
+      "Setup",
+      "CRM account and MLS setup",
+      "/settings/account; /settings/mls-setup",
+      "Company address/contact and contact person; MLS setup page.",
+      "Account save/cancel.",
+      "CRM vendor account and licensed listing feeds.",
+      "Account fields and MLS page opened; underlying feed contract/configuration not verified.",
+      "authenticated/37-crm-setup.json"
+    ],
+    [
+      "Setup",
+      "Third-party integration catalog",
+      "/settings/integrations",
+      "Client event webhook, Custom LTS, Email & Calendar Sync, Google Login, aggregation email, Top Producer LTS, Wix, Zapier and Zillow Tech Connect.",
+      "Add Integration chooser.",
+      "Inbound lead acquisition and external identity/email/calendar workflows.",
+      "Catalog inspected; availability does not prove an active connection.",
+      "authenticated/41-crm-integrations.json"
+    ],
+    [
+      "Setup",
+      "Email alerts and notification routing",
+      "/settings/email/basic; /settings/email/routing",
+      "Notification addresses, contact phone, sold/price-change alerts and lead SMS notifications; advanced routing page.",
+      "Save/cancel and routing navigation.",
+      "CRM activity, external email integration and agent notifications.",
+      "Basic controls inspected; advanced page opened without complete routing detail.",
+      "authenticated/42-email-settings.json"
+    ],
+    [
+      "Setup",
+      "General search behavior",
+      "/settings/search/general",
+      "Search dropdown, saved searches/markets, placeholder, list/map rendering, sold listings, featured priority, custom price ranges and detail window behavior.",
+      "Checkboxes, radio choices, selectors, save/cancel.",
+      "Public IDX search.",
+      "Controls inspected without changes.",
+      "authenticated/43-search-settings.json"
+    ],
+    [
+      "Setup",
+      "Property types and locations",
+      "/settings/property-types; /settings/locations",
+      "Property-type configuration/restore defaults, city label format and optional custom city list.",
+      "Restore Defaults; city options; save/cancel.",
+      "MLS geography and searchable property classification.",
+      "Pages inspected; configuration not modified.",
+      "authenticated/93-locations.json"
+    ],
+    [
+      "Setup",
+      "Open houses and map",
+      "/settings/open-house; /settings/map-search",
+      "Open-house display/search options and featured-only limits; search center, map type, zoom and left/right placement.",
+      "Checkboxes, range control, address and layout inputs.",
+      "MLS open-house availability and public map search.",
+      "Controls inspected; no map or listing filter changes.",
+      "authenticated/95-map-settings.json"
+    ],
+    [
+      "Setup",
+      "Featured-listing behavior",
+      "/settings/listing-results",
+      "Automatic MLS lifecycle sync, sold/pending display, supplemental inclusion and placeholder image.",
+      "Checkboxes, display choices, image URL/upload choice.",
+      "Agent/broker featured listings and website galleries.",
+      "Controls inspected; upload and sync settings not changed.",
+      "authenticated/96-featured-listing-settings.json"
+    ],
+    [
+      "Setup",
+      "Listing-detail presentation",
+      "/settings/listing-details",
+      "Photo carousel styles, thumbnails, virtual tours, similar listings, map, calculator, Walk Score, schools and showing form.",
+      "Sidebar alignment, tabs/below layout, sticky capture actions and save.",
+      "Listing media, capture, third-party location information.",
+      "Feature switches inspected; Walk Score/school provider execution not tested.",
+      "authenticated/97-listing-detail-settings.json"
+    ],
+    [
+      "Setup",
+      "Mortgage defaults",
+      "/settings/mortgage-calculator",
+      "Amount, loan term, rate, down payment, taxes and insurance defaults.",
+      "Numeric/text defaults and inclusion checkboxes.",
+      "Public listing calculator.",
+      "Configuration controls inspected; calculations not used for financial advice.",
+      "authenticated/98-mortgage-settings.json"
+    ],
+    [
+      "Setup",
+      "Lead registration and capture forms",
+      "/settings/user-registration; /settings/contact-forms",
+      "Registration strictness and page-view triggers, password requirement, phone/CAPTCHA/agent selectors, privacy/terms URLs and disclaimer choices.",
+      "Strict/moderate/flexible/minimal; immediate/after counts; disclaimer text preview.",
+      "Public search conversion, lead routing and SMS consent.",
+      "Fields inspected; no registration/capture policy changed.",
+      "authenticated/99-capture-form-settings.json"
+    ],
+    [
+      "Setup",
+      "Mobile website settings",
+      "/settings/mobile",
+      "Mobile behavior, contact information and home/all-IDX-page options.",
+      "On/off and placement controls, text inputs and save.",
+      "Mobile public IDX experience; separate from Mobile App Login.",
+      "Page fields inspected; native mobile app not tested.",
+      "authenticated/45-mobile-setup.json"
+    ],
+    [
+      "Team",
+      "General team and agent directory",
+      "/settings/broker; /settings/broker/agents",
+      "Enhanced bio pages, SMS notification choice, broker image, sort order and team member directory with roles, billable status, leads, listings, office and routing.",
+      "Add Member, filter, columns, remove controls and save.",
+      "CRM-specific team identities and public agent bio pages.",
+      "Lists/settings inspected; no team or permission change.",
+      "authenticated/47-crm-team.json"
+    ],
+    [
+      "Team",
+      "Offices and lead assignment",
+      "/settings/broker/offices; /settings/settings-lead-routing",
+      "Office directory and first-touch, listing-agent, geographic and weighted round-robin assignment.",
+      "Add Office and routing toggles; save/cancel.",
+      "Priority stated by UI: first touch → featured listing → geography → round robin.",
+      "Routing rules read; no assignment changed.",
+      "authenticated/49-lead-routing.json"
+    ],
+    [
+      "Communications",
+      "Broadcast email",
+      "/campaign/email/new; /campaign/email/drafts; /campaign/email/sent",
+      "Subject, recipients/list creation, email composition, scheduling, draft and sent-email collections.",
+      "Send Now, Send Later and Save Draft.",
+      "Lead segments, template design and vendor delivery.",
+      "Composition controls and empty draft/sent states inspected; no send/draft save.",
+      "authenticated/50-communications.json"
+    ],
+    [
+      "Communications",
+      "Campaign library and configuration",
+      "/campaigns; /campaign/{id}",
+      "Buyer/general/seller categories, email and combined SMS/email campaigns, send/subscriber/open/link counters and active controls.",
+      "Add category/campaign; campaign name, description, category, smart-content source and branding.",
+      "Lead profile behavior or a configured market supplies personalized content.",
+      "Library, add dialog and one 42-stage campaign inspected.",
+      "authenticated/103-campaign-settings.json"
+    ],
+    [
+      "Communications",
+      "Campaign stages and subscribers",
+      "/campaign/{id}",
+      "Ordered stages with delay/unit controls and per-message engagement; subscriber added/status/source/stage/last-send table.",
+      "Message links, stage actions, Add Message; subscriber search and add.",
+      "Enrollment and delivery execution.",
+      "Existing stage schedule and subscriber controls inspected; no changes.",
+      "authenticated/104-campaign-subscribers.json"
+    ],
+    [
+      "Communications",
+      "Email and SMS step designers",
+      "/campaign/message/{id}; /campaign/text-message/{id}",
+      "Name/subject email template using embedded Unlayer; SMS name/body with emoji, merge-field and listing controls.",
+      "Content blocks, merge tags, desktop/mobile preview; save/cancel.",
+      "Reusable campaign content and personalization.",
+      "Existing email and text steps inspected without edits.",
+      "authenticated/110-email-designer.json"
+    ],
+    [
+      "Communications",
+      "Automation triggers",
+      "/campaigns/routes",
+      "New lead/source, inquiry, tour, saved search/listing, valuation, subscription and contact/organizer actions enroll leads in a campaign.",
+      "Rule add dialog; active status; once, completion-based restart or inactivity restart.",
+      "Capture and behavior events → enrollment → scheduled campaign steps.",
+      "Trigger builder and existing rules inspected; no automation added.",
+      "authenticated/55-automations.json"
+    ],
+    [
+      "Communications",
+      "Greetings and sender defaults",
+      "/campaign/automated-greetings; /campaigns/settings",
+      "Birthday and transaction-anniversary templates with on/off state; sender address and test-lead selection.",
+      "Subject/content, save; sender settings.",
+      "Lead date fields and campaign branding.",
+      "Pages inspected; no greeting or sender update.",
+      "authenticated/56-greetings.json"
+    ],
+    [
+      "Communications",
+      "Texting setup",
+      "/campaigns/texting",
+      "Rented text number, forwarding phone, time zone, opt-in controls and carrier-registration/verification state.",
+      "Enable/disable and save.",
+      "Lead text consent and provider registration are prerequisites.",
+      "Tenant shows verification required; no number or opt-in change.",
+      "authenticated/54-texting.json"
+    ],
+    [
+      "Local Presence",
+      "Analytics and profile completion",
+      "/Products?type=LocalPresence",
+      "Completion score, coverage/sync health, listing updates, search/map impressions, profile views, calls/site/directions and monthly charts.",
+      "30 days/6 months/year, profile drill-down and directory-type explanation.",
+      "Native portal summarizes Yext-backed account data.",
+      "Live metrics inspected; provider figures and definitions not reconciled externally.",
+      "authenticated/58-local-presence.txt"
+    ],
+    [
+      "Local Presence",
+      "Business identity and contact",
+      "/Products?type=LocalPresence → Settings",
+      "Name/categories/address/phone, description/hours, business/Google-admin emails, website and alternative phone numbers.",
+      "Inline edit controls; Google Business Profile connect control.",
+      "Yext entity and Google Business connection status.",
+      "Sections inspected; no edits or OAuth connection attempted.",
+      "authenticated/60-lp-section-fields.json"
+    ],
+    [
+      "Local Presence",
+      "Media, social and attributes",
+      "Settings",
+      "Logo/gallery; seven social networks; year, products, services and keywords.",
+      "Per-field edit controls.",
+      "Publisher distribution and profile completeness.",
+      "Fields inventoried; no media upload or update.",
+      "authenticated/60-lp-section-fields.json"
+    ],
+    [
+      "Local Presence",
+      "Landing, competitors and search tracker",
+      "Settings",
+      "Landing URL, competitor configuration, enabled state, tracking frequency, location keywords, query templates and tracking sites.",
+      "Inline edit controls.",
+      "Local visibility/reputation tiers and analytics.",
+      "Controls inventoried; actual tracker runs not executed.",
+      "authenticated/60-lp-expanded-settings.json"
+    ],
+    [
+      "Local Presence",
+      "Advanced dashboard and gated tiers",
+      "/sso/LocalPresenceDashboard",
+      "Advanced white-label dashboard launch; review/reputation, social scheduling and AI visibility features described in tiers.",
+      "Advanced launch, upgrade and additional-account support request.",
+      "Launch tab metadata reached agenteliteinc.optimizelocation.com; portal APIs explicitly reference Yext.",
+      "Advanced page inspection blocked by browser URL policy at initial launch; premium workflows untested.",
+      "authenticated/90-lp-network.json"
+    ],
+    [
+      "Design Studio",
+      "Entitlement and documented editor",
+      "/Products?type=DesignStudio",
+      "Subscription-required gate. Documentation describes brand setup, template customization, download/share and print fulfillment.",
+      "Marketplace upgrade; documented editor/print controls.",
+      "Separate paid product; exact editor/fulfillment provider unknown.",
+      "Gate confirmed; editor features documented only.",
+      "authenticated/61-design-studio.txt"
+    ],
+    [
+      "Support",
+      "Tickets and create form",
+      "/tickets; /tickets/create",
+      "Support request surface with title, category and detailed description. Categories include general, technical, billing, feature request and account access.",
+      "Create New Ticket; Create Ticket.",
+      "Extra product/accounts and concierge requests use this same channel.",
+      "List surface and empty create form inspected; no ticket submitted.",
+      "authenticated/63-ticket-form.json"
+    ],
+    [
+      "Marketplace",
+      "Catalog and plan detail",
+      "/Marketplace; /Marketplace/Product/{sku}",
+      "Eleven catalog products: team/v2/mortgage websites, IDX plugin, Local Presence Lite/Boost/Elite, Better/Best Hosting and Design Studio/Boost.",
+      "Detail pages, included/excluded capabilities, monthly/annual display, add/upgrade and concierge.",
+      "Entitlements, subscription-level cycle and checkout.",
+      "All 11 detail descriptions recorded; checkout buttons not invoked.",
+      "authenticated/66-catalog-details.json"
+    ],
+    [
+      "WordPress",
+      "Custom admin dashboard",
+      "/wp-admin/admin.php?page=site-dashboard",
+      "Branded lead summaries, recent leads, marketing resources and achievements in a restricted WordPress admin menu.",
+      "Website view; CRM link; content module navigation.",
+      "Native Agent Elite MU-plugin admin experience and iHomefinder data.",
+      "Dashboard inspected; customer contacts and credential-like query values excluded from artifacts.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "WordPress",
+      "Traffic and performance analytics",
+      "admin.php?page=analytics",
+      "Date windows, visitors, page views, threat blocks, top pages/referrers, daily trends, load time and recommendations.",
+      "Time range and desktop/mobile performance disclosures.",
+      "UI explicitly attributes blocked threats to Cloudflare; frontend telemetry also loads its beacon.",
+      "Dashboard observed; load-time card was still measuring at capture.",
+      "authenticated/72-cms-analytics.json"
+    ],
+    [
+      "WordPress",
+      "Blogs, pages and SEO",
+      "edit.php; edit.php?post_type=page",
+      "Standard content lists, dates, publication state, categories, search and Yoast SEO scores.",
+      "Add/edit, quick edit, bulk actions, trash and sorting controls.",
+      "Public website content and SEO metadata.",
+      "Lists inspected; no content created, reordered or saved.",
+      "authenticated/68-cms-pages.json"
+    ],
+    [
+      "WordPress",
+      "Landing pages and Gutenberg",
+      "edit.php?post_type=landing-page; post.php",
+      "Landing-page list with mobile/desktop views, submissions and conversion. Existing page opens Gutenberg with templates, blocks, patterns, media and Yoast panels.",
+      "Block inserter; publish/save controls; full-screen template; custom CSS panel.",
+      "Awesomeberg-related assets plus native Gutenberg; one existing page showed unsupported custom text blocks.",
+      "Editor, block library and template state inspected; no save or block insertion.",
+      "authenticated/107-editor-blocks.json"
+    ],
+    [
+      "WordPress",
+      "Listing pages and communities",
+      "edit.php?post_type=listing-page; community",
+      "Listing landing pages with date/photo/status and neighborhood pages associated with hotsheets.",
+      "Content actions, categories, reorder controls and SEO filters.",
+      "MLS listings, CRM markets and website galleries.",
+      "Lists inspected; relationships observed in UI, backend sync implementation unknown.",
+      "authenticated/74-cms-communities.json"
+    ],
+    [
+      "WordPress",
+      "Testimonials, resources and agents",
+      "edit.php?post_type=testimonials; local_resources; agents",
+      "Review/star content, professional resources and agent profiles with position/expertise/office taxonomies.",
+      "Content actions, reorder and rich-results controls.",
+      "Public directory/testimonial widgets; separate from portal member administration.",
+      "Content lists inspected; published professional names not copied into report inventory.",
+      "authenticated/77-cms-agents.json"
+    ],
+    [
+      "WordPress",
+      "Media and image optimization",
+      "upload.php",
+      "Image/audio/video/document library, type/date filters, search and bulk selection; image-optimization menu.",
+      "Add/upload and Bulk Optimization.",
+      "Tiny compression plugin assets; WordPress media storage.",
+      "Library inspected; no upload or optimization run.",
+      "authenticated/80-cms-media.json"
+    ],
+    [
+      "WordPress",
+      "Widgets and navigation menus",
+      "widgets.php; nav-menus.php",
+      "Agent cards, contact/CTA/community/featured/mortgage/social/testimonial widgets, Genesis widgets and numerous IDX widgets.",
+      "Sidebar/footer widget zones; menu hierarchy; IHF pages/hotsheets; save controls.",
+      "Theme layout and iHomefinder Optima Express integration.",
+      "Available widgets and existing menu inspected; no drag, reorder or save.",
+      "authenticated/81-cms-widgets.json"
+    ],
+    [
+      "WordPress",
+      "Marketing conversion tools",
+      "admin.php?page=marketing-tools",
+      "Buyer/seller guides, lead popup, community and valuation leads, call button and redirect popup.",
+      "Per-tool enable/update controls.",
+      "Lead acquisition into CRM.",
+      "Tool labels/statuses observed; configuration not changed.",
+      "authenticated/70-cms-marketing.json"
+    ],
+    [
+      "WordPress",
+      "Gravity Forms catalog and builder",
+      "admin.php?page=gf_edit_forms",
+      "37 active forms observed; built-in appointment forms and custom intake forms; entries/views/conversion. Custom form editor offers standard, advanced, post and pricing fields.",
+      "Duplicate/settings/delete, embed, Save Form, field search; name/email/consent/file/date/time/CAPTCHA controls.",
+      "WordPress forms and platform lead forwarding.",
+      "Custom form editor inspected; built-in appointment editor returned to list. No submissions or saves.",
+      "authenticated/108-form-builder.json"
+    ],
+    [
+      "WordPress",
+      "Form behavior, confirmations and privacy",
+      "Gravity Forms settings subviews",
+      "Label/validation placement, required indicators, entry limits, active date schedule, login requirement, save-and-continue and spam controls. Custom switches for lead forwarding, landing layout, repeat submissions and paste.",
+      "Settings save; confirmations list and Personal Data subview.",
+      "Lead capture and user-facing validation.",
+      "Settings and confirmation list inspected; Personal Data page exposed only its shell.",
+      "authenticated/109-form-settings.json"
+    ],
+    [
+      "WordPress",
+      "Tutorials and achievements",
+      "admin.php?page=tutorials; achievements",
+      "Video search/category filters, embedded YouTube tutorials, achievements and a LionDesk tutorial link.",
+      "Tutorial search; guide navigation.",
+      "Help/education, not evidence of an active LionDesk CRM connection.",
+      "Pages opened; tutorial services not activated.",
+      "authenticated/79-cms-tutorials.json"
+    ],
+    [
+      "Public website",
+      "IDX search and organizer",
+      "/homes-for-sale-search/",
+      "Location, filters, map/list results, clustering, keyword editing, sorting, save and favorite controls.",
+      "Search and lead-capture/organizer entry points.",
+      "iHomefinder Kestrel JavaScript and chunk assets render search on the WordPress website.",
+      "Live search screen observed; no saved search, favorite or inquiry submitted.",
+      "screenshots/85-property-search.jpg"
+    ],
+    [
+      "Public website",
+      "Scheduling and accessibility widget",
+      "/",
+      "Calendly script and scheduling iframe; UserWay accessibility script/menu.",
+      "Booking and accessibility entry points.",
+      "Business-specific website integrations; calendar-to-CRM synchronization not proven.",
+      "Loaded asset/iframe evidence; no appointment booked or accessibility preference saved.",
+      "public/customer-site-assets.json"
+    ]
+  ],
+  "technology": [
+    [
+      "Portal rendering",
+      "Server HTML, custom JavaScript and jQuery 3.6.0",
+      "Confirmed",
+      "Authenticated script URL and public jQuery banner; no portal dashboard iframe.",
+      "Does not exclude other libraries on uninspected modules.",
+      "authenticated/dashboard-assets.json"
+    ],
+    [
+      "Portal UI framework",
+      "Bootstrap 5.1.0",
+      "Confirmed",
+      "Local bundle banner and Bootstrap classes/variables.",
+      "Version applies to the downloaded portal bundle.",
+      "assets/bootstrap.bundle.min.js"
+    ],
+    [
+      "Portal design system",
+      "Agent Elite CSS tokens/components/overrides; Inter and Poppins",
+      "Confirmed",
+      "Stylesheet URLs, computed typography and --ae-* variables.",
+      "Defined tokens and actual rendered values sometimes differ.",
+      "authenticated/86-design-tokens.json"
+    ],
+    [
+      "Icons",
+      "Lucide, Font Awesome 6 and Iconify",
+      "Confirmed",
+      "Loaded script/CSS URLs, classes and font variables.",
+      "Mixed systems; not every icon package version known.",
+      "authenticated/lp-assets.json"
+    ],
+    [
+      "Local Presence charts",
+      "Chart.js 4.4.1",
+      "Confirmed",
+      "Versioned CDN script loaded on product page.",
+      "Other dashboards use different chart tools.",
+      "authenticated/lp-assets.json"
+    ],
+    [
+      "Portal HTTP server",
+      "Kestrel",
+      "Confirmed",
+      "Live HTML/API response Server header.",
+      "A server header identifies the responding layer, not source architecture.",
+      "authenticated/account-network.json"
+    ],
+    [
+      "Portal backend",
+      "ASP.NET Core, likely Razor Pages; .NET 8-era authentication client",
+      "Supported inference",
+      "Kestrel, ?handler= endpoints, homeportal.styles.css, frontend references to Razor/server models and ID_NET8_0 auth marker.",
+      "Repository/runtime manifest needed for exact framework/version.",
+      "public/authentication-evidence.json"
+    ],
+    [
+      "Portal APIs",
+      "JSON resource endpoints plus page-handler endpoints",
+      "Confirmed",
+      "Observed /api/account-settings/*, /api/business-profiles, /Billing?handler= and Local Presence routes.",
+      "No GraphQL request observed; that does not establish absence.",
+      "authenticated/90-lp-network.json"
+    ],
+    [
+      "Portal identity",
+      "Azure AD B2C, OpenID Connect; Google/email entry points",
+      "Confirmed",
+      "b2clogin.com policy, /signin-oidc callback and openid/profile redirect parameters.",
+      "Token storage/session cookie controls were not inspected.",
+      "public/authentication-evidence.json"
+    ],
+    [
+      "Portal hosting",
+      "Azure App Service DNS routing, West US 2 host chain",
+      "Confirmed",
+      "CNAME to aetech-azwu2-homeportal-app.azurewebsites.net and Azure West US 2 chain.",
+      "No deployment topology, autoscaling, network or backup configuration verified.",
+      "public/dns-evidence.json"
+    ],
+    [
+      "Portal data store",
+      "Cosmos DB is a frontend comment hint",
+      "Supported inference",
+      "Sync code comments name Cosmos/Stripe failures.",
+      "Does not establish that Cosmos is the canonical database, its API or schema. PostgreSQL/SQL Server are not confirmed.",
+      "assets/sync-manager.js"
+    ],
+    [
+      "CRM frontend",
+      "React; React 17.0.2 components in bundle",
+      "Confirmed",
+      "Public license file includes React/ReactDOM 17.0.2; runtime bundle contains React symbols.",
+      "License inventory can include multiple component versions; not a package lock.",
+      "assets/crm-licenses.txt"
+    ],
+    [
+      "CRM UI/state",
+      "Material UI and Redux/react-redux",
+      "Confirmed",
+      "Mui* rendered classes and bundle identifiers for Redux and react-redux.",
+      "Exact Material UI/Redux versions and store model not recovered.",
+      "public/crm-transport-hints.json"
+    ],
+    [
+      "CRM routing/build",
+      "Client-side SPA with hashed bundles",
+      "Confirmed behavior",
+      "React route transitions and static/js/main.d5f89ac1.js.",
+      "Router/build-tool product and version remain unverified.",
+      "authenticated/15-crm-launch.json"
+    ],
+    [
+      "CRM charts/maps",
+      "Plotly code; MapLibre GL JS v4.5.2 in license inventory",
+      "Confirmed bundled dependencies",
+      "Plotly DOM marker/code and MapLibre license reference.",
+      "Specific chart version, map tile provider and use on every map unknown.",
+      "assets/crm-licenses.txt"
+    ],
+    [
+      "CRM editors/import",
+      "Unlayer email designer; bundled Quill 1.3.7 and Papa Parse 5.5.4",
+      "Confirmed",
+      "Unlayer iframe /1.521.0/editor.html and tools; bundle license lists Quill/Papa Parse.",
+      "Unlayer use observed; Quill/Papa Parse being bundled does not establish use in every editor/import step.",
+      "authenticated/110-email-designer.json"
+    ],
+    [
+      "CRM backend API",
+      "Cross-origin JSON HTTP API at www.idxhome.com/api/control-panel",
+      "Confirmed",
+      "Successful GET/POST and OPTIONS requests for leads, campaigns, markets, team, tasks and integration resources.",
+      "Response bodies, auth headers and private data were not copied.",
+      "authenticated/101-crm-load-network.json"
+    ],
+    [
+      "CRM legacy subsystem",
+      "CFML-compatible endpoint hint at secure.idxre.com",
+      "Supported inference",
+      "Observed /idx/controllers/AdminMode.cfm returning JSON.",
+      "A .cfm route does not identify Adobe ColdFusion versus Lucee or all backend components.",
+      "authenticated/101-crm-load-network.json"
+    ],
+    [
+      "CRM database/hosting",
+      "Unknown",
+      "Unknown",
+      "No independent database or infrastructure evidence.",
+      "React/UI/API paths cannot establish SQL, NoSQL, cloud provider or topology.",
+      "authenticated/101-crm-load-network.json"
+    ],
+    [
+      "Website CMS",
+      "WordPress 6.8.5 as displayed",
+      "Confirmed",
+      "Authenticated WordPress admin footer and Gutenberg editor.",
+      "No code repository or runtime build attestation obtained.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "Website theme",
+      "Monterey 3.0.0 child theme of Genesis",
+      "Confirmed",
+      "Public style.css header, Genesis admin CSS and widgets.",
+      "Theme header Template Version is not a verified installed Genesis runtime version.",
+      "assets/monterey.css"
+    ],
+    [
+      "Website custom code",
+      "Agent Elite MU plugins, custom content types, Awesomeberg/Gutenberg assets",
+      "Confirmed",
+      "Custom admin/frontend asset paths, content menus and custom CSS panel.",
+      "An existing page showed unsupported awesomeberg/text blocks; registered functionality can differ from shipped assets.",
+      "authenticated/107-editor-blocks.json"
+    ],
+    [
+      "Website forms/SEO/media",
+      "Gravity Forms, Yoast SEO, Tiny image compression and post-type ordering assets",
+      "Confirmed",
+      "Admin UI and plugin/MU-plugin asset paths.",
+      "Full plugin list, licenses, active versions and maintenance state inaccessible.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "Website runtime/data",
+      "PHP ecosystem strongly implied; database implementation unknown",
+      "Supported inference / Unknown",
+      "WordPress software and PHP route names.",
+      "Do not equate WordPress defaults with verified PHP version or MySQL/MariaDB instance.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "DNS and edge tooling",
+      "Cloudflare DNS/proxy controls and Insights beacon",
+      "Confirmed",
+      "DNS UI states plus static.cloudflareinsights.com script; CMS analytics labels Cloudflare threats.",
+      "Origin hosting and WP Engine are not confirmed; DNS verification records alone are insufficient.",
+      "public/customer-site-assets.json"
+    ],
+    [
+      "Billing",
+      "Stripe",
+      "Confirmed",
+      "Named payment handoff and Stripe receipt host.",
+      "Exact Stripe integration, products/webhooks and merchant configuration unknown.",
+      "authenticated/09-billing.json"
+    ],
+    [
+      "Reputation/listings",
+      "Yext-backed Local Presence integration",
+      "Confirmed",
+      "Live yext-entity/yext-analytics/yext-listings routes plus official Agent Elite product description.",
+      "Actual outbound server API calls and provider contract were not captured.",
+      "authenticated/90-lp-network.json"
+    ],
+    [
+      "Observability",
+      "New Relic, Google Analytics gtag, ProfitWell and Cloudflare Insights",
+      "Confirmed loading",
+      "CRM script URLs and telemetry responses; website beacon.",
+      "Script loading alone does not prove dashboard configuration, consent settings or complete data processing.",
+      "authenticated/101-crm-load-network.json"
+    ],
+    [
+      "Storage/media services",
+      "Cloudinary widget in CRM; WordPress media library",
+      "Confirmed loading/UI",
+      "Cloudinary v2 widget script and CMS media controls.",
+      "Canonical storage backend, upload policy and object permissions remain unknown.",
+      "authenticated/15-crm-launch.json"
+    ],
+    [
+      "AI and SMS providers",
+      "No generative AI provider or SMS transport independently identified",
+      "Unknown",
+      "UI names AI visibility and campaign texts; texting references The Campaign Registry.",
+      "OpenAI/ChatGPT publisher identifiers are not evidence of OpenAI API use. Registry is not the SMS carrier/transport.",
+      "assets/lp-metrics.js"
+    ]
+  ],
+  "integrations": [
+    [
+      "iHomefinder / IDXHome",
+      "External white-label CRM and IDX search",
+      "Portal SSO; account.idxhome.com; public property search",
+      "New-tab SSO plus Kestrel JS embeds and JSON API",
+      "Confirmed",
+      "Website search/capture, market subscriptions, CRM, team and campaigns",
+      "License an IDX provider; develop native CRM with a negotiated adapter.",
+      "authenticated/15-crm-launch.json"
+    ],
+    [
+      "Azure AD B2C",
+      "External customer identity",
+      "Portal login",
+      "OIDC redirect/callback",
+      "Confirmed",
+      "Login and portal identity",
+      "Managed OIDC identity, e.g. Entra External ID for a new Azure-centered build.",
+      "public/authentication-evidence.json"
+    ],
+    [
+      "Stripe",
+      "External payment processor",
+      "Account billing/payment modal and invoices",
+      "Provider handoff and receipt links; server methods implied",
+      "Confirmed provider; backend mechanism unknown",
+      "Subscription products, invoices, cycle, entitlements",
+      "Stripe hosted payment/customer flows plus verified webhooks.",
+      "authenticated/09-billing.json"
+    ],
+    [
+      "Yext",
+      "External directory/reputation platform",
+      "Local Presence native dashboard; Advanced launch",
+      "Native JSON proxy routes; external dashboard destination",
+      "Confirmed provider; outbound protocol inferred",
+      "Business profile, directory synchronization and analytics; premium reviews/social/visibility",
+      "Yext Management API or another contracted listing network.",
+      "authenticated/90-lp-network.json"
+    ],
+    [
+      "Google Business Profile",
+      "External business identity/listings",
+      "Local Presence Settings",
+      "Connect control and status API",
+      "Confirmed surface; connection not activated",
+      "Selected business entity and publishing profile",
+      "Provider OAuth and business-profile adapter, subject to access approval.",
+      "authenticated/90-lp-network.json"
+    ],
+    [
+      "Unlayer",
+      "External email design engine",
+      "CRM email template editor",
+      "Iframe at editor.unlayer.com with block designer",
+      "Confirmed",
+      "Template layout, merge tags, smart content, previews",
+      "Licensed Unlayer embed; separate delivery service.",
+      "authenticated/110-email-designer.json"
+    ],
+    [
+      "WordPress / Genesis / Monterey",
+      "External CMS/framework with custom theme",
+      "Website Edit Site SSO",
+      "WordPress admin and theme/plugin integration",
+      "Confirmed",
+      "Page/blog/media/agent/community/landing content",
+      "Managed WordPress adapter or independently built block CMS.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "Gravity Forms",
+      "Commercial WordPress form plugin",
+      "CMS form list/editor/settings; public form assets",
+      "WordPress plugin and Ajax iframe",
+      "Confirmed",
+      "Form entries, validation and custom lead-forwarding controls",
+      "Gravity Forms if retaining WordPress; native typed form service otherwise.",
+      "authenticated/108-form-builder.json"
+    ],
+    [
+      "Yoast SEO",
+      "Commercial/open-source SEO ecosystem",
+      "CMS content lists/editor",
+      "Plugin script/CSS and SEO panels/blocks",
+      "Confirmed",
+      "Search metadata, previews, FAQ/how-to/breadcrumb blocks",
+      "Yoast on WordPress; native metadata/schema controls for a custom renderer.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "Tiny image compression",
+      "External media optimization plugin",
+      "CMS media menu",
+      "tiny-compress-images script",
+      "Confirmed asset; execution untested",
+      "Media optimization",
+      "Managed image transforms or native image processing.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "Cloudflare",
+      "External DNS/edge/analytics services",
+      "Website DNS, CMS analytics and website scripts",
+      "Protected/direct DNS controls and beacon JS",
+      "Confirmed observed surfaces",
+      "DNS proxy behavior and website metrics",
+      "Cloudflare DNS API/edge plus provider-managed origin hosting.",
+      "authenticated/11-website-dns.json"
+    ],
+    [
+      "Calendly",
+      "External scheduler",
+      "Customer website",
+      "Widget JS and booking iframe",
+      "Confirmed website embed",
+      "Appointment intake; CRM synchronization unknown",
+      "Calendly embed/API with booking webhooks where plan allows.",
+      "public/customer-site-assets.json"
+    ],
+    [
+      "UserWay",
+      "External accessibility widget",
+      "Customer website",
+      "cdn.userway.org JS and accessibility iframe",
+      "Confirmed",
+      "Accessibility controls and remediation script",
+      "Accessible components and audits; optional widget only as a supplement.",
+      "public/customer-site-assets.json"
+    ],
+    [
+      "Cloudinary",
+      "External media widget",
+      "CRM",
+      "Hosted v2 widget JavaScript",
+      "Confirmed loaded; upload not tested",
+      "CRM media/image workflows",
+      "Cloudinary or signed cloud-object uploads plus transforms.",
+      "authenticated/15-crm-launch.json"
+    ],
+    [
+      "New Relic",
+      "External application telemetry",
+      "CRM and public IDX embed",
+      "JS agent and bam.nr-data.net requests",
+      "Confirmed",
+      "Error/performance telemetry",
+      "OpenTelemetry plus selected observability vendor.",
+      "authenticated/101-crm-load-network.json"
+    ],
+    [
+      "Google Analytics",
+      "External usage analytics",
+      "CRM",
+      "gtag script and g/collect requests",
+      "Confirmed",
+      "Page/event measurement",
+      "First-party product analytics with consent-aware collection.",
+      "authenticated/100-crm-network.json"
+    ],
+    [
+      "ProfitWell",
+      "External subscription analytics script",
+      "CRM vendor frontend",
+      "public.profitwell.com JS",
+      "Confirmed loading only",
+      "Vendor billing/retention analytics role inferred",
+      "Native subscription metrics or a contracted revenue analytics tool.",
+      "authenticated/15-crm-launch.json"
+    ],
+    [
+      "Feedback widget",
+      "Agent Elite-branded feedback service",
+      "Shared portal shell",
+      "feedback.agentelite.com/widget.js",
+      "Confirmed service surface; implementation unknown",
+      "Page-context feedback",
+      "Native feedback/ticket intake.",
+      "authenticated/89-feedback.json"
+    ],
+    [
+      "Email & Calendar Sync",
+      "External connection option",
+      "CRM Add Integration chooser",
+      "Vendor integration flow; documentation describes OAuth/mail setup",
+      "Available option; tenant activation unknown",
+      "Email/calendar synchronization and lead communication",
+      "Google/Microsoft OAuth adapters or a managed mail/calendar API.",
+      "authenticated/41-crm-integrations.json"
+    ],
+    [
+      "Zillow Tech Connect / aggregation email",
+      "External lead acquisition",
+      "CRM integration chooser and official guide",
+      "Vendor integration/lead-forwarding address",
+      "Available option and documented; activation unknown",
+      "Inbound Zillow/Trulia or email leads and campaign enrollment",
+      "Contracted inbound lead adapters and normalized ingestion.",
+      "authenticated/41-crm-integrations.json"
+    ],
+    [
+      "Zapier and Client Event Webhook",
+      "External automation interfaces",
+      "CRM integration chooser",
+      "Webhook/Zapier configuration surface",
+      "Available options; not activated",
+      "Outbound activity and inbound workflow integrations",
+      "Signed versioned webhooks and a maintained Zapier application.",
+      "authenticated/41-crm-integrations.json"
+    ],
+    [
+      "Top Producer LTS, Custom LTS and Wix",
+      "External integration choices",
+      "CRM Add Integration chooser",
+      "Vendor adapters; exact mechanism not tested",
+      "Available options only",
+      "Legacy lead-transfer/site connections",
+      "Adapter interfaces rather than hard-coded integrations.",
+      "authenticated/41-crm-integrations.json"
+    ],
+    [
+      "Google Login",
+      "External login integration choice",
+      "CRM integration chooser",
+      "Identity configuration; not started",
+      "Available option only",
+      "Public/CRM identity behavior depends on configuration",
+      "OIDC/OAuth connector with documented account-linking rules.",
+      "authenticated/41-crm-integrations.json"
+    ],
+    [
+      "YouTube and social networks",
+      "External educational/social links",
+      "CMS tutorials, public site and portal footer",
+      "YouTube iframe API and outbound links",
+      "Confirmed loading/links",
+      "Tutorials and business social profiles",
+      "External embeds/links; no API access implied by a link.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "Walk Score and schools",
+      "Optional listing-detail data",
+      "CRM listing-detail settings and website widgets",
+      "Feature switches; provider calls not captured",
+      "UI capability confirmed; runtime integration unknown",
+      "Listing neighborhood information",
+      "Contracted location-data provider with caching and attribution.",
+      "authenticated/97-listing-detail-settings.json"
+    ],
+    [
+      "The Campaign Registry",
+      "Texting registration dependency",
+      "CRM texting verification notice",
+      "Workflow notice; registration call not observed",
+      "UI reference confirmed",
+      "Messaging eligibility/verification",
+      "Use the SMS provider registration workflow; registry does not identify the transport.",
+      "authenticated/54-texting.json"
+    ],
+    [
+      "Design Studio provider and print fulfillment",
+      "Unknown external/native creative subsystem",
+      "Subscription-gated module; official guide",
+      "Editor and print steps documented; no runtime access",
+      "Unknown provider",
+      "Brand kits, templates, sharing, download and printing",
+      "Licensed creative editor/print fulfillment adapter after a sandbox evaluation.",
+      "authenticated/61-design-studio.txt"
+    ],
+    [
+      "LionDesk",
+      "Tutorial reference",
+      "CMS Tutorials submenu",
+      "Help link only",
+      "Reference only; no active CRM integration established",
+      "Education",
+      "Do not include it as an implementation dependency without runtime evidence.",
+      "authenticated/79-cms-tutorials.json"
+    ]
+  ],
+  "workflows": [
+    [
+      "Sign in and launch a product",
+      "1. Choose Google/email at portal login. 2. Complete identity-provider sign-in. 3. Portal resolves account/products. 4. Open CRM or Edit Site. 5. A separate provider session opens.",
+      "Existing identity and entitled product asset.",
+      "Provider SSO succeeded for CRM and WordPress. Wrong-account/session, revoked access and expiration behavior not tested.",
+      "OIDC redirect/callback; portal /sso/CRM and /sso/EditMySite.",
+      "Identity → portal → asset mapping → provider session."
+    ],
+    [
+      "Lead capture and team assignment",
+      "1. Visitor searches/views a listing or fills a website form. 2. Capture/registration conditions apply. 3. Lead enters CRM. 4. Assignment follows enabled routing priorities. 5. Notifications and applicable automation can run.",
+      "Form/contact fields; registration thresholds; consent; enabled routing and integration.",
+      "Phone/CAPTCHA/agent/password settings visible. No form submitted; actual validation/deduplication and notification delivery untested.",
+      "IDXHome lead/route API resources observed; WordPress lead-forwarding setting.",
+      "Website/Gravity Forms or external source → normalization → CRM → agent → campaign."
+    ],
+    [
+      "Lead triage and follow-up",
+      "1. Search/filter lead list. 2. Open an existing lead. 3. Review activity, tags, readiness and subscriptions. 4. Stage/owner can be updated. 5. Add task or note.",
+      "Existing lead; team permissions; task title/type/dates.",
+      "Pipeline stages and task required markers inspected. Saves, reassignment and audit changes were not executed.",
+      "leads.json, lead-last-activities.json, lead-pipelines.json, lead-notes.json, tasks.json.",
+      "Lead + activity + owner + task + pipeline history."
+    ],
+    [
+      "Saved search, market and alerts",
+      "1. Define a market or lead-specific saved search. 2. Specify location/property criteria. 3. Add subscription/alert. 4. MLS updates produce matching listings. 5. Client returns through alert/organizer.",
+      "Search criteria, market identity, subscriber and alert preferences.",
+      "Add-market form and organizer/subscription tabs observed. Matching/delivery/retry semantics not tested.",
+      "markets.json, saved-searches.json and market-report/listing resources.",
+      "MLS provider → query definition → subscription → delivery → behavior feedback."
+    ],
+    [
+      "Campaign creation and enrollment",
+      "1. Choose category/campaign. 2. Configure name, description, content source and branding. 3. Arrange email/SMS stages and delays. 4. Add automation trigger or subscriber. 5. Enrollment runs stages according to restart policy.",
+      "Campaign, message templates, delay/unit, active status, lead/market source and eligibility.",
+      "One campaign contained 42 stages. Re-enrollment choices are once, after completion on trigger, or after inactivity. Actual job engine unknown.",
+      "campaigns.json, campaign-messages.json, subscriptions.json, campaign-routes.json.",
+      "Capture/behavior event → rule → enrollment → scheduled step → message status."
+    ],
+    [
+      "Compose and schedule broadcast email",
+      "1. Set subject and recipients/list. 2. Design message. 3. Preview. 4. Send now/later or save draft. 5. Review sent records and engagement.",
+      "Recipients, subject and content; scheduled time if applicable.",
+      "Subject required marker and send/draft controls inspected. No message or draft saved.",
+      "CRM vendor API; Unlayer designer is separate from sending infrastructure.",
+      "Lead segment + template → provider delivery → opens/clicks → CRM activity."
+    ],
+    [
+      "Edit email/text content",
+      "1. Open campaign step. 2. Set message name and email subject/text body. 3. Use blocks/merge fields/smart listing data. 4. Preview email desktop/mobile. 5. Save.",
+      "Template content, merge fields and data context.",
+      "Unlayer iframe and tools confirmed; SMS uses a body field and insertion tools. No editing performed.",
+      "editor.unlayer.com iframe; vendor campaign-message resources.",
+      "Stored design + rendered content + personalization → campaign delivery."
+    ],
+    [
+      "Enable texting",
+      "1. Configure rented number, forwarding phone/time zone. 2. Complete registration/verification. 3. Capture lead text consent. 4. Active SMS steps become eligible.",
+      "Registered sender, verified account and eligible lead consent.",
+      "Account currently shows verification needed. Dashboard copy cannot establish actual SMS delivery.",
+      "Texting UI and registration notice; transport/API provider not identified.",
+      "Registration/consent gate → campaign worker → unknown SMS transport → status events."
+    ],
+    [
+      "Local Presence profile and reporting",
+      "1. Choose account. 2. Review completion/coverage and analytics range. 3. Edit entity fields or connect Google Business. 4. Provider distributes updates. 5. Review health and metrics.",
+      "Business entity, categories, address/contact/media, publisher entitlements and connection authorization.",
+      "Settings read only. Normal loading emitted an automatic asset-data PUT; no edit/save control was submitted and write semantics were not independently established.",
+      "yext-entity, yext-media, yext-listings, yext-analytics/* and google-business/*/status.",
+      "Portal asset → provider entity → publishers → analytics → portal score."
+    ],
+    [
+      "Website publication and content",
+      "1. Select website. 2. Launch Edit Site. 3. Open existing page/landing page. 4. Choose block/template/media/SEO settings. 5. Save/publish and inspect public site.",
+      "CMS role, page content/template, media and URL metadata.",
+      "Existing Gutenberg page inspected without save. Custom-block compatibility warnings observed. New-post creation avoided because it can create drafts.",
+      "WordPress admin; custom theme/MU assets; IDX script on public site.",
+      "CMS content + theme + IDX widget → rendered website → capture."
+    ],
+    [
+      "Create and configure a form",
+      "1. Choose an existing custom form. 2. Arrange typed fields and required rules. 3. Set layout, active window, limits and spam handling. 4. Configure confirmation and lead forwarding. 5. Save/embed.",
+      "Typed schema, required fields, consent/upload rules, confirmation and forwarding configuration.",
+      "Custom form builder and settings inspected; no field added or form submitted. Some built-in forms were not editable through the observed route.",
+      "Gravity Forms plugin and custom forwarding options; backend integration code unavailable.",
+      "Form schema → browser/server validation → entry → confirmation/lead forwarding."
+    ],
+    [
+      "Billing and marketplace change",
+      "1. Open billing or catalog detail. 2. Review current products, inclusions and cycle scope. 3. Request add/upgrade/cycle or payment change. 4. Confirm financial terms/provider handoff. 5. Invoice/entitlement state updates.",
+      "Tenant subscription, catalog SKU, billing cycle and payment method.",
+      "Detail/cycle/payment dialogs inspected only. Annual pricing units and one anomalous catalog value need vendor clarification; no commitment made.",
+      "Observed billing page handler; source-only checkout/cycle/cancel methods are not executed evidence.",
+      "Catalog + subscription → payment provider → reconciliation → entitlements."
+    ],
+    [
+      "DNS management",
+      "1. Choose website DNS tab. 2. Review locked/protected records. 3. Select record type/name/value/TTL/priority. 4. Save. 5. Refresh and validate resolution.",
+      "Domain asset, record fields and proxy eligibility.",
+      "Add form and warning inspected; no DNS change. Record-specific validation and propagation untested.",
+      "Cloudflare identified by UI; outbound DNS API not observed.",
+      "Tenant website/domain mapping → staff/customer authority → DNS provider."
+    ],
+    [
+      "Support and additional services",
+      "1. Open Support or prefilled add-on link. 2. Enter title/category/description. 3. Submit. 4. Review ticket history/status and staff response.",
+      "Request text and category.",
+      "Empty create form inspected; no request sent. Ticket backend, status transitions and attachment workflow remain unverified.",
+      "/tickets and /tickets/create.",
+      "Product request/account context → support/provisioning workflow."
+    ],
+    [
+      "Design Studio creative/print workflow",
+      "1. Set brand details. 2. Choose a template. 3. Customize design. 4. Download/share or choose print finish/quantity. 5. Checkout/shipping.",
+      "Brand kit, media and template; fulfillment options for print.",
+      "Official documentation only; this account has a subscription gate. Runtime provider and fulfillment not verified.",
+      "No authenticated editor/API observed.",
+      "Brand assets → creative document → export/print provider."
+    ]
+  ],
+  "findings": [
+    [
+      "P1 review",
+      "Credential-named URL parameters",
+      "A WordPress dashboard CRM link contained username/password parameter names with populated values. Values were neither reproduced in artifacts nor used. Their encoding, privilege and lifetime are unknown.",
+      "Ask the vendor to verify semantics and replace credential-bearing links with expiring one-use handoffs; redact URLs in logs and assess rotation if these are reusable credentials.",
+      "authenticated/67-wordpress.json"
+    ],
+    [
+      "P1 clarity",
+      "Value copy exceeds verified operational status",
+      "Dashboard instant-text narrative appears while CRM requires texting verification. Hours-saved cards are narrative estimates, not measured evidence of completed work.",
+      "Derive claims from eligibility and actual execution/delivery events; label estimates and show prerequisites.",
+      "authenticated/54-texting.json"
+    ],
+    [
+      "P2 accessibility",
+      "Low-contrast small CTA text",
+      "Dashboard CTA spans render at 13px/600 in #11a7e0 on white, approximately 2.75:1. This falls below 4.5:1 for normal text.",
+      "Use a darker link/action text token; verify all semantic states with computed colors and keyboard/screen-reader checks.",
+      "authenticated/86-design-tokens.json"
+    ],
+    [
+      "P2 reliability",
+      "Custom block compatibility",
+      "An existing landing page displays unsupported awesomeberg/text block notices despite related assets loading.",
+      "Check block registration/version migration in a sandbox; preserve legacy content and test round-trip edits before changing production.",
+      "authenticated/84-landing-editor.json"
+    ],
+    [
+      "P2 metric semantics",
+      "Local Presence score/analytics wording",
+      "AI Search is a publisher-sync coverage calculation. Profile opens can exceed impressions, yet the UI presents a simplified conversion statement; different cards show 626 and 624 contacts/actions.",
+      "Publish metric definitions, counts versus unique users, included sources, time windows, denominator, freshness and unavailable states.",
+      "assets/lp-metrics.js"
+    ],
+    [
+      "P2 commerce",
+      "Catalog cycle/pricing ambiguity",
+      "Annual labels sit beside figures that resemble monthly equivalents; v2 Website detail displayed a particularly large monthly/annual difference. The UI says cycle applies subscription-wide.",
+      "Show annual invoice total and equivalent monthly rate separately, with taxes/MLS fees and effective date; verify catalog mapping before checkout.",
+      "authenticated/66-catalog-details.json"
+    ],
+    [
+      "P2 usability",
+      "Dense CMS tables at narrow width",
+      "Landing-page list columns wrap word by word at the observed narrow viewport. Four UI systems require users to learn different menus and save patterns.",
+      "Use horizontal scrolling or column priority; provide clear product context, return navigation and consistent saving affordances.",
+      "authenticated/71-cms-landing.json"
+    ],
+    [
+      "P2 form usability",
+      "Paste suppression default",
+      "Gravity Forms custom settings describe disabling paste by default as spam mitigation. No live paste test was performed.",
+      "Allow paste for ordinary user input; use server validation, rate limits and risk-based spam controls.",
+      "authenticated/109-form-settings.json"
+    ],
+    [
+      "P3 polish",
+      "Stale/ambiguous status copy",
+      "Portal footer says 2025; existing live website says live since just now, and site overview shows the live URL again as staging.",
+      "Bind lifecycle labels to persisted timestamps and canonical environment URLs; use consistent date/time display.",
+      "screenshots/87-dashboard-wide.jpg"
+    ],
+    [
+      "P3 performance investigation",
+      "Large CRM bundle and eager resource load",
+      "Downloaded uncompressed main bundle is 10,859,653 bytes; an ordinary reload fetches many CRM datasets. This is not a measured transfer-size or latency benchmark.",
+      "Measure compressed transfer, main-thread work and route data needs; split heavy editor/chart dependencies and scope fetches by route/permissions.",
+      "authenticated/101-crm-load-network.json"
+    ]
+  ],
+  "entities": [
+    [
+      "Tenancy/identity",
+      "tenant, user, membership, role, permission, office, business_profile",
+      "Membership joins user to tenant; roles grant explicit permissions; identities map to external issuer/subject.",
+      "Tenant key in every business table; scoped foreign keys; enforce in API and database."
+    ],
+    [
+      "Products/billing",
+      "product, plan, subscription, subscription_item, entitlement, invoice_reference, provider_account, product_asset",
+      "Assets attach website/CRM/local entity IDs to tenant products; entitlement state reconciles billing and provider provisioning.",
+      "Do not derive permissions solely from a UI card or price ID. Keep immutable change history."
+    ],
+    [
+      "CRM",
+      "contact, contact_email, contact_phone, lead, lead_source, lead_assignment, pipeline_stage, stage_history, tag, lead_tag",
+      "One contact can have multiple channels; stage history and agent assignment remain separate from contact identity.",
+      "Tenant-scoped deduplication; provenance and normalized phone/email; import review."
+    ],
+    [
+      "Activity/tasks",
+      "activity_event, task, task_assignee, note, anniversary",
+      "Events link actor, lead, source and occurrence/ingestion timestamps. Tasks have status, priority and due zone.",
+      "Append-only event identities; paginate rather than preload all histories."
+    ],
+    [
+      "Property/markets",
+      "listing_reference, listing_snapshot, market, search_definition, favorite, alert_subscription",
+      "MLS provider/board IDs namespace listings; searches hold typed geography/price/property criteria.",
+      "Respect feed freshness and contracted rights; provider IDs are not global primary keys."
+    ],
+    [
+      "Campaigns/delivery",
+      "campaign, campaign_version, message_design, message_version, campaign_step, automation_rule, enrollment, scheduled_action, delivery_attempt",
+      "Rules create versioned enrollments; steps reference immutable content; delivery attempts retain provider status.",
+      "Unique idempotency keys per enrollment/step/channel; consent checked again at send time."
+    ],
+    [
+      "Consent/integrations",
+      "consent_event, suppression, integration_connection, webhook_inbox, outbox, sync_cursor",
+      "Connections use secret references; inbound provider events are recorded before processing.",
+      "Verify signatures; deduplicate event IDs; revoke/rotate credentials outside application logs."
+    ],
+    [
+      "Website/design/media",
+      "site, domain, environment, content_document, revision, template, form_schema, form_entry, brand_kit, media_asset",
+      "Versioned content and templates publish to site/environment; media references tenant-owned objects.",
+      "Draft/published state, previews, signed uploads, file limits/scanning and least-privilege access."
+    ],
+    [
+      "Local presence/reporting",
+      "business_entity, publisher_listing, review_reference, metric_definition, metric_snapshot, search_tracking_job",
+      "Provider metrics retain source, period, dimensions and freshness; scores derive from versioned definitions.",
+      "Separate publisher coverage from measured search/AI answer visibility."
+    ],
+    [
+      "Operations/support",
+      "ticket, ticket_event, provisioning_job, audit_event, reconciliation_run",
+      "Staff actions require scoped access and purpose; provider jobs expose retry/failure states.",
+      "No invisible cross-tenant access; audited staff sessions and safe replay controls."
+    ]
+  ],
+  "stack": [
+    [
+      "Web application",
+      "Next.js + TypeScript + React",
+      "Shared portal/CRM shell and server-rendered public pages; use CSS tokens and accessible primitives. Keep editor/chart bundles lazy.",
+      "App Router supports server/client composition. Deploy as a Node server or container for dynamic functionality. <a href=\"https://nextjs.org/docs/app\">Next.js App Router</a> · <a href=\"https://nextjs.org/docs/app/getting-started/deploying\">Next.js deployment</a>"
+    ],
+    [
+      "Business backend",
+      "NestJS modular monolith + OpenAPI",
+      "Modules for tenancy, CRM, websites, entitlements, billing, campaigns, support and integrations; explicit DTO validation and authorization.",
+      "A single TypeScript service and separately scalable workers provide clear ownership without requiring microservices. <a href=\"https://docs.nestjs.com/\">NestJS documentation</a>"
+    ],
+    [
+      "Primary database",
+      "PostgreSQL + explicit SQL migrations",
+      "Relational contacts, subscriptions, tasks and campaigns; JSONB for provider snapshots/design schemas; materialized reporting aggregates.",
+      "Tenant policies supplement application authorization. Run with a non-owner role because table owners normally bypass row security. <a href=\"https://www.postgresql.org/docs/17/ddl-rowsecurity.html\">PostgreSQL row security</a>"
+    ],
+    [
+      "Identity",
+      "Managed OIDC; Entra External ID is a concrete Azure-aligned option",
+      "Authorization Code + PKCE where applicable; secure server sessions, MFA, revocation and application-managed tenant membership.",
+      "The original B2C tenant can remain an existing service; for a new build, Microsoft states B2C is unavailable for new purchase and points to External ID. <a href=\"https://learn.microsoft.com/en-us/entra/external-id/customers/overview-customers-ciam\">Entra External ID overview</a>"
+    ],
+    [
+      "Background processing",
+      "Transactional outbox + queue/worker; Temporal for durable long campaigns",
+      "Separate ingestion, provision, sync, schedule and delivery tasks; bounded retries, dead-letter handling and idempotent provider operations.",
+      "Temporal persists workflow event history and resumes through replay; adopt when long-lived execution complexity justifies it. <a href=\"https://docs.temporal.io/encyclopedia/event-history\">Temporal event history</a>"
+    ],
+    [
+      "Hosting/storage",
+      "Managed containers + managed PostgreSQL + object storage/CDN + secret manager",
+      "Azure Container Apps/App Service, PostgreSQL service, Blob Storage and Key Vault are a coherent target; equivalents on another cloud are valid.",
+      "Recommendation, not a reconstruction of Agent Elite hosting beyond the observed App Service DNS. Validate regions, quotas, backups and current pricing before procurement."
+    ],
+    [
+      "Billing",
+      "Stripe hosted payment/customer flows + native entitlements",
+      "Verified webhook inbox; event deduplication; reconcile subscription state; expose previews before a committed change.",
+      "Signature verification and duplicate/out-of-order processing matter. Use idempotency for mutations. <a href=\"https://docs.stripe.com/webhooks\">Stripe webhooks</a> · <a href=\"https://docs.stripe.com/api/idempotent_requests\">Stripe idempotent requests</a>"
+    ],
+    [
+      "IDX and local listings",
+      "Contracted iHomefinder/other IDX adapter + Yext adapter",
+      "Buy access to licensed data/publisher networks; own the mapping, monitoring, support and entitlement experience.",
+      "Confirm API/export/SSO rights contractually. Yext documents entity, listing, review and analytics APIs. <a href=\"https://docs.yext.com/docs/\">Yext API documentation</a>"
+    ],
+    [
+      "Creative tools",
+      "Unlayer for email; managed WordPress or independent block CMS for websites",
+      "Store editable design plus versioned rendered HTML; own templates/brand associations and media security.",
+      "Unlayer supports embeddable design, merge tags and export; it does not replace a delivery service. <a href=\"https://docs.unlayer.com/builder/1.468.0/email-builder\">Unlayer email builder</a>"
+    ],
+    [
+      "Email/SMS/calendar",
+      "Contracted delivery API and calendar adapter",
+      "Own eligibility, consent, suppression, scheduling and status history; choose providers after deliverability/sender-registration and volume review.",
+      "Calendly offers embed/REST/webhook interfaces with plan/role restrictions; scheduling/cancellation events can enter the workflow inbox. <a href=\"https://developer.calendly.com/docs/getting-started/introduction\">Calendly API introduction</a> · <a href=\"https://developer.calendly.com/docs/api-guides/trigger-automations-with-other-apps-when-invitees-schedule-or-cancel-events\">Calendly event webhooks</a>"
+    ],
+    [
+      "Reporting/observability",
+      "Defined event schema, database aggregates and OpenTelemetry",
+      "Separate operational logs from product metrics; trace a lead/event through provider requests and delivery.",
+      "Do not infer completed actions from configured rules. Publish time zone, denominator, data origin and last refresh for every metric."
+    ]
+  ],
+  "roadmap": [
+    [
+      "0. Verification and contracts",
+      "Confirm product boundaries, provider API/SSO/export rights, feed coverage, required roles, consent model and target scale. Obtain a nonproduction tenant.",
+      "Approved capability matrix, provider contracts, test fixtures and measurable acceptance criteria.",
+      "No implementation until the independent scope and integrations are feasible."
+    ],
+    [
+      "1. Foundation",
+      "Tenant/user/role model, OIDC sessions, permission enforcement, product/asset registry, audit trail, migration pipeline, object storage and observability.",
+      "Cross-tenant negative tests, recovery drill, safe secret handling and local/staging deployment.",
+      "Tenancy and authorization precede every customer feature."
+    ],
+    [
+      "2. Core CRM and portal",
+      "Dashboard, contact search/import, lead detail, pipeline history, tasks, notes, teams/offices, business profiles, support and billing read views.",
+      "Deduplicated import preview, accessible table/forms, paginated API and consistent time zone handling.",
+      "Lead/task/permission acceptance flows pass against sandbox data."
+    ],
+    [
+      "3. Website and IDX",
+      "Managed CMS or block document system; revisions/templates/media/forms; domains/environments; licensed IDX search/organizer; lead ingestion and routing.",
+      "Publish/rollback preview, form validation/spam tests, feed freshness checks and routing precedence tests.",
+      "End-to-end sandbox capture creates exactly one lead with provenance and proper owner."
+    ],
+    [
+      "4. Provider and commerce integrations",
+      "Stripe checkout/customer flows/reconciliation, Yext profile/listing reporting, calendar, DNS and provisioning adapters.",
+      "Signed webhook replay/duplicates/out-of-order tests; reconciled entitlements; provider-error and support recovery paths.",
+      "Customer-visible state stays explainable during provider failure or delayed sync."
+    ],
+    [
+      "5. Automation and marketing",
+      "Versioned campaign designer, Unlayer templates, trigger rules, scheduling, email/SMS eligibility, greetings, delivery tracking and cancellation/re-enrollment.",
+      "Clock-controlled tests for delays/time zones; retry idempotency; suppression after opt-out; trigger policy tests.",
+      "No duplicate sends, no ineligible delivery and no silent scheduled job loss."
+    ],
+    [
+      "6. Advanced products and reporting",
+      "Review/reputation/social features, creative/print integration, tracked search/AI visibility with honest definitions, comparative reporting and scoped staff admin.",
+      "Metric reconciliation, provider source/freshness labels, report permissions, media/template compatibility and approval workflows.",
+      "Claims are backed by measured evidence; premium entitlements are enforced server-side."
+    ],
+    [
+      "7. Production readiness and rollout",
+      "Capacity/load tests, dependency review, accessibility audit, backups/restore, alerting, runbooks, staged migration and rollback plan.",
+      "Canary tenant cohort, delivery/provisioning monitoring, audited migration and ownership for every operational failure mode.",
+      "Expand only after production reconciliation and recovery evidence is satisfactory."
+    ]
+  ],
+  "gaps": [
+    [
+      "Portal backend and data store",
+      "Exact .NET/framework versions, server layering, Cosmos usage, schemas, tenancy boundaries and migrations.",
+      "Read-only repository/dependency manifest, architecture notes, anonymized schema and infrastructure inventory."
+    ],
+    [
+      "Provider SSO and URL handoff",
+      "Ticket/credential encoding, lifetime, audience, replay protection and revocation; legacy username/password-named link semantics.",
+      "Vendor SSO specification and a sandbox trace reviewed without copying secret values."
+    ],
+    [
+      "Authentication/session security",
+      "Cookie flags, CSRF enforcement, MFA policy, token storage, recovery and identity-to-tenant mapping.",
+      "Identity configuration and authorized nonproduction security tests."
+    ],
+    [
+      "CRM backend/data model",
+      "Database, server framework, stored procedures, query behavior, delivery engine and permission enforcement.",
+      "iHomefinder partner documentation, supported API contract and sandbox access. A .cfm path alone is insufficient."
+    ],
+    [
+      "Local Presence advanced tiers",
+      "Advanced dashboard contents, review response/generation, social scheduler, Scout/tracker runs and provider quotas.",
+      "A permitted browser connection to the advanced destination and sandbox Boost/Elite entitlement; vendor reporting definitions."
+    ],
+    [
+      "Design Studio",
+      "Actual editor, template library, storage, integration method, creative provider, print vendor and order lifecycle.",
+      "Entitled sandbox product and provider integration/fulfillment documentation."
+    ],
+    [
+      "Outbound communication",
+      "Email sender infrastructure, SMS carrier/transport, delivery callbacks, verification process, suppression and retry policy.",
+      "Provider configuration, test sender and sandbox end-to-end message traces with consent fixtures."
+    ],
+    [
+      "Automation execution",
+      "Queue/durable engine, schedule persistence, cancellation, duplicate handling and rule precedence across concurrent events.",
+      "Workflow implementation or provider specification plus clock-controlled sandbox tests."
+    ],
+    [
+      "Website infrastructure/plugins",
+      "Origin host, PHP/database versions, installed plugin manifests, full CMS roles, update cadence and backup/restore process.",
+      "Read-only site health/plugin report, hosting configuration and staging clone. DNS verification strings are not proof of a host."
+    ],
+    [
+      "Support/staff operations",
+      "Ticket backend, staff provisioning/admin dashboards, attachments, status transitions and account-support access.",
+      "Staff-role sandbox/demo, workflow documentation and helpdesk integration specification."
+    ],
+    [
+      "Metric truth and AI visibility",
+      "Source definitions, unique/event counts, time zones, score weights, AI answer monitoring and reported benchmark provenance.",
+      "Provider metric dictionary and sampled aggregates; separate real query-based AI visibility evidence from listing synchronization."
+    ],
+    [
+      "Write/validation behavior",
+      "Server validation errors, update side effects, billing changes, form submission, export and recovery behaviors.",
+      "Explicitly authorized sandbox tests; this production session deliberately did not submit these actions."
+    ],
+    [
+      "Responsive/accessibility completeness",
+      "Phone viewport, touch, keyboard focus trapping, screen-reader workflows, contrast across states and native mobile app.",
+      "Actual mobile device/emulation session and full accessibility testing. Requested viewport overrides did not consistently yield requested dimensions."
+    ],
+    [
+      "Scale/security/operations",
+      "Rate limits, caching, data retention, disaster recovery, access logging, isolation and costs.",
+      "Operational SLOs, load metrics, infrastructure-as-code and scoped audit evidence; not production probing."
+    ]
+  ],
+  "sources": {
+    "portal": [
+      "https://help.agentelite.com/account/user-portal-walkthrough/",
+      "Agent Elite portal guide"
+    ],
+    "integration": [
+      "https://help.agentelite.com/products/website-idx/integration-and-aggregation/",
+      "Agent Elite integrations guide"
+    ],
+    "design": [
+      "https://help.agentelite.com/products/design-studio/how-to-guides/getting-started/",
+      "Design Studio guide"
+    ],
+    "local": [
+      "https://agentelite.com/local-presence-platform/",
+      "Agent Elite Local Presence"
+    ],
+    "rating": [
+      "https://help.agentelite.com/products/website-idx/lead-rating-faq/",
+      "Lead rating guide"
+    ],
+    "text": [
+      "https://help.agentelite.com/products/website-idx/text-messaging-faq/",
+      "Text messaging guide"
+    ],
+    "next": [
+      "https://nextjs.org/docs/app",
+      "Next.js App Router"
+    ],
+    "deploy": [
+      "https://nextjs.org/docs/app/getting-started/deploying",
+      "Next.js deployment"
+    ],
+    "nest": [
+      "https://docs.nestjs.com/",
+      "NestJS documentation"
+    ],
+    "postgres": [
+      "https://www.postgresql.org/docs/17/ddl-rowsecurity.html",
+      "PostgreSQL row security"
+    ],
+    "identity": [
+      "https://learn.microsoft.com/en-us/entra/external-id/customers/overview-customers-ciam",
+      "Entra External ID overview"
+    ],
+    "temporal": [
+      "https://docs.temporal.io/encyclopedia/event-history",
+      "Temporal event history"
+    ],
+    "stripe": [
+      "https://docs.stripe.com/webhooks",
+      "Stripe webhooks"
+    ],
+    "idempotency": [
+      "https://docs.stripe.com/api/idempotent_requests",
+      "Stripe idempotent requests"
+    ],
+    "yext": [
+      "https://docs.yext.com/docs/",
+      "Yext API documentation"
+    ],
+    "unlayer": [
+      "https://docs.unlayer.com/builder/1.468.0/email-builder",
+      "Unlayer email builder"
+    ],
+    "calendly": [
+      "https://developer.calendly.com/docs/getting-started/introduction",
+      "Calendly API introduction"
+    ],
+    "calendarhooks": [
+      "https://developer.calendly.com/docs/api-guides/trigger-automations-with-other-apps-when-invitees-schedule-or-cancel-events",
+      "Calendly event webhooks"
+    ],
+    "contrast": [
+      "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+      "W3C contrast criterion"
+    ]
+  },
+  "contrastEvidence": {
+    "foreground": "#11a7e0",
+    "background": "#ffffff",
+    "sizePx": 13,
+    "weight": 600,
+    "ratio": 2.7531291058828837
+  },
+  "limitations": [
+    "Production submit paths not executed",
+    "Design Studio subscription-gated",
+    "Advanced Local Presence inspection denied at initial invalid launch URL",
+    "Phone-size override could not be validated consistently",
+    "Backend and database unavailable except limited public hints"
+  ]
+}

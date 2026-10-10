@@ -1,0 +1,3 @@
+# Preserve captured reference evidence as bytes, including its original whitespace.
+evidence/** -text
+Agent-Elite-Audit-2026-10-10/evidence/** -text

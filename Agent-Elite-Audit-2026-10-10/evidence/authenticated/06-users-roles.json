@@ -1,0 +1,16 @@
+{
+  "route": "/AccountSettings#users",
+  "observedMemberCount": 6,
+  "visibleRoles": [
+    "Owner",
+    "Member",
+    "Custom"
+  ],
+  "currentDisplayedRoles": "Owner for each of six visible members",
+  "controls": [
+    "Add User",
+    "role selection",
+    "Remove user"
+  ],
+  "scope": "No role selected, member added, invitation sent or user removed."
+}

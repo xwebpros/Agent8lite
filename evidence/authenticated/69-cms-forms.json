@@ -1,0 +1,212 @@
+{
+  "buttons": [
+    "Add New",
+    "Search Forms",
+    "Apply",
+    "Active"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "search"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "options": [
+        "Bulk actions",
+        "Mark as Active",
+        "Mark as Inactive",
+        "Reset Views",
+        "Permanently Delete Entries",
+        "Move to trash"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "options": [
+        "Bulk actions",
+        "Mark as Active",
+        "Mark as Inactive",
+        "Reset Views",
+        "Permanently Delete Entries",
+        "Move to trash"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    }
+  ],
+  "headings": [
+    "Forms - Gravity Forms",
+    "Forms"
+  ],
+  "labels": [
+    "Search Forms:",
+    "Select bulk action",
+    "Current Page",
+    "Select All",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select All",
+    "Select bulk action"
+  ],
+  "queryKeys": [
+    "page"
+  ],
+  "route": "/wp-admin/admin.php",
+  "tableHeaders": [
+    "Status\nSort ascending.",
+    "Title\nSort ascending.",
+    "ID\nSort ascending.",
+    "Entries\nSort ascending.",
+    "Views\nSort ascending.",
+    "Conversion\nSort ascending.",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Select form",
+    "Status\nSort ascending.",
+    "Title\nSort ascending.",
+    "ID\nSort ascending.",
+    "Entries\nSort ascending.",
+    "Views\nSort ascending.",
+    "Conversion\nSort ascending."
+  ]
+}

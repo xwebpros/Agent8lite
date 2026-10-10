@@ -1,0 +1,199 @@
+{
+  "buttons": [
+    "Attorney's Divorce Real Estate Intake Packet",
+    "<strong>Form Title</strong>Enter the title of your form.",
+    "<strong>Form Description</strong>Enter a description for your form. This may be used for user instructions.",
+    "<strong>Form Label Placement</strong>Select the default label placement.  Labels can be top aligned above a field, left aligned to the left of a field, or right aligned to the right of a field. This is a global label placement setting.",
+    "<strong>Description Placement</strong>Select the default description placement.  Descriptions can be placed above the field inputs or below the field inputs. This setting can be overridden in the appearance settings for each field.",
+    "<strong>Validation Message Placement</strong>Select the default validation message placement.  Validation messages can be placed above the field inputs or below the field inputs.",
+    "<strong>Sub-Label Placement</strong>Select the default sub-label placement.  Sub-labels can be placed above the field inputs or below the field inputs. This setting can be overridden in the appearance settings for each field.",
+    "<strong>Validation Summary</strong>Enable to show a summary that lists validation errors on top of the form.",
+    "<strong>Required Indicator</strong>Select how you would like to indicate required fields.  You can choose either the default text or asterisk, or enter your own custom text.  If legacy markup is not enabled and you choose an asterisk, a legend will appear at the top of the form to explain the asterisk to users.",
+    "<strong>Form CSS Class Name</strong>Enter the CSS class name you would like to use in order to override the default styles for this form.",
+    "<strong>Limit Number of Entries</strong>Enter a number in the input box below to limit the number of entries allowed for this form. The form will become inactive when that number is reached.",
+    "<strong>Schedule Form</strong>Schedule a time period the form is active.",
+    "<strong>Require user to be logged in</strong>Check this option to require a user to be logged in to view this form.",
+    "<strong>Enable Honeypot</strong>Enable the honeypot to detect spam using multiple techniques.",
+    "<strong>Enable Animation</strong>Check this option to enable a sliding animation when displaying/hiding conditional logic fields.",
+    "Save Settings  →"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "textarea"
+    },
+    {
+      "options": [
+        "Top aligned",
+        "Left aligned",
+        "Right aligned"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "options": [
+        "Below inputs",
+        "Above inputs"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "options": [
+        "Below inputs",
+        "Above inputs"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "options": [
+        "Below inputs",
+        "Above inputs"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    }
+  ],
+  "headings": [
+    "Form Settings ‹ Attorney's Divorce Real Estate Intake Packet ‹ Forms - Gravity Forms",
+    "Form Options",
+    "Form Layout",
+    "Restrictions"
+  ],
+  "labels": [
+    "Form Title(Required)",
+    "Form Description",
+    "Label Placement",
+    "Description Placement",
+    "Validation Message Placement",
+    "Sub-Label Placement",
+    "Validation Summary",
+    "Validation Summary",
+    "Required Field Indicator",
+    "Text: (Required)",
+    "Asterisk: *",
+    "Custom:",
+    "CSS Class Name",
+    "Enable Save and Continue",
+    "Enable Save and Continue",
+    "Limit number of entries",
+    "Enable entry limit",
+    "Schedule Form",
+    "Schedule Form",
+    "Require user to be logged in",
+    "Require user to be logged in",
+    "Honeypot",
+    "Honeypot",
+    "If the honeypot flags a submission as spam:",
+    "Do not create an entry",
+    "Create an entry and mark it as spam",
+    "Submission Speed Check",
+    "Submission Speed Check",
+    "Custom Spam Confirmation",
+    "Custom Spam Confirmation",
+    "Animated transitions",
+    "Animated transitions",
+    "Disable Lead Forwarding",
+    "This will prevent submissions from being forwarded.",
+    "Convert to Landing Page layout",
+    "This will convert the entire page to a focused Landing Page.",
+    "Limit User Entries",
+    "This will prevent a user from submitting more than once.",
+    "Enable Paste in Fields",
+    "This will allow users to paste in fields. This is disabled by default to fight spam."
+  ],
+  "queryKeys": [
+    "page",
+    "view",
+    "id"
+  ],
+  "route": "/wp-admin/admin.php",
+  "tableHeaders": [
+    "Disable Lead Forwarding",
+    "Convert to Landing Page layout",
+    "Limit User Entries",
+    "Enable Paste in Fields"
+  ]
+}

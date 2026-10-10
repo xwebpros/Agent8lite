@@ -1,0 +1,29 @@
+{
+  "buttons": [
+    "Mobile App Login",
+    "Cancel",
+    "Save",
+    "emoji",
+    "merge-field",
+    "limilar-listing"
+  ],
+  "fields": [
+    {
+      "placeholder": "Enter name of message here",
+      "type": "text"
+    },
+    {
+      "placeholder": "Add message here...",
+      "type": "textarea"
+    }
+  ],
+  "headings": [
+    "Edit Text Message"
+  ],
+  "labels": [
+    "Name *"
+  ],
+  "queryKeys": [],
+  "route": "/campaign/text-message/4986902",
+  "tableHeaders": []
+}

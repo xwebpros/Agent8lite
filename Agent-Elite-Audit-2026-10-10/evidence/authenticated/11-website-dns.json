@@ -1,0 +1,45 @@
+{
+  "route": "/Website",
+  "tabs": [
+    "General",
+    "DNS Records"
+  ],
+  "siteSelector": "One selectable website in current tenant",
+  "general": [
+    "Display name edit",
+    "Live URL",
+    "Staging URL",
+    "Custom Domain - Live status",
+    "View Site",
+    "Edit Site SSO",
+    "Upgrade Plan",
+    "Launch guidance"
+  ],
+  "dnsColumns": [
+    "Type",
+    "Name",
+    "Content",
+    "TTL",
+    "Protection",
+    "Actions"
+  ],
+  "recordTypes": [
+    "A",
+    "CNAME",
+    "TXT",
+    "MX"
+  ],
+  "controls": [
+    "Refresh",
+    "Add Record",
+    "Edit",
+    "Delete"
+  ],
+  "vendorEvidence": [
+    "UI explicitly labels Cloudflare protection",
+    "Google MX and SPF records on client domain",
+    "WP Engine verification record is a hosting-history hint only"
+  ],
+  "managedRecords": "Agent Elite records are locked to staff in UI",
+  "scope": "No DNS modifications. TXT verification values and tenant contact details omitted."
+}

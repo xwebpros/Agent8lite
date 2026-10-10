@@ -1,0 +1,187 @@
+{
+  "buttons": [
+    "Select",
+    "Pages",
+    "Add to Menu",
+    "Posts",
+    "Local Resources",
+    "Landing Pages",
+    "Communities",
+    "Agents",
+    "Listing Report",
+    "SEM Page",
+    "Listing Pages",
+    "AE Network",
+    "Testimonials",
+    "Custom Links",
+    "Categories",
+    "Profession",
+    "Position",
+    "Expertise",
+    "Office",
+    "Custom Pages",
+    "Translate to Language",
+    "IHF Pages",
+    "IHF Hotsheets",
+    "Save Menu"
+  ],
+  "fields": [
+    {
+      "options": [
+        "Non-IDX Menu",
+        "Optima Express (Main Menu)",
+        "Social Menu"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    }
+  ],
+  "headings": [
+    "Menus",
+    "Add menu items",
+    "Pages",
+    "Posts",
+    "Local Resources",
+    "Landing Pages",
+    "Communities",
+    "Agents",
+    "Listing Report",
+    "SEM Page",
+    "Listing Pages",
+    "AE Network",
+    "Testimonials",
+    "Custom Links",
+    "Categories",
+    "Profession",
+    "Position",
+    "Expertise",
+    "Office",
+    "Custom Pages",
+    "Translate to Language",
+    "IHF Pages",
+    "IHF Hotsheets",
+    "Menu structure"
+  ],
+  "labels": [
+    "Select a menu to edit:",
+    " Attorney’s Divorce Real Estate Intake Packet",
+    " Divorce Real Estate Language",
+    " First time homebuyers guide",
+    " Tips for buyers",
+    " Stage it, sell it",
+    " Home Improvements",
+    " How to hire the right real estate agent",
+    " Join our team",
+    " My Buyers Guide",
+    " My Seller’s Guide",
+    " What is My Home Worth?",
+    " Las Vegas, NV Info",
+    " Las Vegas, NV Homes",
+    " My Listings",
+    " Property Search",
+    "Select All",
+    " Bulk Select",
+    "Home",
+    "Property Search",
+    "Las Vegas, NV Homes sub item",
+    "Communities",
+    "Resources",
+    "Mortgage Calculator sub item",
+    "Real Estate News sub item",
+    "Testimonials",
+    "Contact",
+    "Blog sub item",
+    " Bulk Select"
+  ],
+  "queryKeys": [],
+  "route": "/wp-admin/nav-menus.php",
+  "tableHeaders": []
+}

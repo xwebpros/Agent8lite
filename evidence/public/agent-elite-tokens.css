@@ -1,0 +1,180 @@
+/* FONTS â Poppins (display) + Inter (UI/body), loaded from Google Fonts.
+   No official Agent Elite brand font files have been supplied; these are the
+   closest match to the logo's geometric-sans feel and are the values used by
+   the source style guide. If licensed files ever arrive, replace this import
+   and the two --ae-font-* values in tokens/typography.css. */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+/* =====================================================================
+   AGENT ELITE â DESIGN TOKENS
+   Single drop-in file. No @import chain: link this one file and every
+   --ae-* custom property below is available.
+
+     <link rel="stylesheet" href="css/agent-elite-tokens.css">
+
+   Generated from the Agent Elite Product Design System.
+   Values are copied from the source style guide, not rounded.
+   ===================================================================== */
+
+
+/* COLOR â eleven tokens plus chrome. If a task calls for a color that isn't
+   here, it should resolve to one of these rather than a new value. */
+:root {
+  /* Neutrals */
+  --ae-white:  #ffffff;
+  --ae-ink:    #3d3d41;   /* primary text â sampled from the logo's "Agent" fill */
+  --ae-gray:   #6b6b70;   /* secondary text, labels, captions */
+  --ae-border: #dcdce0;   /* every border and divider */
+  --ae-bg:     #f5f5f7;   /* page canvas and the only "subtle fill" gray */
+
+  /* Portal navigation â the client portal sidebar ONLY. Not the plugin, not a
+     marketing section, not a card. Sampled from the live portal. */
+  --ae-portal-nav-bg:     #363638;
+  --ae-portal-nav-fg:     #ffffff;
+  --ae-portal-nav-fg-dim: #9b9b9f;
+
+  /* Marketing black â full-bleed marketing sections, the site footer, and the
+     one dark promo card allowed per product screen. Never product navigation. */
+  --ae-chrome-bg:     #0e0e10;
+  --ae-chrome-fg:     #ffffff;
+  --ae-chrome-fg-dim: #9b9b9f;
+
+  /* Plugin chrome â the WordPress-admin shell only (header bar + nav rail).
+     Blue, not chrome-black: inside WP the black rail collides with WordPress's
+     own #1d2327 menu and the plugin stops reading as Agent Elite. */
+  --ae-plugin-nav-bg:      #11a7e0;
+  --ae-plugin-nav-fg:      #ffffff;
+  --ae-plugin-nav-fg-dim:  rgba(255,255,255,.85);
+  --ae-plugin-nav-hover:   rgba(255,255,255,.16);
+  --ae-plugin-nav-active:  rgba(255,255,255,.22);
+  --ae-plugin-nav-w:       232px;
+
+  /* Brand blue â exactly three */
+  --ae-blue:       #11a7e0;  /* Elite Blue: buttons, links, focus, active nav */
+  --ae-blue-dark:  #0090cf;  /* hover / pressed */
+  --ae-blue-light: #f0faff;  /* the only tint: subtle fills, chip/banner backgrounds */
+
+  /* Status â account or record state only, never decoration */
+  --ae-success:       #1f9d6e;
+  --ae-success-light: #e7f5ee;
+  --ae-warning:       #c8790f;
+  --ae-warning-light: #faf0dd;
+  --ae-danger:        #cf4343;
+  --ae-danger-light:  #fbeaea;
+
+  /* Amber â the portal's warm accent. NOT a warning: amber marks progress,
+     opportunity, context and "worth a look". Sampled from the live portal. */
+  --ae-amber:       #eda32a;  /* progress bars, peak markers, the saturated amber */
+  --ae-amber-light: #fdf3dc;  /* advisory banner and counter-pill fills */
+  --ae-amber-cream: #fcf6dc;  /* context / impersonation pills */
+  --ae-amber-text:  #8f570a;  /* text/icons on the two fills above â 5.38:1 on
+                                 amber-light, 5.47:1 on amber-cream (WCAG AA at
+                                 the 11.5-14px sizes these pills actually use) */
+
+  /* Star rating gold â ratings only. Deliberately distinct from amber. */
+  --ae-star: #d99a1b;
+
+  /* ---- Semantic aliases ---- */
+  --ae-text-primary:   var(--ae-ink);
+  --ae-text-secondary: var(--ae-gray);
+  --ae-text-link:      var(--ae-blue);
+  --ae-text-inverse:   var(--ae-chrome-fg);
+  --ae-text-inverse-dim: var(--ae-chrome-fg-dim);
+  --ae-surface-page:   var(--ae-bg);
+  --ae-surface-card:   var(--ae-white);
+  --ae-surface-tint:   var(--ae-blue-light);
+  --ae-surface-chrome:     var(--ae-chrome-bg);
+  --ae-surface-portal-nav: var(--ae-portal-nav-bg);
+  --ae-surface-plugin-nav: var(--ae-plugin-nav-bg);
+  --ae-surface-advisory:   var(--ae-amber-light);
+  --ae-surface-context:    var(--ae-amber-cream);
+  --ae-progress-fill:      var(--ae-amber);
+  --ae-border-default: var(--ae-border);
+  --ae-border-focus:   var(--ae-blue);
+  --ae-action:         var(--ae-blue);
+  --ae-action-hover:   var(--ae-blue-dark);
+}
+
+/* TYPE â Poppins for names, section/modal titles, and big numbers.
+   Inter for everything functional. Mono for account IDs only. */
+:root {
+  --ae-font-display: 'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ae-font-body:    'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ae-font-mono:    ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --ae-text-xs:   12px;
+  --ae-text-sm:   14px;
+  --ae-text-base: 16px;
+  --ae-text-lg:   18px;
+  --ae-text-xl:   22px;
+  --ae-text-2xl:  28px;
+  --ae-text-3xl:  36px;
+  --ae-text-4xl:  48px;
+
+  --ae-leading-tight: 1.15;
+  --ae-leading-snug:  1.3;
+  --ae-leading-body:  1.6;
+
+  /* Semantic aliases */
+  --ae-font-heading: var(--ae-font-display);
+  --ae-font-ui:      var(--ae-font-body);
+}
+
+/* SPACING â 4px base, ten steps, each tied to a specific use.
+   If a need doesn't match a step exactly, round UP to the next step. */
+:root {
+  --ae-s-1:  4px;   /* icon-to-label gap inside a button or chip */
+  --ae-s-2:  8px;   /* label to the control below it */
+  --ae-s-3:  12px;  /* inline related items (a badge and its text) */
+  --ae-s-4:  16px;  /* fields sitting in the same row */
+  --ae-s-5:  24px;  /* default card padding; grouped form fields */
+  --ae-s-6:  32px;  /* cards in a stack; a panel's internal rhythm */
+  --ae-s-7:  40px;  /* panel outer padding (top and sides) */
+  --ae-s-8:  48px;  /* panel bottom padding; major page sections */
+  --ae-s-9:  64px;  /* page-level top margin */
+  --ae-s-10: 80px;  /* marketing / hero spacing only */
+}
+
+/* RADII â square-leaning. Three sizes plus a pill. Nothing is rounder
+   than 12px outside of status badges and marketing/promo buttons. */
+:root {
+  --ae-radius-sm:   6px;   /* small tags, checkbox */
+  --ae-radius:      8px;   /* buttons and inputs â the default */
+  --ae-radius-lg:   12px;  /* cards, panels, tables, modals */
+  --ae-radius-pill: 999px; /* status badges, chips, promo/marketing buttons */
+}
+
+/* MOTION â one easing curve, one duration. Fades and color transitions
+   only: no bounces, no springs, no entrance animations. */
+:root {
+  --ae-ease: cubic-bezier(.2,.7,.2,1); /* @kind other */
+  --ae-dur:  .18s;                     /* @kind other */
+}
+
+/* LAYOUT â the panel/card rhythm shared by every panel-based screen.
+   v2.3: ONE gap value for sections (48px) used everywhere a screen separates
+   one section from the next â including the space between a panel's tab
+   divider and its first section, so the first gap and every later gap match.
+   Cards keep their original 24px padding; breathing room lives in the gaps. */
+:root {
+  --ae-panel-max: 1200px;
+
+  /* Panel header ends AT the tabs' own bottom border (no extra bottom padding),
+     so the body's top padding is the only space before the first section. */
+  --ae-panel-header-p: 48px 48px 0;     /* @kind spacing */
+  /* top must always equal --ae-section-gap */
+  --ae-panel-body-p:   48px 48px 56px;  /* @kind spacing */
+
+  --ae-section-gap: 48px;   /* between sections of a screen â the one section rhythm */
+  --ae-stack-gap:   40px;   /* between cards stacked inside a single section */
+  --ae-card-gap:    24px;   /* between cards sitting side by side in a grid */
+
+  --ae-card-p:         24px;      /* default card padding: one size */
+  /* single-row compact cards (payment method, etc.) */
+  --ae-card-p-compact: 16px 20px; /* @kind spacing */
+
+  --ae-table-head-p: 16px 24px;   /* @kind spacing */
+  --ae-table-cell-p: 20px 24px;   /* @kind spacing */
+  --ae-modal-p:      32px;
+  --ae-sidebar-w:    240px;
+}

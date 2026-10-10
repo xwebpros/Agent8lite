@@ -1,0 +1,807 @@
+{
+  "date": "2026-10-10",
+  "target": "https://home.agentelite.com/",
+  "note": "SHA-256 manifest excludes itself and the enclosing ZIP.",
+  "files": [
+    {
+      "path": "evidence/assets/account-settings.js",
+      "bytes": 20164,
+      "sha256": "66a0145fc00d60bebc1274d2086f5175a82a8d17aafa0035b7ee1e038d8c1a35"
+    },
+    {
+      "path": "evidence/assets/billing-panel.js",
+      "bytes": 121220,
+      "sha256": "deb1cd568d32caef5ba1c870321bb8df76d1d7bd345af0b5a1aa1bc7a2899660"
+    },
+    {
+      "path": "evidence/assets/bootstrap.bundle.min.js",
+      "bytes": 78468,
+      "sha256": "2aebc2552d7dadf4e3a0b80cc830c274e91146584dad8e29b04338b9ecedb363"
+    },
+    {
+      "path": "evidence/assets/crm-licenses.txt",
+      "bytes": 7190,
+      "sha256": "178e46b5964e7da1d7037e0a13e4765c2f98432a7397613e3c54aaa35670d009"
+    },
+    {
+      "path": "evidence/assets/crm-main.js",
+      "bytes": 10859653,
+      "sha256": "ef4ebb24ba8fb91f85dda236d5de7d3f5a20dee3eeba38e87b814fb36f40f851"
+    },
+    {
+      "path": "evidence/assets/dashboard.js",
+      "bytes": 17140,
+      "sha256": "0bdc4dd8dc457e7c31b203ecb4b361a55fc7be1362c27814a61505d1d3faa0d3"
+    },
+    {
+      "path": "evidence/assets/jquery.min.js",
+      "bytes": 89501,
+      "sha256": "ff1523fb7389539c84c65aba19260648793bb4f5e29329d2ee8804bc37a3fe6e"
+    },
+    {
+      "path": "evidence/assets/lp-metrics.js",
+      "bytes": 86217,
+      "sha256": "044f2f3acbf12f52a98a528cb534acefde9d9f9042c70fcbdf0178b6754894d1"
+    },
+    {
+      "path": "evidence/assets/monterey.css",
+      "bytes": 49576,
+      "sha256": "588c0881dfe81575946c07829ceaab4f3131380bbe03e7e9ddb2fee7da01c17d"
+    },
+    {
+      "path": "evidence/assets/site.js",
+      "bytes": 227,
+      "sha256": "cbf36077c5b6d54a6e094844a866d428312a16735f4e301f6f6e068492465323"
+    },
+    {
+      "path": "evidence/assets/sync-manager.js",
+      "bytes": 6131,
+      "sha256": "1b26c1e47e2da89608bd6ce4dc741650cd3aaa3b7cd4297484aa65392527dfc0"
+    },
+    {
+      "path": "evidence/assets/track.js",
+      "bytes": 2493,
+      "sha256": "cf034a826dac4703c20b764f61e86b469d413f1232d6505c25962c8bc0455254"
+    },
+    {
+      "path": "evidence/audit-checkpoint.json",
+      "bytes": 1331,
+      "sha256": "44dc3539f671660f1ee46ce0d7d38dc578aaf8645f279d7869297ffd282326ca"
+    },
+    {
+      "path": "evidence/authenticated/03-account-profile.txt",
+      "bytes": 960,
+      "sha256": "5a5f381890a6b7e19104a21a4ce33031ed81a3ef8a62ac4683a86544cffe4efc"
+    },
+    {
+      "path": "evidence/authenticated/04-business-profiles.txt",
+      "bytes": 286,
+      "sha256": "b90eb1895e96578e7883b7554e62f4dcb9dd71222752c0bab0aeaf93e4585a1f"
+    },
+    {
+      "path": "evidence/authenticated/05-business-profile-modal.txt",
+      "bytes": 3498,
+      "sha256": "a056c9aa8643ec040eb33c75dcb1570cf46eda5ebe72c2eb85c5eb4964ffefca"
+    },
+    {
+      "path": "evidence/authenticated/06-users-roles.json",
+      "bytes": 356,
+      "sha256": "50c708c2638e9424014ed3e69a94eb96f7552ee444dfe4cb024fe50c76cab23e"
+    },
+    {
+      "path": "evidence/authenticated/07-add-user.json",
+      "bytes": 331,
+      "sha256": "ebff856cc77f84b71590bb6b839eb5ec8acb4faefa781422a64a3e7c56f762d5"
+    },
+    {
+      "path": "evidence/authenticated/08-account-activity.json",
+      "bytes": 403,
+      "sha256": "809c371d2926f87f9e760675a8392a58f74afe4b21e47e79390d8e9602d75145"
+    },
+    {
+      "path": "evidence/authenticated/09-billing.json",
+      "bytes": 1157,
+      "sha256": "db83f7657df832c4f6c2cc1f37cc30f247c0fd9e7a5ad4831c1845985eb47fee"
+    },
+    {
+      "path": "evidence/authenticated/10-full-activity.json",
+      "bytes": 348,
+      "sha256": "59cd60a42859fd75c1e68c35639d306963eb3d6c62c2ef2f9a2daab19e772653"
+    },
+    {
+      "path": "evidence/authenticated/100-crm-network.json",
+      "bytes": 3828,
+      "sha256": "abb4708dc0c4ccbee2ccb500ed8a6dacadc856ab3151049e69e9fb8943b90983"
+    },
+    {
+      "path": "evidence/authenticated/101-crm-load-network.json",
+      "bytes": 70024,
+      "sha256": "4034104a3e4456a60a8e0b5fca45dd5361ccc3da7a97dcf9d684cae4056d8f30"
+    },
+    {
+      "path": "evidence/authenticated/102-campaign-detail.json",
+      "bytes": 6057,
+      "sha256": "909656c78e959f95fa7fa47f520421a8af2b2fb9528f8b18c8599472977854d5"
+    },
+    {
+      "path": "evidence/authenticated/103-campaign-settings.json",
+      "bytes": 1221,
+      "sha256": "d6719800060377f20f09187b5d63d4a4ff50a7e8fd7f249f30d92cff761e9692"
+    },
+    {
+      "path": "evidence/authenticated/104-campaign-subscribers.json",
+      "bytes": 665,
+      "sha256": "be31b96faa43fdc6cc6936cb3b40c79ee8b20f7fdc0ad25e7ca429513c41ce6c"
+    },
+    {
+      "path": "evidence/authenticated/105-campaign-email-step.json",
+      "bytes": 469,
+      "sha256": "d89c74c07d77f4f1807e4c9179c3bcdb9c228e1188ccc5fe63c7a93ffd7e0461"
+    },
+    {
+      "path": "evidence/authenticated/106-campaign-text-step.json",
+      "bytes": 476,
+      "sha256": "deb08e68203aec85e5011a6b7dc908ed5de0c7e04e3d3f8fed8f538d283ba629"
+    },
+    {
+      "path": "evidence/authenticated/107-editor-blocks.json",
+      "bytes": 1753,
+      "sha256": "37260f5427ca313c8ca838d1a09dc4bc6a8729e27269f55f43106fa3bbee797e"
+    },
+    {
+      "path": "evidence/authenticated/108-form-builder.json",
+      "bytes": 2196,
+      "sha256": "a3d5af7d4e01d8a57f979bb7c7228ebd142dc17d402815fbfb366edd1f3d25c8"
+    },
+    {
+      "path": "evidence/authenticated/109-form-settings.json",
+      "bytes": 6043,
+      "sha256": "71693ebe806826e88bdf5a64324c732b4042848b9ef0152f3e688c0d70c47727"
+    },
+    {
+      "path": "evidence/authenticated/11-website-dns.json",
+      "bytes": 941,
+      "sha256": "d0e9ac60e672b002691c0753aa0bff94c782d6f5e9ed1e099371deeaa820ef26"
+    },
+    {
+      "path": "evidence/authenticated/110-email-designer.json",
+      "bytes": 571,
+      "sha256": "0172453334db73a715486db56333fbb93c51e20b470b0c19168c75d89da371bf"
+    },
+    {
+      "path": "evidence/authenticated/111-form-confirmations.json",
+      "bytes": 490,
+      "sha256": "06b4219f9dc3b1bcf372c3f6c1702fcf3f51b5643fd0eeca0427037012754c68"
+    },
+    {
+      "path": "evidence/authenticated/112-form-personal-data.json",
+      "bytes": 347,
+      "sha256": "fa134269de6df562ab9f486e3b059ae2a6b7018be5b2b0c70dd54a0a37e142ce"
+    },
+    {
+      "path": "evidence/authenticated/12-dns-form.json",
+      "bytes": 465,
+      "sha256": "7fc9fbe6fd3742e45f18f44debe9f03eabc356884c5a55284387fdb1b5586148"
+    },
+    {
+      "path": "evidence/authenticated/13-idx-product.txt",
+      "bytes": 1158,
+      "sha256": "3855517c51e3e43bcb70504ee568f63ebee261a6c7ef443b4f3c799ade8c1a3c"
+    },
+    {
+      "path": "evidence/authenticated/14-crm-asset-settings.json",
+      "bytes": 9306,
+      "sha256": "250db807b2e84322fd07453a49e544270dab2488c6a9b66cd29be34b1e0c7382"
+    },
+    {
+      "path": "evidence/authenticated/15-crm-launch.json",
+      "bytes": 1658,
+      "sha256": "909b8f22ce95ac88bf58ae256ec186450a0146d0fb88bdbf7b505e86bc9a245f"
+    },
+    {
+      "path": "evidence/authenticated/16-crm-dashboard.json",
+      "bytes": 700,
+      "sha256": "6a1a225e36b2b854a7b2016f4e4ce59917dc849219ac503b6eed688b4f6baece"
+    },
+    {
+      "path": "evidence/authenticated/17-lead-list.json",
+      "bytes": 5264,
+      "sha256": "4361663f740694fcda976a1a117176e2485c7385fea3bb3f4918a7821935620c"
+    },
+    {
+      "path": "evidence/authenticated/18-lead-filters.json",
+      "bytes": 345,
+      "sha256": "1a1d387f0617fbd571ad4b6228041fd27a9ffdd159a1601579c2129df3ae6070"
+    },
+    {
+      "path": "evidence/authenticated/19-lead-columns.json",
+      "bytes": 4980,
+      "sha256": "b80e6f2747b9d632653f8d4a6f3cb6cdd0471543fd6d9d8f9ac9dda31f6e4b9d"
+    },
+    {
+      "path": "evidence/authenticated/20-add-lead.json",
+      "bytes": 5461,
+      "sha256": "7371703ca7fbe2e6aae21e2520ef7364eb28369ded52b7b75a3f86bdfdcaec78"
+    },
+    {
+      "path": "evidence/authenticated/21-import-leads.json",
+      "bytes": 3063,
+      "sha256": "c46ab04b1b0d51874cac78696d16255776b49eed9a4155dd3ac1822777c3613d"
+    },
+    {
+      "path": "evidence/authenticated/22-lead-detail.json",
+      "bytes": 374,
+      "sha256": "5b964482735e463bf409891a2e720176361ad41437dc609b66e520865a742c99"
+    },
+    {
+      "path": "evidence/authenticated/23-tasks.json",
+      "bytes": 451,
+      "sha256": "634ff1e03e8c96fecb591f8e9b7e47e26487448b4074d2a2f56e1f1e201b4ac8"
+    },
+    {
+      "path": "evidence/authenticated/24-lead-activity.json",
+      "bytes": 541,
+      "sha256": "2af2d25df2dccdf01ea65d287d714231925c163eafabc36c171c5a1ad40e58e5"
+    },
+    {
+      "path": "evidence/authenticated/25-export-config.json",
+      "bytes": 666,
+      "sha256": "b5d2359ae29800bedc6716528fd27943bfc598c5f50cb96f4aa1367a2ea4d372"
+    },
+    {
+      "path": "evidence/authenticated/26-markets.json",
+      "bytes": 802,
+      "sha256": "fc9c422b6955ed2359e193767df947370d779606b2bcc879394aed17c6edbc7f"
+    },
+    {
+      "path": "evidence/authenticated/27-add-market.json",
+      "bytes": 1140,
+      "sha256": "70e3612295aa655bd0e46a662192ec9f9ce40c9678e4a7657ad129509406124a"
+    },
+    {
+      "path": "evidence/authenticated/28-market-settings.json",
+      "bytes": 436,
+      "sha256": "5e69c0dbc436aa10d5ab6bd9a7716089484f43fcb8b9354ffbdc8ae78f06f6ca"
+    },
+    {
+      "path": "evidence/authenticated/29-listings.json",
+      "bytes": 1007,
+      "sha256": "88370567d1061c8ee22cd1ba30ad54a067943f6d35c56225c2f6976d1e4a70bd"
+    },
+    {
+      "path": "evidence/authenticated/30-offmarket.json",
+      "bytes": 219,
+      "sha256": "1b2cca68349f1519447b01375a911ed6bfb0c0c62bdd1aed4359646556595966"
+    },
+    {
+      "path": "evidence/authenticated/31-supplemental.json",
+      "bytes": 249,
+      "sha256": "a5f56b37010e48a7e4d755a92641c25b9ae4036478515e1f4797fbbf41eb6a05"
+    },
+    {
+      "path": "evidence/authenticated/32-reports.json",
+      "bytes": 213,
+      "sha256": "a8f05a48794f6932551b886716dd27cc5a1301f5481175371785c0b115914553"
+    },
+    {
+      "path": "evidence/authenticated/33-email-report.json",
+      "bytes": 217,
+      "sha256": "b56f986f02471119c350114d0af049025a9ac1f8891339b3450559f515316f7e"
+    },
+    {
+      "path": "evidence/authenticated/34-organizer-report.json",
+      "bytes": 505,
+      "sha256": "cf0e768010527c0b3810f145d762657b5c534f805d1e4db9df05395d8992505f"
+    },
+    {
+      "path": "evidence/authenticated/35-leads-report.json",
+      "bytes": 1003,
+      "sha256": "8ea422dac2aba8d38081f290459ddb2b1fc7900ac970ddd6fff17169b6da46ca"
+    },
+    {
+      "path": "evidence/authenticated/36-mobile-report.json",
+      "bytes": 659,
+      "sha256": "eb5b0389f234432e8bc7cba28d0540f104a8aa676554dc1ba6975c6ef6ae6f8f"
+    },
+    {
+      "path": "evidence/authenticated/37-crm-setup.json",
+      "bytes": 1429,
+      "sha256": "207f195bcf8fb6d32cf33f7f49561b765bac73efc81ed922e491ad058ac3468e"
+    },
+    {
+      "path": "evidence/authenticated/38-idx-settings.json",
+      "bytes": 769,
+      "sha256": "291cbecc3af2909351c8911151b589ab377360aabbf6526980c1dc746f3c7158"
+    },
+    {
+      "path": "evidence/authenticated/39-display-settings.json",
+      "bytes": 941,
+      "sha256": "f0a0d3dbb02728db26b12bd19f2cea81e66d52902b02958de5d4f575b3a439fc"
+    },
+    {
+      "path": "evidence/authenticated/40-mls-settings.json",
+      "bytes": 208,
+      "sha256": "8525062347d3499770d0ae20034f247e44da41bae85abf87298f4e5dbb7547f1"
+    },
+    {
+      "path": "evidence/authenticated/41-crm-integrations.json",
+      "bytes": 239,
+      "sha256": "df7a14582b994094bc3f5af9c0a4ee9d9835027bd627070197dd456841bd3e66"
+    },
+    {
+      "path": "evidence/authenticated/42-email-settings.json",
+      "bytes": 1367,
+      "sha256": "a4b462968dddd57b992738520b9dd7be6490d2b2023a58fec1d8b8c5ee7ddeb2"
+    },
+    {
+      "path": "evidence/authenticated/43-search-settings.json",
+      "bytes": 2799,
+      "sha256": "6bdba080cf8421a50e7de38ae05ac38754293ce720d482d2c2205030cceeaff0"
+    },
+    {
+      "path": "evidence/authenticated/44-lead-capture.json",
+      "bytes": 2517,
+      "sha256": "676c2113feade82152088c1618248d8e9d2a1deba3d60f9c4a5d07a1c5e62fed"
+    },
+    {
+      "path": "evidence/authenticated/45-mobile-setup.json",
+      "bytes": 2202,
+      "sha256": "a5818ba9b17c4f1217c1ebbdb968cd45a36ead5ce5f3786b671200d3d69cc236"
+    },
+    {
+      "path": "evidence/authenticated/46-team-offices.json",
+      "bytes": 1876,
+      "sha256": "10a9a0dff12479cceb56ca098d764688c4e0a2fac535e47e301a6f0a30fa087a"
+    },
+    {
+      "path": "evidence/authenticated/47-crm-team.json",
+      "bytes": 579,
+      "sha256": "441c536555ab36d09578ee127ba420482f6b2f49f732c3c400b5511cfa9467e1"
+    },
+    {
+      "path": "evidence/authenticated/48-offices.json",
+      "bytes": 438,
+      "sha256": "08682709e0d1ec85374c4553b82b74e5296ab75dbf4c5d9f4948f7c5f72950f4"
+    },
+    {
+      "path": "evidence/authenticated/49-lead-routing.json",
+      "bytes": 1636,
+      "sha256": "511a040ecfd67eaba9cc41d5938982aff646915dd5c50ad3af2382e7653564aa"
+    },
+    {
+      "path": "evidence/authenticated/50-communications.json",
+      "bytes": 533,
+      "sha256": "ac295988d46f385c746e8d139ff8b846d957f24bf65d6b8ff4e15cc58538e4e4"
+    },
+    {
+      "path": "evidence/authenticated/51-email-drafts.json",
+      "bytes": 296,
+      "sha256": "a50fd7116a72e8d4d581fa955d075967427fa5d92c05fd3a14f44b644cdb9e03"
+    },
+    {
+      "path": "evidence/authenticated/52-sent-emails.json",
+      "bytes": 336,
+      "sha256": "84bfe80e65de64bfb22dd73400e74e865b82c786c00334a494d50d8ae2850855"
+    },
+    {
+      "path": "evidence/authenticated/53-campaigns.json",
+      "bytes": 267,
+      "sha256": "35fe1ef3f440ca3c753a8ee6420f51752295c4a0610681e3aaf41ac808aa29d2"
+    },
+    {
+      "path": "evidence/authenticated/54-texting.json",
+      "bytes": 690,
+      "sha256": "39b35c00061fef4e7cff0f0b926cd66785d654d92f71d3c27481aa63f425d506"
+    },
+    {
+      "path": "evidence/authenticated/55-automations.json",
+      "bytes": 1728,
+      "sha256": "844e2524ad9b38ad455abaec0a9eed11509a84125838edce37877b1b01064b9d"
+    },
+    {
+      "path": "evidence/authenticated/56-greetings.json",
+      "bytes": 695,
+      "sha256": "d5af43aeaa2850dc4a51bbc526f0bcca3cd112f2d625942b8710df60a84a470e"
+    },
+    {
+      "path": "evidence/authenticated/57-campaign-settings.json",
+      "bytes": 494,
+      "sha256": "ca10ec62181842b89c0a464f3bf838eeaf259d8a86274688753bfd76ad9d4725"
+    },
+    {
+      "path": "evidence/authenticated/58-local-presence.json",
+      "bytes": 948,
+      "sha256": "121e780f75a686663a30a40368820832a611297712270c19ae672a1eefa5a444"
+    },
+    {
+      "path": "evidence/authenticated/58-local-presence.txt",
+      "bytes": 7441,
+      "sha256": "a2a0b9c695660ea8e827ebac929db31f7203991e17dc8e5a9ea4bf1670158c2d"
+    },
+    {
+      "path": "evidence/authenticated/59-local-presence-settings.json",
+      "bytes": 1451,
+      "sha256": "6769868f51834c6c243f31c50890fe9636c464b78f51f2f73915039b6165b120"
+    },
+    {
+      "path": "evidence/authenticated/60-lp-expanded-settings.json",
+      "bytes": 1487,
+      "sha256": "aba53ad8f17553cf4cd4e6a27e3c0b75132c8939fb85329f9a6f571f04b027c3"
+    },
+    {
+      "path": "evidence/authenticated/60-lp-section-fields.json",
+      "bytes": 2447,
+      "sha256": "d5414cf1815eaa4fef708db11042e4e837f1ef89b265a4e854bff93cee52f787"
+    },
+    {
+      "path": "evidence/authenticated/61-design-studio.json",
+      "bytes": 715,
+      "sha256": "ff07aa0a2dacc4e4633f3b164d3894d21378c8384018f098cad1587cdc8221d0"
+    },
+    {
+      "path": "evidence/authenticated/61-design-studio.txt",
+      "bytes": 476,
+      "sha256": "d5c342b12cde152b5ec1978ceb07f6dbd2673b15eda28a2595613274f8f4466c"
+    },
+    {
+      "path": "evidence/authenticated/62-support.json",
+      "bytes": 679,
+      "sha256": "984ea21aa5b8008bd64e83b0ff6e48088e860753a6f9f90c5314c221e5dd45cd"
+    },
+    {
+      "path": "evidence/authenticated/63-ticket-form.json",
+      "bytes": 1366,
+      "sha256": "c577d8fc9e737c23ce59d4a207934cfe9d486a8da6c95788dd48812a6eb790e8"
+    },
+    {
+      "path": "evidence/authenticated/64-marketplace.json",
+      "bytes": 690,
+      "sha256": "365ad89125df706273e1703609513e107e6dbf545b1c323657dbb22e83c1e89f"
+    },
+    {
+      "path": "evidence/authenticated/65-product-detail.json",
+      "bytes": 788,
+      "sha256": "51dced467d8794993710ef3e6156110223b4a6b998a2609ba0853baecbf35100"
+    },
+    {
+      "path": "evidence/authenticated/66-catalog-details.json",
+      "bytes": 12063,
+      "sha256": "b97df770b59e4fdd0bb3903e4578a039c6d5835acccfbdec6cbb9b90f19940b8"
+    },
+    {
+      "path": "evidence/authenticated/67-wordpress.json",
+      "bytes": 15989,
+      "sha256": "a82f26955838a44df8da35ab1714a8e8ef8f7acfbf4ed401503d3e37cc447df9"
+    },
+    {
+      "path": "evidence/authenticated/68-cms-pages.json",
+      "bytes": 4603,
+      "sha256": "71365ebee663f28abffaabf44673bf02d5c7310055f4f5e89b6b424d083b9ec6"
+    },
+    {
+      "path": "evidence/authenticated/69-cms-forms.json",
+      "bytes": 3732,
+      "sha256": "36a6dcac67437bd69a84ebdc03ce37a949777c9aa769a71002ddc8f2e0125876"
+    },
+    {
+      "path": "evidence/authenticated/70-cms-marketing.json",
+      "bytes": 323,
+      "sha256": "c80a51d7e41d64b2026f4a7a2407e2776223a514dd25ade9bceadb7cecf77f9e"
+    },
+    {
+      "path": "evidence/authenticated/71-cms-landing.json",
+      "bytes": 4945,
+      "sha256": "92493c6d90f70e17d6d97a864b848fd8ec4889252f28e9a3a731407f93b0a4c4"
+    },
+    {
+      "path": "evidence/authenticated/72-cms-analytics.json",
+      "bytes": 191,
+      "sha256": "9623341447c79efb80194b6bb2f88080eb16d5808b3a320e64e13369679273fa"
+    },
+    {
+      "path": "evidence/authenticated/73-cms-listing-pages.json",
+      "bytes": 3230,
+      "sha256": "121fa02b4208812e8d5ed016b9fb10aafa060fbd7dbf72c2e38cf3abf611eec2"
+    },
+    {
+      "path": "evidence/authenticated/74-cms-communities.json",
+      "bytes": 4331,
+      "sha256": "4c7f7ffbc09975999519c3875345c5c411b9ae8c2a2830023b66ded9c503df15"
+    },
+    {
+      "path": "evidence/authenticated/75-cms-testimonials.json",
+      "bytes": 2466,
+      "sha256": "ead6bb52661b61db89722d46e8b0c422822aad775323e8e97d7de1730244ce7a"
+    },
+    {
+      "path": "evidence/authenticated/76-cms-resources.json",
+      "bytes": 1016,
+      "sha256": "07cd3bf14ffe14be5c167bbd09fd709ce02507590e90941f56e712236da18b42"
+    },
+    {
+      "path": "evidence/authenticated/77-cms-agents.json",
+      "bytes": 3203,
+      "sha256": "b47de0e2e379288a1310b49bda7a6251f28855bc1ff8d65f61ae84c41f6f0f2a"
+    },
+    {
+      "path": "evidence/authenticated/78-cms-achievements.json",
+      "bytes": 180,
+      "sha256": "bf6f46dcc9dd3c92e4b0dbc8af92db05d1b5e45ba106fcbf124357b9d567f1f6"
+    },
+    {
+      "path": "evidence/authenticated/79-cms-tutorials.json",
+      "bytes": 538,
+      "sha256": "dc9a7dfcda851a19141755c0ea2fe82e4115190fdf2e9252d85d3787da3fbe3d"
+    },
+    {
+      "path": "evidence/authenticated/80-cms-media.json",
+      "bytes": 902,
+      "sha256": "d262a806e540d6fc7fbd56db0408df072c5dfd95e7ddd030d44e62f00ad59161"
+    },
+    {
+      "path": "evidence/authenticated/81-cms-widgets.json",
+      "bytes": 3285,
+      "sha256": "9043cc6eeeebe9a257ef740d840a1d8c74159fae501158a20145129fa54cf68b"
+    },
+    {
+      "path": "evidence/authenticated/82-cms-menus.json",
+      "bytes": 3372,
+      "sha256": "fddc50638ab1760750377e4ee42e600d063bc23159b1712cf7cb439da9e88862"
+    },
+    {
+      "path": "evidence/authenticated/83-cms-blog.json",
+      "bytes": 2382,
+      "sha256": "9372d2e9196a638bf37af3cbdb0e2c0aceb3c221e1342c73ece441443b1cc49c"
+    },
+    {
+      "path": "evidence/authenticated/84-landing-editor.json",
+      "bytes": 2110,
+      "sha256": "555eb055b6cb92308f0ab508e3311967f5ecc778204c47b03588a9ffe3a232a2"
+    },
+    {
+      "path": "evidence/authenticated/85-property-search.json",
+      "bytes": 148,
+      "sha256": "99e12e34486b3cd7654e071390952124c6eb6ad9dc70cf73c7e753edddcfbf80"
+    },
+    {
+      "path": "evidence/authenticated/86-design-tokens.json",
+      "bytes": 8292,
+      "sha256": "2b79ba0748abaa8266c85ffa553221d1c3bfdaf8ac97bc2eb5026a22e2a76ef4"
+    },
+    {
+      "path": "evidence/authenticated/89-feedback.json",
+      "bytes": 1007,
+      "sha256": "7787d79278c344f0842b6d25899828d79d491a5f08ad7f37f8c980806d89da12"
+    },
+    {
+      "path": "evidence/authenticated/90-lp-network.json",
+      "bytes": 27917,
+      "sha256": "31fb84f17181fb3dc18ed44ec0cd2b3a80353c6df7396d7eb665944a328fa4bb"
+    },
+    {
+      "path": "evidence/authenticated/91-notification-routing.json",
+      "bytes": 236,
+      "sha256": "9e569b15473f354ff7be3eff8a2f507b64d44bc38b1f904e5bba9ccaff7372c6"
+    },
+    {
+      "path": "evidence/authenticated/92-property-types.json",
+      "bytes": 271,
+      "sha256": "1872354fe31a806a1388a3c36518ca1ef1a99a01b368b04eebad705b09620d7d"
+    },
+    {
+      "path": "evidence/authenticated/93-locations.json",
+      "bytes": 634,
+      "sha256": "f411c0b2e606b456ac1fc7d5bb506556a288ed6469604ea90972e595def70780"
+    },
+    {
+      "path": "evidence/authenticated/94-open-houses.json",
+      "bytes": 1190,
+      "sha256": "0eba09dff38551761927b7228c721691e241950d10ab6c35ca07712e21c30811"
+    },
+    {
+      "path": "evidence/authenticated/95-map-settings.json",
+      "bytes": 638,
+      "sha256": "bdd3c1f15eb289e2279fbc680bf7c007180307a554a85e0303f2dfd44b8883e2"
+    },
+    {
+      "path": "evidence/authenticated/96-featured-listing-settings.json",
+      "bytes": 2429,
+      "sha256": "04aad3e49bf5fcbc96f7795943d9e9b3ce438de2261f03c7c3629311c913be99"
+    },
+    {
+      "path": "evidence/authenticated/97-listing-detail-settings.json",
+      "bytes": 2590,
+      "sha256": "52467218e2a3cab75a52add9211faa48e0b84b3f73ef83f1581afc82c356b2a2"
+    },
+    {
+      "path": "evidence/authenticated/98-mortgage-settings.json",
+      "bytes": 1432,
+      "sha256": "1fb21c018ffb21e6868dbaac54496d87c2e351710400ef40a3d10538bddf3905"
+    },
+    {
+      "path": "evidence/authenticated/99-capture-form-settings.json",
+      "bytes": 1622,
+      "sha256": "c354597009d4ba7c420b452f726a198794e305b53f76e737710a7b91c93e8fbb"
+    },
+    {
+      "path": "evidence/authenticated/account-network.json",
+      "bytes": 11051,
+      "sha256": "62361b14feb3a57ba3a2951a901b2b46eff4d232c30e221e97ee859c9714be5e"
+    },
+    {
+      "path": "evidence/authenticated/dashboard-assets.json",
+      "bytes": 2689,
+      "sha256": "b7d8c65e5a840f1a9263e240ba5ec6c3865011bbda1a0fa3ca1e84094b68f8b3"
+    },
+    {
+      "path": "evidence/authenticated/lp-assets.json",
+      "bytes": 798,
+      "sha256": "4dbce1c07592591f032f3c4566541d06dc22824a3ada1fe34a60a45095f0d1b7"
+    },
+    {
+      "path": "evidence/public/agent-elite-tokens.css",
+      "bytes": 8160,
+      "sha256": "92fd15207414ed28c7ae754614b54c4eeca68ea12edc7e1d91ce4f14150d3a64"
+    },
+    {
+      "path": "evidence/public/authentication-evidence.json",
+      "bytes": 746,
+      "sha256": "51f4fffeaa852d20f5aed7ed8cfdd7ddb9987192fbfc064d10f23b345a0f813e"
+    },
+    {
+      "path": "evidence/public/crm-bundle-fingerprints.json",
+      "bytes": 1147,
+      "sha256": "4a6704d58aacd57f6bd656455df3d9a9fdb028d520e38d27b985d1e0316e0247"
+    },
+    {
+      "path": "evidence/public/crm-transport-hints.json",
+      "bytes": 1179,
+      "sha256": "a67dce72083aa31db69fa1c8286ac233ba7842bf2a809af0c0efd6a3052cc8c4"
+    },
+    {
+      "path": "evidence/public/customer-site-assets.json",
+      "bytes": 5344,
+      "sha256": "eeb7d78125c8d37ebf150a4d58eeb0fb0d4025c9834ac542540822930b0133c5"
+    },
+    {
+      "path": "evidence/public/dns-evidence.json",
+      "bytes": 897,
+      "sha256": "13bb4b83bb7583baa3b2532fb696648bfc2a665188b874123633a2ab4d8c09cc"
+    },
+    {
+      "path": "evidence/public/documented-module-links.json",
+      "bytes": 10258,
+      "sha256": "17151bfaded6780e1fb4716e3edfdee0ae3d396f88eaec7f6fe03af60abd1a47"
+    },
+    {
+      "path": "evidence/public/portal-email.html",
+      "bytes": 126,
+      "sha256": "e13f2c1d9f9f9e0229e27aec51264af30e0c46678c9d8e47aaaa8c5a60c5e4f8"
+    },
+    {
+      "path": "evidence/public/portal-evidence.json",
+      "bytes": 1601,
+      "sha256": "229b6722649acce093fb11a78aaaf0c6cad98d37c6f1e9826a41ca1a2ef9068d"
+    },
+    {
+      "path": "evidence/public/portal-login.html",
+      "bytes": 7590,
+      "sha256": "499695c1df8f9a44f9d64a44532fc3a9d297185be3c67244395b007e75356c03"
+    },
+    {
+      "path": "evidence/public/portal-walkthrough.html",
+      "bytes": 60158,
+      "sha256": "128146ed27b1371844f8c692b77dbe675ed80aa27fdad067013601537168b19e"
+    },
+    {
+      "path": "evidence/screenshots/01-public-login.jpg",
+      "bytes": 35433,
+      "sha256": "e923bd5cd783d34ca53d460433e097b7d626e2249845933584f8de06a307917e"
+    },
+    {
+      "path": "evidence/screenshots/02-dashboard.jpg",
+      "bytes": 166933,
+      "sha256": "96c90c0fb7895e9f71b0449c639456e75f105b1296c372f94a422a2cee03df4f"
+    },
+    {
+      "path": "evidence/screenshots/102-campaign-stages.jpg",
+      "bytes": 53185,
+      "sha256": "6b00fcbe60174dd5f0bd8c13e774893bda02c7a84d22078308822096f4a2d717"
+    },
+    {
+      "path": "evidence/screenshots/108-form-builder.jpg",
+      "bytes": 52393,
+      "sha256": "b55660a1bc9a33753e81ae72f7a968d8cd4e6a20818dd6580cdd2849da86390e"
+    },
+    {
+      "path": "evidence/screenshots/110-email-designer.jpg",
+      "bytes": 40076,
+      "sha256": "b7b2da8f540fb85c6ad7bebac927898496882e33a3db82d6320749f6ffbc3201"
+    },
+    {
+      "path": "evidence/screenshots/13-idx-product.jpg",
+      "bytes": 79024,
+      "sha256": "0de04895704f770bd4c345f6f88ee8e60332ac00bdf67ee7838275f607c3995d"
+    },
+    {
+      "path": "evidence/screenshots/58-local-presence.jpg",
+      "bytes": 281687,
+      "sha256": "e76a04587fdb0e48a31e2ea33a57cc9b7904556af6b1189a90026bb424180081"
+    },
+    {
+      "path": "evidence/screenshots/61-design-studio.jpg",
+      "bytes": 59012,
+      "sha256": "5da47a8a8068fcc0c00b24429216490aec3ad47417b69009bc5901b96349d27e"
+    },
+    {
+      "path": "evidence/screenshots/72-cms-analytics.jpg",
+      "bytes": 196882,
+      "sha256": "00fa5b59873b79c5518eef65592a7af125f68da15f5481baf349b99918e2513f"
+    },
+    {
+      "path": "evidence/screenshots/84-landing-editor.jpg",
+      "bytes": 64877,
+      "sha256": "d62f458598b9b3102e2b0ef8fe5e6986795b3b99c68b4fea79289bd3656b1000"
+    },
+    {
+      "path": "evidence/screenshots/85-property-search.jpg",
+      "bytes": 86536,
+      "sha256": "53e745b8e792d07d3308d64cc00726d1304bee8b00e06f63b982ff5824d043ec"
+    },
+    {
+      "path": "evidence/screenshots/86-dashboard-desktop.jpg",
+      "bytes": 160649,
+      "sha256": "d1183ddc3f6fb7688bad86185cfdce872ff7d878123c51cab9b9cb2482d4bad1"
+    },
+    {
+      "path": "evidence/screenshots/87-dashboard-wide.jpg",
+      "bytes": 189300,
+      "sha256": "def5d314a93c76ba85479c42ef25ff997c8bf61ade2ff555337507531e96e2a4"
+    },
+    {
+      "path": "evidence/screenshots/88-navigation-narrow.jpg",
+      "bytes": 37856,
+      "sha256": "2d7249c088025f9938819d6b717289b94436cb36cf1b75d0551ca034154ccba7"
+    },
+    {
+      "path": "reports/READ-ME.txt",
+      "bytes": 1200,
+      "sha256": "8af99450b31b18982317cba776e38a1db4005c6c4a674f898d71631772877855"
+    },
+    {
+      "path": "reports/agent-elite-audit-2026-10-10.html",
+      "bytes": 1167827,
+      "sha256": "6d92f7f88660d384111744f199fbe216b62d80d3d9ed6813d337fcc14c14719a"
+    },
+    {
+      "path": "reports/agent-elite-audit-2026-10-10.json",
+      "bytes": 86531,
+      "sha256": "aecb69e91e298f856702ae1f2f7ba371c45fda909eb8872b9c35338fce13857d"
+    },
+    {
+      "path": "reports/architecture-observed.svg",
+      "bytes": 6421,
+      "sha256": "404fda647b913dce1e0a1aa33a5b8048e960b398eedef10b0cee7b889f4a603b"
+    },
+    {
+      "path": "reports/architecture-proposed.svg",
+      "bytes": 6407,
+      "sha256": "b438cf0d1570558a82c97368234316c0796d47efec766b018b7eee567e3ba1ec"
+    },
+    {
+      "path": "reports/audit-qa.json",
+      "bytes": 722,
+      "sha256": "56b2ec2c4be86e7aa8a8c15823c0137ac860d6921fa9dda2abb256356190b4c2"
+    },
+    {
+      "path": "reports/audit-report.mjs",
+      "bytes": 113875,
+      "sha256": "707eb6ec07f5cb8617743a9f9ae4a9a87ca3b8921d97e6e5fed11168ea3e36df"
+    },
+    {
+      "path": "reports/report-preview.jpg",
+      "bytes": 52964,
+      "sha256": "863d927a679e6b4caa920c604b5153793f505f4d57d7afc58ea73b99690301d6"
+    }
+  ]
+}

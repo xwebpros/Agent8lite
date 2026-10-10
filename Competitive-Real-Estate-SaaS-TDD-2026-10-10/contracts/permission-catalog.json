@@ -1,0 +1,738 @@
+{
+  "version": "1.0.0",
+  "status": "Proposed; role preset mapping is normative in TDD",
+  "codes": [
+    {
+      "code": "ai.accept",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "ai.use",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "appointments.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "audit.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "authenticated",
+      "boundary": "guard",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "automations.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "automations.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "billing.manage",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "billing.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "campaigns.enroll",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "campaigns.publish",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "campaigns.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "campaigns.send",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "campaigns.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "challenge",
+      "boundary": "guard",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "consent.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "content.publish",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "content.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "content.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.contacts.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.contacts.write",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.deals.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.deals.write",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.import",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.leads.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.leads.write",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.pipeline.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.pipeline.write",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.routing.manage",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.routing.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.sources.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.sources.write",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.tags.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.tags.write",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.tasks.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "crm.tasks.write",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "dashboard.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "data.export",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "domains.manage",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "domains.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "forms.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "forms.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "integrations.manage",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "integrations.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "integrations.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "jobs.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "local.manage",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "local.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "media.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "media.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "members.manage",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "members.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "mls.feeds.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "mls.feeds.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "mls.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "mls.sync",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "offices.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "offices.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "org.manage",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "org.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "platform.audit.read",
+      "boundary": "staff",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "platform.config.read",
+      "boundary": "staff",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "platform.health.read",
+      "boundary": "staff",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "platform.orgs.provision",
+      "boundary": "staff",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "platform.orgs.read",
+      "boundary": "staff",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "platform.plans.manage",
+      "boundary": "staff",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "platform.plans.read",
+      "boundary": "staff",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "platform.support.grant",
+      "boundary": "staff",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "profiles.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "profiles.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "published.site",
+      "boundary": "guard",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "reports.read",
+      "boundary": "member",
+      "scopes": [
+        "own",
+        "team",
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "roles.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "roles.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "self.notifications.read",
+      "boundary": "member",
+      "scopes": [
+        "own"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "self.notifications.write",
+      "boundary": "member",
+      "scopes": [
+        "own"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "self.profile.write",
+      "boundary": "member",
+      "scopes": [
+        "own"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "self.push.read",
+      "boundary": "member",
+      "scopes": [
+        "own"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "self.push.write",
+      "boundary": "member",
+      "scopes": [
+        "own"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "signature_verified",
+      "boundary": "guard",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "sites.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "sites.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "support.read",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "support.write",
+      "boundary": "member",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": true
+    },
+    {
+      "code": "unsubscribe_token",
+      "boundary": "guard",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "verified.email",
+      "boundary": "guard",
+      "scopes": [
+        "organization"
+      ],
+      "delegatable": false
+    },
+    {
+      "code": "visitor.own",
+      "boundary": "visitor",
+      "scopes": [
+        "own"
+      ],
+      "delegatable": true
+    }
+  ]
+}

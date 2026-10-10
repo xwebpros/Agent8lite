@@ -1,0 +1,60 @@
+{
+  "buttons": [
+    "Mobile App Login",
+    "change date",
+    "Submit",
+    "View listing on your website",
+    "Go to previous page",
+    "Go to next page"
+  ],
+  "fields": [
+    {
+      "label": "",
+      "required": false,
+      "tag": "DIV",
+      "type": null
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": null
+    },
+    {
+      "label": "mm/dd/yyyy",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "mm/dd/yyyy",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "DIV",
+      "type": null
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": null
+    }
+  ],
+  "headings": [
+    "Leads & Contacts"
+  ],
+  "links": [],
+  "tableHeaders": [
+    "Type",
+    "Name/Email",
+    "Date/Time",
+    "Details"
+  ],
+  "tabs": [],
+  "url": "https://account.idxhome.com/reports/leads"
+}

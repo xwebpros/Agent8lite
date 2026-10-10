@@ -1,0 +1,119 @@
+{
+  "buttons": [
+    "Lead Capture",
+    "Mobile App Login",
+    "Cancel",
+    "Save Changes"
+  ],
+  "fields": [
+    {
+      "label": "Automatically prompt website visitors to registerWhen enabled, website visitors will be automatically prompted to register based on your configured capture level and trigger points.",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "Strict",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "Moderate",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "Flexible",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "Minimal",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "Search Results",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "Immediately",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "After",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "number"
+    },
+    {
+      "label": "Include saved search page views in results page limit",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "Property Details",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "Immediately",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "After",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "number"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "TEXTAREA",
+      "type": null
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "TEXTAREA",
+      "type": null
+    },
+    {
+      "label": "Require leads to set passwordWhen enabled, website visitors must create a password during registration. When disabled, website visitors can log in with their email address alone.",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    }
+  ],
+  "headings": [
+    "Lead Registration"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/settings/user-registration"
+}

@@ -1,0 +1,52 @@
+{
+  "buttons": [
+    "Marketing Automation",
+    "Mobile App Login",
+    "288862",
+    "Messages",
+    "Settings",
+    "Subscribers",
+    "Cancel",
+    "Save Changes"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "textarea"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    }
+  ],
+  "headings": [
+    "Campaign: Buyer Follow-up (Text & Email)\n288862"
+  ],
+  "labels": [
+    "Campaign Name",
+    "Description",
+    "Category",
+    "Lead Profile\n\nSends personalized listings and area statistics based on each lead's search behavior and listing views.",
+    "Market\n\nSends listings and area statistics for a specific Market you've configured in the Control Panel.",
+    "Apply Email Branding\n\nWhen enabled, your logo, photo, and business information will be included in campaign emails, helping reinforce your brand with every message sent to leads.\nLearn More ↗"
+  ],
+  "queryKeys": [],
+  "route": "/campaign/288862",
+  "tableHeaders": []
+}

@@ -1,0 +1,402 @@
+{
+  "synthetic": true,
+  "banner": "SYNTHETIC SAMPLE DATA — not actual MLS listings",
+  "mode": "mock",
+  "clock": "2026-10-10T00:01:00Z",
+  "instructions": "Tests freeze this clock. Sample prices and coordinates are invented. No customer/property imagery. Show a sample banner in search, detail, map and alert previews. Policies deliberately include denied/expired/unmapped cases. Do not ingest this file into a live feed.",
+  "listings": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "sourceListingKey": "SYNTHETIC-VEGAS-001",
+      "name": "Juniper Sample House",
+      "address": "100 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.15,
+        36.12
+      ],
+      "status": "active",
+      "sourceStatus": "Mock active",
+      "listPrice": 350000,
+      "bedrooms": 2,
+      "bathrooms": 2,
+      "area": {
+        "value": 1200,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Juniper Sample House. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "normal",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "sourceListingKey": "SYNTHETIC-VEGAS-002",
+      "name": "Mesa Example Loft",
+      "address": "101 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.13000000000001,
+        36.12
+      ],
+      "status": "active",
+      "sourceStatus": "Mock active",
+      "listPrice": 395000,
+      "bedrooms": 3,
+      "bathrooms": 2.5,
+      "area": {
+        "value": 1375,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Mesa Example Loft. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "map_bounds",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "sourceListingKey": "SYNTHETIC-VEGAS-003",
+      "name": "Canyon Demo Residence",
+      "address": "102 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.11,
+        36.12
+      ],
+      "status": "pending",
+      "sourceStatus": "Mock pending",
+      "listPrice": 440000,
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "area": {
+        "value": 1550,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Canyon Demo Residence. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "pending_policy",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "sourceListingKey": "SYNTHETIC-VEGAS-004",
+      "name": "Desert Fiction Villa",
+      "address": "103 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.09,
+        36.12
+      ],
+      "status": "closed",
+      "sourceStatus": "Mock closed",
+      "listPrice": 485000,
+      "bedrooms": 5,
+      "bathrooms": 2,
+      "area": {
+        "value": 1725,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Desert Fiction Villa. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "closed_policy",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "sourceListingKey": "SYNTHETIC-VEGAS-005",
+      "name": "Sunrise Sample Condo",
+      "address": "104 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.15,
+        36.14
+      ],
+      "status": "off_market",
+      "sourceStatus": "Mock off_market",
+      "listPrice": 530000,
+      "bedrooms": 2,
+      "bathrooms": 2.5,
+      "area": {
+        "value": 1900,
+        "unit": "sqft"
+      },
+      "displayAllowed": false,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Sunrise Sample Condo. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "withdrawn",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "sourceListingKey": "SYNTHETIC-VEGAS-006",
+      "name": "Pioneer Example Home",
+      "address": "105 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.13000000000001,
+        36.14
+      ],
+      "status": "unknown",
+      "sourceStatus": "Mock unknown",
+      "listPrice": 575000,
+      "bedrooms": 3,
+      "bathrooms": 3,
+      "area": {
+        "value": 2075,
+        "unit": "sqft"
+      },
+      "displayAllowed": false,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Pioneer Example Home. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "unmapped_status",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "sourceListingKey": "SYNTHETIC-VEGAS-007",
+      "name": "Acacia Demo Retreat",
+      "address": "106 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.11,
+        36.14
+      ],
+      "status": "active",
+      "sourceStatus": "Mock active",
+      "listPrice": 620000,
+      "bedrooms": 4,
+      "bathrooms": 2,
+      "area": {
+        "value": 2250,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Acacia Demo Retreat. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "price_change",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "sourceListingKey": "SYNTHETIC-VEGAS-008",
+      "name": "Valley Fiction Townhome",
+      "address": "107 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.09,
+        36.14
+      ],
+      "status": "active",
+      "sourceStatus": "Mock active",
+      "listPrice": 665000,
+      "bedrooms": 5,
+      "bathrooms": 2.5,
+      "area": {
+        "value": 2425,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Valley Fiction Townhome. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "missing_media",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "sourceListingKey": "SYNTHETIC-VEGAS-009",
+      "name": "Solstice Sample Duplex",
+      "address": null,
+      "coordinates": null,
+      "status": "active",
+      "sourceStatus": "Mock active",
+      "listPrice": 710000,
+      "bedrooms": 2,
+      "bathrooms": 3,
+      "area": {
+        "value": 2600,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": false,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Solstice Sample Duplex. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "hidden_address_and_location",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "sourceListingKey": "SYNTHETIC-VEGAS-010",
+      "name": "Orchard Example House",
+      "address": "109 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.13000000000001,
+        36.16
+      ],
+      "status": "active",
+      "sourceStatus": "Mock active",
+      "listPrice": 755000,
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "area": {
+        "value": 2775,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Orchard Example House. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-09T00:00:00Z",
+      "fixtureCase": "expired",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "sourceListingKey": "SYNTHETIC-VEGAS-011",
+      "name": "Sage Demo Residence",
+      "address": "110 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.11,
+        36.16
+      ],
+      "status": "active",
+      "sourceStatus": "Mock active",
+      "listPrice": 800000,
+      "bedrooms": 4,
+      "bathrooms": 2.5,
+      "area": {
+        "value": 2950,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Sage Demo Residence. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "duplicate_change",
+      "media": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "sourceListingKey": "SYNTHETIC-VEGAS-012",
+      "name": "Vista Fiction Condo",
+      "address": "111 Example Only Lane — fictional address",
+      "coordinates": [
+        -115.09,
+        36.16
+      ],
+      "status": "active",
+      "sourceStatus": "Mock active",
+      "listPrice": 845000,
+      "bedrooms": 5,
+      "bathrooms": 3,
+      "area": {
+        "value": 3125,
+        "unit": "sqft"
+      },
+      "displayAllowed": true,
+      "addressAllowed": true,
+      "synthetic": true,
+      "publicRemarks": "SYNTHETIC SAMPLE: Vista Fiction Condo. Fictional demonstration record; not a real property or offer.",
+      "attribution": {
+        "brokerage": "Fictional Sample Brokerage",
+        "agent": "Sample Agent",
+        "disclaimer": "Synthetic demonstration data. Not an MLS listing."
+      },
+      "sourceModifiedAt": "2026-10-10T00:00:00Z",
+      "ingestedAt": "2026-10-10T00:01:00Z",
+      "expiresAt": "2026-10-11T00:01:00Z",
+      "fixtureCase": "alert_candidate",
+      "media": []
+    }
+  ]
+}
