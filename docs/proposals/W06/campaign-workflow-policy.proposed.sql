@@ -31,7 +31,7 @@ GRANT SELECT ON app.message_design TO estate_runtime;
 GRANT UPDATE(row_version) ON app.message_design TO estate_runtime;
 CREATE POLICY runtime_workflow_design_source ON app.message_design
   AS RESTRICTIVE TO estate_runtime
-  USING (tenant_id=app.current_tenant()) WITH CHECK (tenant_id=app.current_tenant());
+  USING (tenant_id=app.current_tenant()) WITH CHECK (false);
 
 -- No campaign lifecycle, steps, enrollment, schedules, sender, worker or delivery grants.
 COMMIT;
