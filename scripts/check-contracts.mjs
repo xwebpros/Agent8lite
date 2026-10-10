@@ -5,6 +5,11 @@ import addFormats from "ajv-formats";
 
 const api = JSON.parse(await fs.readFile("packages/contracts/openapi.json", "utf8"));
 const events = JSON.parse(await fs.readFile("packages/contracts/events.schema.json", "utf8"));
+const attributionAmendment = JSON.parse(
+  await fs.readFile("packages/contracts/amendments/ADR-022-listing-attribution-contact.json", "utf8"),
+);
+if (attributionAmendment.schema !== "Attribution" || attributionAmendment.property !== "contact")
+  throw new Error("Unsupported approved attribution amendment target.");
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 addFormats(ajv);
 ajv.addSchema({ $id: "api", components: api.components });
@@ -43,7 +48,14 @@ for (const file of [
 ]) {
   const source = await fs.readFile(`blueprint/contracts/${file}`);
   const copied = await fs.readFile(`packages/contracts/${file}`);
-  if (!source.equals(copied)) throw new Error(`Unreviewed contract drift: ${file}`);
+  if (file === "openapi.json") {
+    const expected = JSON.parse(source.toString("utf8"));
+    if (Object.hasOwn(expected.components.schemas.Attribution.properties, "contact"))
+      throw new Error("Original attribution contract unexpectedly changed.");
+    expected.components.schemas.Attribution.properties.contact = attributionAmendment.definition;
+    if (JSON.stringify(expected) !== JSON.stringify(api))
+      throw new Error("Unreviewed OpenAPI drift beyond ADR-022 attribution contact.");
+  } else if (!source.equals(copied)) throw new Error(`Unreviewed contract drift: ${file}`);
 }
 if (process.argv.includes("--generated")) {
   await fs.mkdir(".local", { recursive: true });
@@ -63,5 +75,5 @@ if (process.argv.includes("--generated")) {
   if (before !== after) throw new Error("Generated API types drifted. Run pnpm contracts:generate.");
 }
 console.log(
-  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, frozen contracts${process.argv.includes("--generated") ? ", generated types" : ""}.`,
+  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022 amendment${process.argv.includes("--generated") ? ", generated types" : ""}.`,
 );
