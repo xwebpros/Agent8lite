@@ -68,6 +68,7 @@ function row(overrides: Record<string, unknown> = {}) {
     PropertyType: "Residential",
     ListOfficeName: "Fixture brokerage",
     ListAgentFullName: "Fixture agent",
+    AttributionContact: "702-555-0100",
     PrivateRemarks: "must never escape",
     ...overrides,
   };
@@ -291,6 +292,105 @@ describe("Trestle authorization and safe transport", () => {
 });
 
 describe("Trestle listing projection and continuations", () => {
+  it.each(["ListOfficeName", "AttributionContact", "brokerage", "attributionContact"])(
+    "denies unverified required attribution %s before credentials or network",
+    async (field) => {
+      const h = harness();
+      h.state.authorization = {
+        ...h.state.authorization,
+        observedPropertyFields: h.state.authorization.observedPropertyFields.filter(
+          (value) => value !== field,
+        ),
+        policy: {
+          ...h.state.authorization.policy,
+          allowedFields: h.state.authorization.policy.allowedFields.filter((value) => value !== field),
+        },
+      };
+      await expect(h.adapter.search(context, {})).rejects.toMatchObject({
+        code: "TRESTLE_REQUIRED_ATTRIBUTION_UNVERIFIED",
+      });
+      await expect(h.adapter.getListing(context, "fixture-listing")).rejects.toMatchObject({
+        code: "TRESTLE_REQUIRED_ATTRIBUTION_UNVERIFIED",
+      });
+      await expect(h.adapter.capabilities(context)).rejects.toMatchObject({
+        code: "TRESTLE_REQUIRED_ATTRIBUTION_UNVERIFIED",
+      });
+      expect(await h.adapter.health(context)).toEqual({ state: "unavailable", lastSuccessAt: null });
+      expect(h.credentials).not.toHaveBeenCalled();
+      expect(h.fetch).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["fictional-participant@example.invalid", "+1 (702) 555-0100 ext 42"])(
+    "preserves the licensed provided attribution contact %s",
+    (AttributionContact) => {
+      const listing = mapTrestleListing(
+        row({ AttributionContact }),
+        authorization(),
+        new Date("2026-10-10T00:00:00Z"),
+      );
+      expect(listing?.attribution).toMatchObject({
+        brokerage: "Fixture brokerage",
+        contact: {
+          kind: AttributionContact.includes("@") ? "email" : "phone",
+          value: AttributionContact,
+        },
+      });
+    },
+  );
+  it.each([
+    undefined,
+    null,
+    "",
+    "unknown",
+    "123 ext 4567",
+    "mailto:fictional@example.invalid",
+    "7025550100\n",
+  ])(
+    "suppresses unavailable or malformed contact without office or agent fallback %#",
+    async (AttributionContact) => {
+      const h = harness();
+      h.state.respond = () =>
+        json({
+          value: [
+            row({
+              AttributionContact,
+              ListOfficePhone: "702-555-0101",
+              ListAgentDirectPhone: "702-555-0102",
+              ListAgentEmail: "fictional-fallback@example.invalid",
+              ownerContact: "702-555-0103",
+            }),
+          ],
+        });
+      expect((await h.adapter.search(context, {})).items).toEqual([]);
+      expect(await h.adapter.getListing(context, "fixture-listing")).toBeNull();
+    },
+  );
+  it.each([undefined, null, "", " ", "a".repeat(201)])(
+    "suppresses listings with unavailable listing firm %#",
+    (ListOfficeName) => {
+      expect(
+        mapTrestleListing(row({ ListOfficeName }), authorization(), new Date("2026-10-10T00:00:00Z")),
+      ).toBeNull();
+    },
+  );
+  it("clears previous health evidence when attribution rights are withdrawn", async () => {
+    const h = harness();
+    await h.adapter.search(context, {});
+    expect((await h.adapter.health(context)).state).toBe("ready");
+    h.state.authorization = {
+      ...h.state.authorization,
+      policy: {
+        ...h.state.authorization.policy,
+        allowedFields: h.state.authorization.policy.allowedFields.filter(
+          (value) => value !== "attributionContact",
+        ),
+      },
+    };
+    expect(await h.adapter.health(context)).toEqual({ state: "unavailable", lastSuccessAt: null });
+    h.state.authorization = authorization();
+    expect(await h.adapter.health(context)).toEqual({ state: "unavailable", lastSuccessAt: null });
+    expect(h.fetch).toHaveBeenCalledTimes(2);
+  });
   it("projects licensed fields, real provenance and expiration, never raw private fields", async () => {
     const h = harness();
     const result = (await h.adapter.search(context, {})).items[0];
@@ -299,13 +399,16 @@ describe("Trestle listing projection and continuations", () => {
       area: { value: 1500, unit: "sqft" },
       synthetic: false,
       expiresAt: "2026-10-10T00:05:00.000Z",
-      attribution: { disclaimer: "Fixture attribution" },
+      attribution: { disclaimer: "Fixture attribution", contact: { kind: "phone", value: "702-555-0100" } },
     });
     expect(JSON.stringify(result)).not.toContain("PrivateRemarks");
     expect(JSON.stringify(result)).not.toContain("must never escape");
     h.state.authorization = {
       ...h.state.authorization,
-      policy: { ...h.state.authorization.policy, allowedFields: ["status"] },
+      policy: {
+        ...h.state.authorization.policy,
+        allowedFields: ["status", "brokerage", "attributionContact"],
+      },
     };
     const restricted = (await h.adapter.search(context, {})).items[0];
     expect(restricted).toMatchObject({
@@ -364,12 +467,20 @@ describe("Trestle listing projection and continuations", () => {
     expect(url.searchParams.get("$filter")).toContain("OriginatingSystemID eq 'MLS''quoted'");
     expect(url.searchParams.get("$filter")).toContain("PropertyType eq 'House''quoted'");
     expect(url.searchParams.get("$select")).not.toContain("PrivateRemarks");
+    expect(url.searchParams.get("$select")?.split(",")).toEqual(
+      expect.arrayContaining(["ListOfficeName", "AttributionContact"]),
+    );
+    for (const fallback of ["ListOfficePhone", "ListAgentDirectPhone", "ListAgentEmail"])
+      expect(url.searchParams.get("$select")?.split(",")).not.toContain(fallback);
   });
   it("denies hidden filter predicates, keyword search, and unverified control fields", async () => {
     const h = harness();
     h.state.authorization = {
       ...h.state.authorization,
-      policy: { ...h.state.authorization.policy, allowedFields: ["status"] },
+      policy: {
+        ...h.state.authorization.policy,
+        allowedFields: ["status", "brokerage", "attributionContact"],
+      },
     };
     await expect(h.adapter.search(context, { priceMin: 1 })).rejects.toMatchObject({
       code: "TRESTLE_FILTER_FIELD_DENIED",
@@ -470,6 +581,8 @@ describe("Trestle listing projection and continuations", () => {
     h.state.respond = () => json({ private: "must never escape" }, { status: 429 });
     await expect(h.adapter.search(context, {})).rejects.toMatchObject({ code: "TRESTLE_QUOTA_EXCEEDED" });
     expect(h.fetch).toHaveBeenCalledTimes(calls + 1);
+    expect(await h.adapter.health(context)).toEqual({ state: "degraded", lastSuccessAt: stamp });
+    await h.adapter.readMetadata(context);
     expect(await h.adapter.health(context)).toEqual({ state: "degraded", lastSuccessAt: stamp });
     // Invalid client input neither heals nor worsens the actual provider state.
     await expect(h.adapter.search(context, { q: "unsupported" })).rejects.toMatchObject({

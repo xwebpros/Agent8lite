@@ -1,4 +1,5 @@
 import type { CanonicalListing, ListingCriteria } from "../port";
+import { providedAttributionContact } from "../attribution";
 import { instant, safeText, TrestleError } from "./safety";
 import type { TrestleFeedAuthorization } from "./types";
 
@@ -21,11 +22,19 @@ export const FIELD_GROUPS: Readonly<Record<string, readonly string[]>> = {
   propertyType: ["PropertyType"],
   brokerage: ["ListOfficeName"],
   agent: ["ListAgentFullName"],
+  attributionContact: ["AttributionContact"],
 };
 
 export function selectedFields(authorization: TrestleFeedAuthorization): string[] {
   if (CONTROL_FIELDS.some((field) => !authorization.observedPropertyFields.includes(field)))
     throw new TrestleError("TRESTLE_REQUIRED_FIELD_UNVERIFIED");
+  if (
+    !authorization.policy.allowedFields.includes("brokerage") ||
+    !authorization.policy.allowedFields.includes("attributionContact") ||
+    !authorization.observedPropertyFields.includes("ListOfficeName") ||
+    !authorization.observedPropertyFields.includes("AttributionContact")
+  )
+    throw new TrestleError("TRESTLE_REQUIRED_ATTRIBUTION_UNVERIFIED");
   const fields: string[] = [...CONTROL_FIELDS];
   for (const field of authorization.policy.allowedFields) {
     for (const source of FIELD_GROUPS[field] ?? [])
@@ -90,6 +99,9 @@ export function mapTrestleListing(
   const area = allowed("area") ? finite(row.LivingArea) : null;
   const areaUnit =
     row.LivingAreaUnits === "SquareFeet" ? "sqft" : row.LivingAreaUnits === "SquareMeters" ? "sqm" : null;
+  const brokerage = allowed("brokerage") ? safeText(row.ListOfficeName, 200) : null;
+  const contact = allowed("attributionContact") ? providedAttributionContact(row.AttributionContact) : null;
+  if (!brokerage?.trim() || !contact) return null;
   return {
     sourceListingKey: key,
     sourceStatus: String(row.StandardStatus),
@@ -109,9 +121,10 @@ export function mapTrestleListing(
     addressAllowed,
     synthetic: false,
     attribution: {
-      brokerage: allowed("brokerage") ? safeText(row.ListOfficeName) : null,
+      brokerage,
       agent: allowed("agent") ? safeText(row.ListAgentFullName) : null,
       disclaimer: policy.attributionText,
+      contact,
     },
   };
 }

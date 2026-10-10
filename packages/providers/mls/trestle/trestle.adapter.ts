@@ -55,7 +55,13 @@ export class TrestleAdapter implements LiveQueryAdapter {
   async #authorized(context: FeedContext, display: boolean): Promise<TrestleFeedAuthorization> {
     if (!this.#options.enabled) throw new TrestleError("TRESTLE_NOT_ENABLED");
     try {
-      return authorizeFeed(context, await this.#options.authorization.current(context), display);
+      const authorization = authorizeFeed(
+        context,
+        await this.#options.authorization.current(context),
+        display,
+      );
+      if (display) selectedFields(authorization);
+      return authorization;
     } catch (error) {
       this.#client.invalidate();
       this.#cursors.clear();

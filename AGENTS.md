@@ -1,6 +1,6 @@
 # Codex implementation rules — proposed future repository
 
-Implementation started on 2026-10-10. The normative source is `docs/tdd/technical-design.json` and its companion HTML; contracts were copied unchanged from `blueprint/` into `packages/contracts`. See `IMPLEMENTATION_STATUS.md` for verified runtime evidence and unfinished gates.
+Implementation started on 2026-10-10. The normative source is `docs/tdd/technical-design.json` and its companion HTML. Original blueprint contracts remain immutable; the implementation OpenAPI adds only the reviewed ADR-022 attribution-contact amendment, checked exactly against the original plus that amendment. Other copied contracts remain unchanged. See `IMPLEMENTATION_STATUS.md` for verified runtime evidence and unfinished gates.
 
 ## Current implementation coordination
 - The coordinating agent is the shared foundation/integration owner (W01/W11). It owns root dependencies, lockfile, contract generation, CI, provider seams and status. The user explicitly authorized concurrent subagents with clear file ownership in this shared checkout; that authorization supersedes the template's one-worktree-per-workstream rule for this session.
@@ -8,7 +8,7 @@ Implementation started on 2026-10-10. The normative source is `docs/tdd/technica
 - Two user-requested managed worktree chats branch from checkpoint `38c42a5`: W05 CMS owns `packages/cms/**`, `apps/api/src/cms/**`, `apps/web/features/cms/**`, `tests/cms/**` and `docs/proposals/W05/**` in its checkout; W07 mock property search owns the corresponding `mls`, `features/properties`, `tests/mls` and `docs/proposals/W07` paths in its checkout. They propose shared database/route changes before consumers, commit their owned work and leave integration to the coordinator. See IMPLEMENTATION_STATUS.md for chat IDs and absolute paths. Reviewed MOD-A migration0012 and its internal ports precede consumers; the coordinator allocates subsequent migrations.
 - Initial scope is M1, followed by available M2 vertical slices. M1 is incomplete until real PostgreSQL/PostGIS migrations and non-bypass RLS integration tests pass. Later milestone completion also requires every stated exit gate; synthetic functional slices do not imply production readiness.
 - Local identity sessions are visibly synthetic, loopback-only, and disabled outside explicitly enabled development/test mode. No real outbound messages, live Trestle access, payments, production deployment or licensed map tiles.
-- Additive local test routes may live under `/dev/` and must be documented in ADR-011. Published `/v1/` request/response shapes remain generated from the frozen contract. CSRF/member context can be returned in response headers without changing Session's body.
+- Additive local test routes may live under `/dev/` and must be documented in ADR-011. Published `/v1/` request/response shapes remain generated from the original contract plus explicitly reviewed additive amendments. CSRF/member context can be returned in response headers without changing Session's body.
 
 ## Authority and scope
 - Read docs/tdd and the owning module specification before coding. The approved TDD, OpenAPI contracts, event schemas, permission catalog and ADRs define behavior. Identify discrepancies in a contract PR; never silently invent provider features or undocumented API shapes.
