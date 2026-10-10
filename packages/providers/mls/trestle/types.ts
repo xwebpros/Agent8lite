@@ -22,12 +22,14 @@ export interface TrestleAuthorizationSource {
 export interface TrestleCredentialSource {
   withClientCredentials<T>(
     context: FeedContext,
-    run: (credential: Readonly<{
-      clientId: string;
-      clientSecret: string;
-      version: string;
-      expiresAt: string;
-    }>) => Promise<T>,
+    run: (
+      credential: Readonly<{
+        clientId: string;
+        clientSecret: string;
+        version: string;
+        expiresAt: string;
+      }>,
+    ) => Promise<T>,
   ): Promise<T>;
 }
 
