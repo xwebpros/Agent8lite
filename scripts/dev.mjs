@@ -9,6 +9,12 @@ const env = {
   API_PORT: process.env.API_PORT ?? "3001",
   DATABASE_URL:
     process.env.DATABASE_URL ?? "postgresql://estate_runtime:local-runtime-only@127.0.0.1:55432/estate",
+  CONTROL_DATABASE_URL:
+    process.env.CONTROL_DATABASE_URL ??
+    "postgresql://estate_control:local-control-only@127.0.0.1:55432/estate",
+  STAFF_ISSUER_DATABASE_URL:
+    process.env.STAFF_ISSUER_DATABASE_URL ??
+    "postgresql://estate_staff_issuer:local-staff-issuer-only@127.0.0.1:55432/estate",
 };
 if (!["development", "test"].includes(env.APP_ENV) || env.DEV_AUTH_ENABLED !== "true")
   throw new Error("The development launcher requires explicitly enabled synthetic local mode.");

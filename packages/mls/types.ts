@@ -35,4 +35,6 @@ export interface NativeMockListing {
 export interface NativeMockSnapshot {
   readonly feeds: readonly NativeMockFeed[];
   readonly listings: readonly NativeMockListing[];
+  /** Repository fingerprint of locked source metadata not represented in display DTOs. */
+  readonly generation?: string;
 }

@@ -1,0 +1,168 @@
+.workspace {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  color: var(--color-ink);
+  font-size: 16px;
+}
+.header,
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.header h2 {
+  font-size: 26px;
+  margin: 4px 0 8px;
+}
+.header p {
+  max-width: 62ch;
+}
+.eyebrow {
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.card {
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.card h3 {
+  font-size: 18px;
+}
+.card form {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.card fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.card label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.workspace input,
+.workspace select {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  font-size: 16px;
+}
+.workspace button {
+  min-height: 44px;
+  font-size: 14px;
+}
+.workspace :focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.notice,
+.warning {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border: 1px solid var(--color-border);
+  background: var(--color-warning-surface);
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.error {
+  border-left: 3px solid var(--color-danger);
+  padding: 14px;
+  background: var(--color-danger-surface);
+  border-radius: 4px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.success {
+  padding: 14px;
+  background: var(--color-positive-surface);
+  border-radius: 8px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.help {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+.heading > p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.empty {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 32px 16px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  color: var(--color-muted);
+  font-size: 14px;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 600px) {
+  .card {
+    padding: 16px;
+  }
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .actions > button,
+  .heading > button {
+    width: 100%;
+  }
+  .header h2 {
+    font-size: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace * {
+    scroll-behavior: auto;
+    transition: none;
+  }
+}

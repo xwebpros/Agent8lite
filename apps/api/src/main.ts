@@ -44,6 +44,12 @@ import { ConsentService } from "./consent-service";
 import { ConsentChannelService } from "./consent-channel-service";
 import type { NativeCaptureDecision } from "../../../packages/contracts/internal/capture-port";
 import { validateSyntheticConsent } from "./contract-validation";
+import { tryNativeMockRead } from "./mls";
+import { CmsHttpAdapter } from "./cms";
+import { createCmsProfileReferencePort } from "./admin-profile-reference";
+import { createStaffPools } from "../../../packages/db/staff-pools";
+import { createStaffHttpAdapter } from "./control/http-adapter";
+import { withStaffTransaction } from "../../../packages/auth/staff-sessions";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -164,6 +170,12 @@ class ApiController {
         });
         return;
       }
+      if (req.cookies?.estate_staff_session && req.cookies?.[sessionCookie])
+        throw new AccessError(
+          403,
+          "identity_context_ambiguous",
+          "Select one identity context before access.",
+        );
       if (req.path === "/dev/session" && req.method === "POST") {
         localIdentity(req);
         rate(loginAttempts, req.socket.remoteAddress ?? "", 20);
@@ -246,6 +258,49 @@ class ApiController {
       }
       if (req.path === "/v1/session" && req.method === "GET") {
         res.json(await sessionBody(session, res));
+        return;
+      }
+      const nativeListings = await tryNativeMockRead(
+        {
+          path: req.path,
+          method: req.method,
+          query: req.query,
+          body: req.body,
+          remoteAddress: req.socket.remoteAddress,
+          forwardedFor: req.headers["x-forwarded-for"],
+        },
+        session,
+        runtimePool,
+        {
+          signingKey:
+            process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production",
+        },
+      );
+      if (nativeListings) {
+        res.status(200).json(nativeListings.body);
+        return;
+      }
+      if (
+        req.path === "/v1/templates" ||
+        /^\/v1\/orgs\/[^/]+\/(?:sites|documents|revisions)(?:\/|$)/.test(req.path) ||
+        /^\/dev\/orgs\/[^/]+\/cms\/documents\/[^/]+\/drafts$/.test(req.path)
+      ) {
+        const headers: Record<string, string | undefined> = {};
+        for (const [key, value] of Object.entries(req.headers))
+          if (typeof value === "string") headers[key] = value;
+        const result = await new CmsHttpAdapter(runtimePool, {
+          profiles: createCmsProfileReferencePort,
+          trustedLinkPolicy: { approvedLinkOrigins: new Set() },
+          allowedOrigins,
+        }).handle({
+          method: req.method,
+          url: req.originalUrl,
+          headers,
+          body: req.body,
+          remoteAddress: req.socket.remoteAddress,
+        });
+        for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
+        res.status(result.status).json(result.body);
         return;
       }
       const uploadMatch = req.path.match(/^\/dev\/storage\/uploads\/([^/]+)$/);
@@ -671,7 +726,30 @@ class ApiModule {}
 
 export async function createApplication() {
   await assertRuntimeRole(runtimePool);
-  const app = await NestFactory.create<NestExpressApplication>(ApiModule, {
+  // Staff uses explicit distinct logins. A member-only synthetic server can run without them.
+  const staffPools =
+    syntheticEnabled && (process.env.CONTROL_DATABASE_URL || process.env.STAFF_ISSUER_DATABASE_URL)
+      ? createStaffPools()
+      : undefined;
+  let staffClosed = false;
+  const closeStaff = async () => {
+    if (!staffPools || staffClosed) return;
+    staffClosed = true;
+    await Promise.all([staffPools.control.end(), staffPools.issuer.end()]);
+  };
+  let staffAdapter: Awaited<ReturnType<typeof createStaffHttpAdapter>> | undefined;
+  try {
+    if (staffPools)
+      staffAdapter = await createStaffHttpAdapter({ ...staffPools, allowedOrigins: [...allowedOrigins] });
+  } catch (error) {
+    await closeStaff();
+    throw error;
+  }
+  const module = {
+    module: ApiModule,
+    providers: [{ provide: "STAFF_DATABASE_LIFECYCLE", useValue: { onApplicationShutdown: closeStaff } }],
+  };
+  const app = await NestFactory.create<NestExpressApplication>(module, {
     logger: ["error", "warn"],
     bodyParser: false,
   });
@@ -682,6 +760,67 @@ export async function createApplication() {
     res.setHeader("Referrer-Policy", "no-referrer");
     next();
   });
+  // This bounded adapter reads raw JSON itself; registration must precede either body parser.
+  if (staffAdapter) {
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      const owned =
+        req.path === "/dev/staff/session" ||
+        req.path === "/dev/staff/logout" ||
+        req.path === "/v1/platform/organizations" ||
+        /^\/dev\/staff\/jobs\/[0-9a-f-]{36}(?:\/run)?$/.test(req.path);
+      if (!owned) {
+        next();
+        return;
+      }
+      void (async () => {
+        if (
+          !loopback(req.socket.remoteAddress) ||
+          req.headers.forwarded ||
+          req.headers["x-forwarded-for"] ||
+          req.headers["x-real-ip"]
+        )
+          throw new AccessError(
+            403,
+            "synthetic_loopback_required",
+            "Synthetic staff access requires direct loopback.",
+          );
+        const reading = ["GET", "HEAD"].includes(req.method);
+        const cookies = (req.headers.cookie ?? "").split(";").map((cookie) => cookie.trim());
+        const staffCookies = cookies.filter((cookie) => cookie.startsWith("estate_staff_session="));
+        if (staffCookies.length && cookies.some((cookie) => cookie.startsWith("estate_session=")))
+          throw new AccessError(
+            403,
+            "identity_context_ambiguous",
+            "Select one identity context before access.",
+          );
+        if (req.path === "/dev/staff/session" && req.method === "POST")
+          rate(loginAttempts, `staff:${req.socket.remoteAddress ?? ""}`, 20);
+        else if (staffCookies.length === 1)
+          await withStaffTransaction(
+            staffPools!.control,
+            staffCookies[0].slice("estate_staff_session=".length),
+            async (_client, staff) => {
+              rate(
+                requestRates,
+                `staff:${staff.userId}:${reading ? "read" : "mutation"}`,
+                reading ? 300 : 120,
+              );
+            },
+          );
+        else
+          rate(
+            requestRates,
+            `staff-anonymous:${req.socket.remoteAddress}:${reading ? "read" : "mutation"}`,
+            reading ? 300 : 120,
+          );
+        if (!(await staffAdapter!(req, res))) next();
+      })().catch((error) => {
+        const failure = problem(error, String(res.getHeader("X-Trace-Id")), req.path);
+        if (failure.status === 429) res.setHeader("Retry-After", "60");
+        res.status(failure.status).type("application/problem+json").json(failure);
+      });
+    });
+  }
   app.useBodyParser("raw", {
     type: (req) => req.method === "PUT" && /^\/dev\/storage\/uploads\/[^/]+$/.test(req.url ?? ""),
     limit: 20 * 1024 * 1024,

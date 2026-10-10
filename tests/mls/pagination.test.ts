@@ -84,6 +84,22 @@ describe("W07 stable bounded pagination", () => {
     expect(JSON.stringify(body)).not.toMatch(/Juniper|SYNTHETIC|listPrice|address|sourceListingKey/);
   });
 
+  it("binds verified scope explicitly without depending on extra session credentials", () => {
+    const first = searchNativeMockListings(
+      snapshot,
+      { ...context, csrfToken: "private-first", tokenHash: "session-one" } as typeof context,
+      { limit: 1 },
+      options,
+    );
+    const second = searchNativeMockListings(
+      snapshot,
+      { ...context, csrfToken: "private-second", tokenHash: "session-two" } as typeof context,
+      { limit: 1, cursor: first.nextCursor },
+      options,
+    );
+    expect(second.items[0].id).not.toBe(first.items[0].id);
+  });
+
   it.each([
     "filter",
     "sort",

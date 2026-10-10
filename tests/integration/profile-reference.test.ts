@@ -9,14 +9,28 @@ const admin = createMigrationPool();
 const runtime = createRuntimePool();
 const own = randomUUID();
 const foreign = randomUUID();
-const capability = randomUUID();
+let capability = randomUUID();
+let originalCapability: { state: string; effective_until: Date | null } | undefined;
 const identity = { userId: fixtures.ownerUser, organizationId: fixtures.orgA };
 
 beforeAll(async () => {
-  await admin.query(
-    "INSERT INTO app.entitlement(tenant_id,id,feature,state)VALUES($1,$2,'websites','enabled')",
-    [fixtures.orgA, capability],
-  );
+  const existing = (
+    await admin.query(
+      "SELECT id,state,effective_until FROM app.entitlement WHERE tenant_id=$1 AND feature='websites'",
+      [fixtures.orgA],
+    )
+  ).rows[0];
+  if (existing) {
+    capability = existing.id;
+    originalCapability = existing;
+    await admin.query("UPDATE app.entitlement SET state='enabled',effective_until=NULL WHERE id=$1", [
+      capability,
+    ]);
+  } else
+    await admin.query(
+      "INSERT INTO app.entitlement(tenant_id,id,feature,state)VALUES($1,$2,'websites','enabled')",
+      [fixtures.orgA, capability],
+    );
   await admin.query(
     "INSERT INTO app.business_profile(tenant_id,id,name)VALUES($1,$2,'Synthetic reference'),($3,$4,'Synthetic foreign reference')",
     [fixtures.orgA, own, fixtures.orgB, foreign],
@@ -25,7 +39,13 @@ beforeAll(async () => {
 afterAll(async () => {
   try {
     await admin.query("DELETE FROM app.business_profile WHERE id=ANY($1::uuid[])", [[own, foreign]]);
-    await admin.query("DELETE FROM app.entitlement WHERE id=$1", [capability]);
+    if (originalCapability)
+      await admin.query("UPDATE app.entitlement SET state=$2,effective_until=$3 WHERE id=$1", [
+        capability,
+        originalCapability.state,
+        originalCapability.effective_until,
+      ]);
+    else await admin.query("DELETE FROM app.entitlement WHERE id=$1", [capability]);
   } finally {
     await Promise.all([runtime.end(), admin.end()]);
   }

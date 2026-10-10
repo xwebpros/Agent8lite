@@ -1,0 +1,10 @@
+{
+  "extends": "../../apps/web/tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": [
+    "./editor.test.tsx",
+    "../../apps/web/next-env.d.ts",
+    "../../apps/web/features/cms/**/*.ts",
+    "../../apps/web/features/cms/**/*.tsx"
+  ]
+}

@@ -142,7 +142,7 @@ describe("web BFF private transport boundary — actual NextRequest handlers, no
     privateResponse(await invoke(value), 200);
     const forwarded = outbound();
     expect(forwarded.url).toBe(`http://127.0.0.1:3001/${contactPath.join("/")}`);
-    expect(forwarded.headers.get("cookie")).toBe("estate_session=synthetic-cookie; preference=compact");
+    expect(forwarded.headers.get("cookie")).toBe("estate_session=synthetic-cookie");
     expect(forwarded.headers.get("x-csrf-token")).toBe("synthetic-csrf");
     expect(forwarded.headers.get("idempotency-key")).toBe("synthetic-command");
     expect(forwarded.headers.get("if-match")).toBe('"7"');
@@ -172,6 +172,37 @@ describe("web BFF private transport boundary — actual NextRequest handlers, no
     network.mockClear();
     await invoke(request("GET"), ["v1", "orgs", "https:evil.example?x"]);
     expect(outbound().url).toBe("http://127.0.0.1:3001/v1/orgs/https%3Aevil.example%3Fx");
+  });
+
+  it("chooses independent staff/member cookies from the explicit route without mixing authority", async () => {
+    const cookie = "estate_session=member-token; estate_staff_session=staff-token; preference=compact";
+    for (const path of [
+      ["dev", "staff", "session"],
+      ["v1", "platform", "organizations"],
+      contactPath,
+      ["v1", "session"],
+      ["dev", "orgs", org, "mls", "listings"],
+    ]) {
+      network.mockClear();
+      privateResponse(await invoke(request("GET", null, { cookie }), path), 200);
+      const staff = path[1] === "staff" || path[1] === "platform";
+      expect(outbound().headers.get("cookie")).toBe(
+        staff ? "estate_staff_session=staff-token" : "estate_session=member-token",
+      );
+    }
+    network.mockClear();
+    privateResponse(await invoke(request("GET", null, { cookie: "estate_staff_session=staff-token" })), 200);
+    expect(outbound().headers.has("cookie")).toBe(false);
+  });
+
+  it("denies duplicate cookies in the chosen context before forwarding", async () => {
+    for (const [path, cookie] of [
+      [contactPath, "estate_session=first; estate_session=second"],
+      [["dev", "staff", "session"], "estate_staff_session=first; estate_staff_session=second"],
+    ] as const) {
+      privateResponse(await invoke(request("GET", null, { cookie }), [...path]), 403);
+    }
+    expect(network).not.toHaveBeenCalled();
   });
 
   it("enforces ordinary-body limits with and without Content-Length before forwarding any bytes", async () => {

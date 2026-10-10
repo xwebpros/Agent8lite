@@ -4,9 +4,9 @@ import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 
 const requested = process.argv.slice(2);
-function batch(filters, report) {
+function batch(filters, report, runner = "scripts/test-isolated-batch.mjs") {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["scripts/test-isolated-batch.mjs", ...filters], {
+    const child = spawn(process.execPath, [runner, ...filters], {
       env: { ...process.env, ISOLATED_TEST_REPORT: report ?? "" },
       stdio: "inherit",
       windowsHide: true,
@@ -34,7 +34,7 @@ async function main() {
       ["tests/cms", "tests/mls"].map(async (root) => {
         try {
           return (await readdir(root, { recursive: true }))
-            .filter((file) => file.endsWith(".test.ts"))
+            .filter((file) => /\.test\.tsx?$/.test(file))
             .map((file) => path.join(root, file));
         } catch (error) {
           if (error.code === "ENOENT") return [];
@@ -51,13 +51,16 @@ async function main() {
     ["tests/unit", "packages", ...scopedUnit],
     ...[...integration, ...scopedIntegration].map((file) => [file]),
   ];
+  // Control's cut-point suite owns a different database/listener and refuses shared fixtures.
+  suites.push([]);
   const totals = { files: 0, tests: 0, passed: 0, failed: 0, skipped: 0, failedBatches: 0 };
   await mkdir(directory, { recursive: true });
   try {
     for (const [index, filters] of suites.entries()) {
       console.log(`Isolated batch ${index + 1}/${suites.length}: ${filters.join(", ")}`);
       const report = path.join(directory, `${index}.json`);
-      if (!(await batch(filters, report))) totals.failedBatches++;
+      if (!(await batch(filters, report, filters.length ? undefined : "tests/control/run.mjs")))
+        totals.failedBatches++;
       try {
         const result = JSON.parse(await readFile(report, "utf8"));
         totals.files += result.testResults.length;

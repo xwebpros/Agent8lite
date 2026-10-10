@@ -16,3 +16,4 @@ export {
   templateThemeVersion,
   TemplateUnavailableError,
 } from "./templates";
+export type { CmsProfileReferencePort } from "./ports";

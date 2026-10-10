@@ -1,6 +1,8 @@
 import presets from "../contracts/role-presets.json";
+import permissionCatalog from "../contracts/permission-catalog.json";
 import { fixtures as f, roleId, stageId } from "./fixtures";
 import { databaseConnectionString, migrationPool } from "./pool";
+import { seedNativeReadFixtures } from "./seed-native-read-fixtures";
 
 export async function seed() {
   if (!["development", "test"].includes(process.env.APP_ENV ?? "") || process.env.DEV_AUTH_ENABLED !== "true")
@@ -17,12 +19,25 @@ export async function seed() {
       [f.ownerUser, "owner", "Synthetic Owner"],
       [f.agentUser, "agent", "Synthetic Agent"],
       [f.otherAgentUser, "other-agent", "Synthetic Other Agent"],
+      [f.staffAdministratorUser, "staff-administrator", "Synthetic Staff Administrator"],
+      [f.staffSupportUser, "staff-support", "Synthetic Staff Support"],
     ]) {
       await client.query(
         `INSERT INTO app.user_identity(id,issuer,subject,display_name,email,email_verified) VALUES($1,'urn:estate:synthetic',$2,$3,$4,true) ON CONFLICT(id) DO NOTHING`,
         [id, subject, displayName, `${subject}@example.test`],
       );
     }
+    for (const [user, codes] of [
+      [
+        f.staffAdministratorUser,
+        permissionCatalog.codes.filter((entry) => entry.boundary === "staff").map((entry) => entry.code),
+      ],
+      [f.staffSupportUser, ["platform.orgs.read", "platform.health.read", "platform.config.read"]],
+    ] as const)
+      await client.query(
+        "INSERT INTO app.staff_principal(user_id,permission_codes,active)VALUES($1,$2,true)ON CONFLICT(user_id)DO NOTHING",
+        [user, codes],
+      );
     for (const [index, code, interval, price] of [
       [1, "synthetic-starter", "month", 4900],
       [2, "synthetic-starter", "year", 49000],
@@ -143,6 +158,7 @@ export async function seed() {
         [org],
       );
     }
+    await seedNativeReadFixtures(client);
     await client.query("COMMIT");
     console.log("Seeded two organizations and synthetic identities; no external services contacted.");
   } catch (error) {

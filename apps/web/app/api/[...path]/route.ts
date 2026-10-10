@@ -116,7 +116,6 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const headers = new Headers();
   for (const name of [
     "content-type",
-    "cookie",
     "origin",
     "idempotency-key",
     "x-csrf-token",
@@ -129,6 +128,21 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  // An explicit route chooses one independent identity context. The API still verifies its opaque
+  // session, current principal/membership and CSRF; cookies never combine staff/member authority.
+  const staffRoute =
+    (path[0] === "dev" && path[1] === "staff") || (path[0] === "v1" && path[1] === "platform");
+  const cookieName = staffRoute ? "estate_staff_session" : "estate_session";
+  const cookies = (request.headers.get("cookie") ?? "")
+    .split(";")
+    .map((value) => value.trim())
+    .filter((value) => value.startsWith(`${cookieName}=`));
+  if (cookies.length > 1)
+    return Response.json(
+      { title: "Ambiguous identity cookie" },
+      { status: 403, headers: { "Cache-Control": "private, no-store" } },
+    );
+  if (cookies.length === 1) headers.set("cookie", cookies[0]);
   if (request.headers.has("origin")) headers.set("origin", process.env.WEB_ORIGIN || "http://localhost:3000");
   try {
     const upload =

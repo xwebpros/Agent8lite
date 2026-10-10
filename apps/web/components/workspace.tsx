@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   House,
   Kanban,
+  Layers3,
   LayoutDashboard,
   ListTodo,
   LogOut,
@@ -50,6 +51,8 @@ import LeadTags from "./lead-tags";
 import RoutingPanel from "./routing-panel";
 import SyntheticCapture from "./synthetic-capture";
 import ConsentPanel from "./consent-panel";
+import { PropertiesFeature } from "../features/properties";
+import CmsWorkspace from "./cms-workspace";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -57,13 +60,15 @@ type Lead = Schema<"Lead">;
 type Task = Schema<"Task">;
 type Stage = Schema<"PipelineStage">;
 type Source = Schema<"LeadSource">;
-type View = "dashboard" | "contacts" | "pipeline" | "tasks" | "settings";
+type View = "dashboard" | "contacts" | "pipeline" | "tasks" | "properties" | "websites" | "settings";
 type InstallEvent = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> };
 const navigation = [
   { id: "dashboard", name: "Dashboard", icon: LayoutDashboard },
   { id: "contacts", name: "Contacts", icon: Users },
   { id: "pipeline", name: "Pipeline", icon: Kanban },
   { id: "tasks", name: "Tasks", icon: ListTodo },
+  { id: "properties", name: "Properties", icon: House },
+  { id: "websites", name: "Websites", icon: Layers3 },
   { id: "settings", name: "Settings", icon: Settings2 },
 ] as const;
 const emptyData = {
@@ -116,6 +121,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const [booting, setBooting] = useState(true);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [changingOrganization, setChangingOrganization] = useState(false);
   const [online, setOnline] = useState(true);
   const [data, setData] = useState(emptyData);
   const [refreshed, setRefreshed] = useState<string | null>(null);
@@ -125,8 +131,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const [dirty, setDirty] = useState(false);
   const [noteDirty, setNoteDirty] = useState(false);
   const [tagDirty, setTagDirty] = useState(false);
+  const [cmsDirty, setCmsDirty] = useState(false);
+  const cmsProtected = useRef(false);
   const [invitationTransfer, setInvitationTransfer] = useState<InvitationTransfer | null>(null);
-  const unsaved = dirty || noteDirty || tagDirty || Boolean(invitationTransfer);
+  const unsaved = dirty || noteDirty || tagDirty || cmsDirty || Boolean(invitationTransfer);
   const [search, setSearch] = useState("");
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
@@ -155,19 +163,31 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const capturedContact = useRef<Contact | null>(null);
   const updateAccepted = useRef(false);
   const reloadProtected = useRef(false);
-  reloadProtected.current = unsaved || busy;
+  reloadProtected.current = unsaved || busy || cmsProtected.current;
+  const protectCms = useCallback((value: boolean) => {
+    cmsProtected.current = value;
+    if (value) reloadProtected.current = true;
+    setCmsDirty(value);
+  }, []);
   const dialog = useRef<HTMLDialogElement>(null);
   const detailDialog = useRef<HTMLDialogElement>(null);
   const refreshEpoch = useRef(0);
   const sessionEpoch = useRef(0);
   const detailEpoch = useRef(0);
   const verifiedMember = useRef("");
+  const retainedSession = useRef<Session | null>(null);
   const organization = session?.organizations.find((org) => org.id === session.activeOrgId);
   const timezone = session?.profile.timezone || "America/Los_Angeles";
   const permission = (name: string) => session?.permissions.includes(name) === true;
   const syntheticEnabled = syntheticFeaturesEnabled && syntheticIdentity && Boolean(session);
   const canCapture = permission("crm.contacts.write") && permission("crm.leads.write");
   const canTask = permission("crm.tasks.write");
+  const visibleNavigation = navigation.filter((item) => {
+    if (item.id === "properties") return syntheticEnabled && permission("mls.read");
+    if (item.id === "websites")
+      return syntheticEnabled && permission("sites.read") && permission("content.read");
+    return true;
+  });
   const settingsPanel = [
     "device",
     "account",
@@ -198,6 +218,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     async (active: Session) => {
       if (!active.activeOrgId) return;
       const epoch = ++refreshEpoch.current;
+      if (cmsProtected.current) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       const base = `/v1/orgs/${active.activeOrgId}`;
       const filter =
@@ -206,11 +230,21 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           : "";
       try {
         const [contacts, leads, tasks, stages, sources] = await Promise.all([
-          api<Schema<"PageContact">>(`${base}/contacts?limit=100${filter}`),
-          api<Schema<"PageLead">>(`${base}/leads?limit=100${filter}`),
-          api<Schema<"PageTask">>(`${base}/tasks?limit=100${filter}`),
-          api<Schema<"PagePipelineStage">>(`${base}/pipeline-stages?limit=100`),
-          api<Schema<"PageLeadSource">>(`${base}/lead-sources?limit=100`),
+          active.permissions.includes("crm.contacts.read")
+            ? api<Schema<"PageContact">>(`${base}/contacts?limit=100${filter}`)
+            : Promise.resolve({ data: { items: [] as Contact[], nextCursor: null, hasMore: false } }),
+          active.permissions.includes("crm.leads.read")
+            ? api<Schema<"PageLead">>(`${base}/leads?limit=100${filter}`)
+            : Promise.resolve({ data: { items: [] as Lead[], nextCursor: null, hasMore: false } }),
+          active.permissions.includes("crm.tasks.read")
+            ? api<Schema<"PageTask">>(`${base}/tasks?limit=100${filter}`)
+            : Promise.resolve({ data: { items: [] as Task[], nextCursor: null, hasMore: false } }),
+          active.permissions.includes("crm.pipeline.read")
+            ? api<Schema<"PagePipelineStage">>(`${base}/pipeline-stages?limit=100`)
+            : Promise.resolve({ data: { items: [] as Stage[], nextCursor: null, hasMore: false } }),
+          active.permissions.includes("crm.sources.read")
+            ? api<Schema<"PageLeadSource">>(`${base}/lead-sources?limit=100`)
+            : Promise.resolve({ data: { items: [] as Source[], nextCursor: null, hasMore: false } }),
         ]);
         if (epoch !== refreshEpoch.current) return;
         setCursors({
@@ -226,14 +260,29 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           sources: sources.data.items,
           more: contacts.data.hasMore || leads.data.hasMore || tasks.data.hasMore,
         });
-        setRefreshed(new Date().toISOString());
+        setRefreshed(
+          [
+            "crm.contacts.read",
+            "crm.leads.read",
+            "crm.tasks.read",
+            "crm.pipeline.read",
+            "crm.sources.read",
+          ].some((code) => active.permissions.includes(code))
+            ? new Date().toISOString()
+            : null,
+        );
         setError("");
       } catch (err) {
         if (epoch !== refreshEpoch.current) return;
         setData(emptyData);
         setRefreshed(null);
         setError(err instanceof Error ? err.message : "Workspace could not refresh.");
-        if (err instanceof ApiError && [401, 403].includes(err.status)) {
+        const unrelatedCrmDenial =
+          cmsProtected.current &&
+          err instanceof ApiError &&
+          err.status === 403 &&
+          ["permission_denied", "entitlement_disabled"].includes(err.code ?? "");
+        if (err instanceof ApiError && [401, 403].includes(err.status) && !unrelatedCrmDenial) {
           setAccessRevision((value) => value + 1);
           commandKeys.current.clear();
           ++detailEpoch.current;
@@ -252,6 +301,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           (err.status === 401 || err.code === "membership_required" || err.code === "membership_inactive")
         ) {
           setSession(null);
+          retainedSession.current = null;
           setSyntheticIdentity(false);
           setCsrf("");
           setMember("");
@@ -265,35 +315,52 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     [scope],
   );
 
-  const readSession = useCallback(async () => {
-    const epoch = ++sessionEpoch.current;
-    try {
-      const result = await api<Session>("/v1/session");
-      if (epoch !== sessionEpoch.current) return;
-      setSession(result.data);
-      setSyntheticIdentity(result.headers.get("X-Synthetic-Identity") === "true");
-      setCsrf(result.headers.get("X-CSRF-Token") || "");
-      setMember(result.headers.get("X-Member-Id") || "");
-      verifiedMember.current = result.headers.get("X-Member-Id") || "";
-      const revision = Number(result.headers.get("ETag")?.replaceAll('"', ""));
-      setProfileVersion(Number.isInteger(revision) && revision > 0 ? revision : null);
-      await refresh(result.data);
-    } catch (err) {
-      if (epoch !== sessionEpoch.current) return;
-      setSession(null);
-      setSyntheticIdentity(false);
-      setData(emptyData);
-      setRefreshed(null);
-      setCsrf("");
-      setMember("");
-      setInvitationTransfer(null);
-      setInvitationAcceptance(null);
-      if (!(err instanceof ApiError && err.status === 401))
-        setError(err instanceof Error ? err.message : "Sign-in is unavailable.");
-    } finally {
-      if (epoch === sessionEpoch.current) setBooting(false);
-    }
-  }, [refresh]);
+  const readSession = useCallback(
+    async (preserveDraft = true) => {
+      const epoch = ++sessionEpoch.current;
+      try {
+        const result = await api<Session>("/v1/session");
+        if (epoch !== sessionEpoch.current) return;
+        setSession(result.data);
+        retainedSession.current = result.data;
+        setSyntheticIdentity(result.headers.get("X-Synthetic-Identity") === "true");
+        setCsrf(result.headers.get("X-CSRF-Token") || "");
+        setMember(result.headers.get("X-Member-Id") || "");
+        verifiedMember.current = result.headers.get("X-Member-Id") || "";
+        const revision = Number(result.headers.get("ETag")?.replaceAll('"', ""));
+        setProfileVersion(Number.isInteger(revision) && revision > 0 ? revision : null);
+        await refresh(result.data);
+        return retainedSession.current === result.data ? result.data : null;
+      } catch (err) {
+        if (epoch !== sessionEpoch.current) return;
+        if (
+          preserveDraft &&
+          retainedSession.current &&
+          !(err instanceof ApiError && [401, 403].includes(err.status))
+        ) {
+          setError(
+            "Session refresh is unavailable. Existing drafts remain in this tab; retry when connected.",
+          );
+          return null;
+        }
+        setSession(null);
+        retainedSession.current = null;
+        setSyntheticIdentity(false);
+        setData(emptyData);
+        setRefreshed(null);
+        setCsrf("");
+        setMember("");
+        setInvitationTransfer(null);
+        setInvitationAcceptance(null);
+        if (!(err instanceof ApiError && err.status === 401))
+          setError(err instanceof Error ? err.message : "Sign-in is unavailable.");
+        return null;
+      } finally {
+        if (epoch === sessionEpoch.current) setBooting(false);
+      }
+    },
+    [refresh],
+  );
 
   useEffect(() => {
     void readSession();
@@ -314,7 +381,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   }, [readSession]);
   useEffect(() => {
     const prevent = (event: BeforeUnloadEvent) => {
-      if (unsaved || busy) {
+      if (reloadProtected.current) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -506,6 +573,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     setData(emptyData);
     setRefreshed(null);
     setSession(null);
+    retainedSession.current = null;
     setSyntheticIdentity(false);
     setCsrf("");
     setMember("");
@@ -725,9 +793,15 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function switchOrganization(id: string) {
+    if (cmsProtected.current) {
+      setError("Resolve or discard the website draft in the editor before switching organizations.");
+      return;
+    }
     if (unsaved && !window.confirm("Discard your draft and switch organizations?")) return;
     setBusy(true);
+    setChangingOrganization(true);
     setError("");
+    setNotice("");
     ++refreshEpoch.current;
     ++sessionEpoch.current;
     ++detailEpoch.current;
@@ -743,17 +817,38 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     setSelectedTask(null);
     router.replace(view === "settings" ? `/settings?panel=${settingsPanel}` : `/${view}`);
     try {
-      await command("/dev/session/organization", { organizationId: id });
-      await readSession();
-      commandKeys.current.clear();
-      setNotice("Organization switched. Access and records refreshed.");
+      let commandFailure: unknown;
+      try {
+        await command("/dev/session/organization", { organizationId: id });
+      } catch (err) {
+        commandFailure = err;
+      }
+      const verified = await readSession(false);
+      if (verified?.activeOrgId === id) {
+        commandKeys.current.clear();
+        setNotice(
+          commandFailure
+            ? "Organization switch reconciled from the current session."
+            : "Organization switched. Session and access verified.",
+        );
+      } else
+        setError(
+          commandFailure instanceof Error
+            ? commandFailure.message
+            : "Organization switch could not be verified. Refresh your session before retrying.",
+        );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Organization switch failed.");
     } finally {
       setBusy(false);
+      setChangingOrganization(false);
     }
   }
   async function logout() {
+    if (cmsProtected.current) {
+      setError("Resolve or discard the website draft in the editor before signing out.");
+      return;
+    }
     if (unsaved && !window.confirm("Discard your draft and sign out?")) return;
     setBusy(true);
     try {
@@ -762,6 +857,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       ++sessionEpoch.current;
       ++detailEpoch.current;
       setSession(null);
+      retainedSession.current = null;
       setSyntheticIdentity(false);
       setData(emptyData);
       setRefreshed(null);
@@ -915,7 +1011,17 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         Skip to main content
       </a>
       <aside className="sidebar">
-        <Link className="brand" href="/dashboard" aria-label="Estate dashboard">
+        <Link
+          className="brand"
+          href="/dashboard"
+          aria-label="Estate dashboard"
+          onClick={(event) => {
+            if (reloadProtected.current) {
+              event.preventDefault();
+              setError("Resolve or discard the current draft before leaving this view.");
+            }
+          }}
+        >
           <span className="brand-mark">
             <House size={22} />
           </span>
@@ -941,13 +1047,18 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           <ChevronDown size={14} />
         </div>
         <nav aria-label="Main navigation">
-          {navigation.map(({ id, name, icon: Icon }) => (
+          {visibleNavigation.map(({ id, name, icon: Icon }) => (
             <Link
               key={id}
               href={`/${id}`}
               aria-current={view === id ? "page" : undefined}
               className={`nav-link ${view === id ? "active" : ""}`}
               onClick={(event) => {
+                if (cmsProtected.current) {
+                  event.preventDefault();
+                  setError("Resolve or discard the website draft in the editor before leaving this view.");
+                  return;
+                }
                 if (busy) {
                   event.preventDefault();
                   setError("Wait for the current command to resolve before leaving this view.");
@@ -977,7 +1088,15 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             <Smartphone size={22} />
             <strong>Your workspace, anywhere</strong>
             <p>Add Estate to your home screen.</p>
-            <Link href="/settings">
+            <Link
+              href="/settings"
+              onClick={(event) => {
+                if (reloadProtected.current) {
+                  event.preventDefault();
+                  setError("Resolve or discard the current draft before opening installation settings.");
+                }
+              }}
+            >
               Installation guide <ArrowRight size={14} />
             </Link>
           </div>
@@ -1105,7 +1224,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               >
                 <RefreshCw size={18} className={loading ? "spinning" : ""} />
               </button>
-              {view !== "settings" && !dealsTab && !captureTab && (
+              {!["settings", "properties", "websites"].includes(view) && !dealsTab && !captureTab && (
                 <Button
                   disabled={busy || !online || (view === "tasks" ? !canTask : !canCapture) || !member}
                   onClick={() => openModal(view === "tasks" ? "task" : "lead")}
@@ -1127,33 +1246,63 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               {notice}
             </div>
           )}
-          <div className="scope-line">
-            <span>
-              <ShieldCheck size={14} /> {organization?.name}
-              <select
-                aria-label="Workspace scope"
-                value={scope}
-                disabled={busy || loading || !online || unsaved}
-                onChange={(event) => {
-                  ++refreshEpoch.current;
-                  setData(emptyData);
-                  setRefreshed(null);
-                  setScope(event.target.value as "own" | "authorized");
-                }}
-              >
-                <option value="own">My workspace</option>
-                <option value="authorized">All permitted records</option>
-              </select>
-            </span>
-            <span>
-              {loading
-                ? "Refreshing…"
-                : refreshed
-                  ? `Refreshed ${readableDate(refreshed, timezone)} · ${timezone}`
-                  : "Data unavailable"}
-            </span>
-          </div>
+          {view !== "properties" && view !== "websites" && (
+            <div className="scope-line">
+              <span>
+                <ShieldCheck size={14} /> {organization?.name}
+                <select
+                  aria-label="Workspace scope"
+                  value={scope}
+                  disabled={busy || loading || !online || unsaved}
+                  onChange={(event) => {
+                    ++refreshEpoch.current;
+                    setData(emptyData);
+                    setRefreshed(null);
+                    setScope(event.target.value as "own" | "authorized");
+                  }}
+                >
+                  <option value="own">My workspace</option>
+                  <option value="authorized">All permitted records</option>
+                </select>
+              </span>
+              <span>
+                {loading
+                  ? "Refreshing…"
+                  : refreshed
+                    ? `Refreshed ${readableDate(refreshed, timezone)} · ${timezone}`
+                    : "Data unavailable"}
+              </span>
+            </div>
+          )}
 
+          {view === "properties" && (
+            <PropertiesFeature
+              key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+              session={session}
+              online={online}
+              syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
+              accessRevision={accessRevision}
+              onAccessRevoked={() => {
+                router.replace("/dashboard");
+                setError("Property access changed. Refresh workspace access before reopening Properties.");
+              }}
+            />
+          )}
+          {view === "websites" && (
+            <CmsWorkspace
+              key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+              session={session}
+              csrf={csrf}
+              online={online}
+              syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
+              accessRevision={accessRevision}
+              onDirty={protectCms}
+              onAccessRevoked={() => {
+                router.replace("/dashboard");
+                setError("Website access changed. Refresh workspace access before reopening Websites.");
+              }}
+            />
+          )}
           {view === "dashboard" && (
             <>
               {permission("dashboard.read") && session.activeOrgId && (
@@ -1168,25 +1317,25 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 <Metric
                   icon={<Users size={21} />}
                   name="Relationships"
-                  value={refreshed ? data.contacts.length : null}
+                  value={refreshed && permission("crm.contacts.read") ? data.contacts.length : null}
                   detail="Contacts in loaded scope"
                 />
                 <Metric
                   icon={<Kanban size={21} />}
                   name="Opportunities"
-                  value={refreshed ? data.leads.length : null}
+                  value={refreshed && permission("crm.leads.read") ? data.leads.length : null}
                   detail="Leads in loaded scope"
                 />
                 <Metric
                   icon={<ListTodo size={21} />}
                   name="Open follow-ups"
-                  value={refreshed ? openTasks.length : null}
+                  value={refreshed && permission("crm.tasks.read") ? openTasks.length : null}
                   detail="Tasks with state open"
                 />
                 <Metric
                   icon={<Clock3 size={21} />}
                   name="Needs attention"
-                  value={refreshed ? overdue.length : null}
+                  value={refreshed && permission("crm.tasks.read") ? overdue.length : null}
                   detail="Open tasks past due"
                   warning
                 />
@@ -1217,9 +1366,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   ) : (
                     <Empty
                       icon={<CircleCheck size={28} />}
-                      title={refreshed ? "A little breathing room" : "Tasks unavailable"}
+                      title={
+                        refreshed && permission("crm.tasks.read")
+                          ? "A little breathing room"
+                          : "Tasks unavailable"
+                      }
                     >
-                      {refreshed
+                      {refreshed && permission("crm.tasks.read")
                         ? "No open follow-ups in your current scope. Add your next task when you’re ready."
                         : "Reconnect and refresh to see your next steps."}
                     </Empty>
@@ -1246,7 +1399,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                     }
                   />
                   <div className="stage-bars">
-                    {data.stages.map((stage, index) => {
+                    {(permission("crm.leads.read") ? data.stages : []).map((stage, index) => {
                       const count = data.leads.filter((lead) => lead.stageId === stage.id).length;
                       return (
                         <div key={stage.id} className="stage-bar">
@@ -1278,7 +1431,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                         </div>
                       );
                     })}
-                    {!data.stages.length && (
+                    {(!data.stages.length || !permission("crm.leads.read")) && (
                       <Empty icon={<Kanban size={26} />} title="Pipeline unavailable">
                         Refresh to load your organization’s stages.
                       </Empty>
@@ -1315,8 +1468,17 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       ))}
                     </div>
                   ) : (
-                    <Empty icon={<Users size={27} />} title="Your first relationship starts here">
-                      Capture a lead to bring a new person into your workspace.
+                    <Empty
+                      icon={<Users size={27} />}
+                      title={
+                        refreshed && permission("crm.contacts.read")
+                          ? "Your first relationship starts here"
+                          : "Contacts unavailable"
+                      }
+                    >
+                      {refreshed && permission("crm.contacts.read")
+                        ? "Capture a lead to bring a new person into your workspace."
+                        : "Current contact read access and a successful refresh are required."}
                     </Empty>
                   )}
                 </section>
@@ -1779,7 +1941,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               online={online}
               working={busy}
               runCommand={command}
-              onRefresh={readSession}
+              onRefresh={async () => {
+                await readSession();
+              }}
               setWorking={setBusy}
               onDirty={setDirty}
             />
@@ -1867,7 +2031,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               runCommand={command}
               onDirty={setDirty}
               setWorking={setBusy}
-              onRefresh={readSession}
+              onRefresh={async () => {
+                await readSession();
+              }}
               onContinue={continueInvitation}
               onClearTransfer={() => setInvitationTransfer(null)}
             />
@@ -1942,15 +2108,16 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           </footer>
         </main>
       </div>
-      <nav className="bottom-nav" aria-label="Mobile navigation">
-        {navigation.map(({ id, name, icon: Icon }) => (
+      <nav className="bottom-nav" aria-label="Mobile navigation, scroll for more views">
+        {visibleNavigation.map(({ id, name, icon: Icon }) => (
           <Link
             key={id}
             href={`/${id}`}
             aria-current={view === id ? "page" : undefined}
             onClick={(event) => {
-              if (unsaved || busy) {
+              if (cmsProtected.current || unsaved || busy) {
                 event.preventDefault();
+                setError("Resolve or discard the current draft before leaving this view.");
                 return;
               }
             }}
