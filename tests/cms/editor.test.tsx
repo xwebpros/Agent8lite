@@ -8,6 +8,7 @@ import {
 } from "../../apps/web/features/cms/draft-controller";
 import { CmsDraftEditor } from "../../apps/web/features/cms/draft-editor";
 import { CmsDraftPreview } from "../../apps/web/features/cms/draft-preview";
+import { describeDraftIssues, focusDraftFeedback } from "../../apps/web/features/cms/draft-validation";
 import type { components } from "../../packages/contracts/generated/api";
 import type { BrowserRevision } from "../../packages/cms/browser";
 
@@ -557,6 +558,175 @@ describe("bounded local CMS edit recovery", () => {
     expect(controller.getSnapshot().message).toContain("Your previous draft is retained");
     expect(controller.undo()).toBe(true);
     expect(controller.getSnapshot().dirty).toBe(false);
+  });
+});
+
+describe("CMS field validation feedback (source and semantic checks)", () => {
+  const markup = (controller: CmsDraftController) =>
+    renderToStaticMarkup(
+      createElement(CmsDraftEditor, {
+        controller,
+        history: { items: [revision()], hasMore: false, nextCursor: null },
+        onLoadMore: () => {},
+        onDirty: () => {},
+      }),
+    );
+  it("connects actual heading, paragraph and SEO validation errors to their labelled inputs", async () => {
+    const { controller, client, keys } = setup();
+    controller.selectRevision(revision());
+    controller.edit((draft) => {
+      draft.blocks[0].props.heading = "";
+      (draft.blocks[1].props.paragraphs as string[])[0] = "<script>unsafe()</script>";
+      draft.seo.title = "Long title ".repeat(10);
+      draft.seo.canonicalPath = "//unapproved.example";
+    });
+    const state = controller.getSnapshot();
+    const feedback = describeDraftIssues(state.draft, state.issues);
+    expect(feedback.map((item) => item.target)).toEqual(
+      expect.arrayContaining([
+        { kind: "field", path: "/blocks/0/props/heading" },
+        { kind: "field", path: "/blocks/1/props/paragraphs/0" },
+        { kind: "field", path: "/seo/title" },
+        { kind: "field", path: "/seo/canonicalPath" },
+      ]),
+    );
+    const html = markup(controller);
+    for (const path of [
+      "/blocks/0/props/heading",
+      "/blocks/1/props/paragraphs/0",
+      "/seo/title",
+      "/seo/canonicalPath",
+    ]) {
+      const tag = [...html.matchAll(/<(?:input|textarea)\b[^>]*>/g)]
+        .map((match) => match[0])
+        .find((tag) => tag.includes(`data-cms-field="${path}"`))!;
+      expect(tag).toContain('aria-invalid="true"');
+      const errorId = /aria-describedby="([^"]+)"/.exec(tag)![1];
+      expect(html).toContain(`<span id="${errorId}"`);
+      const fieldId = /\bid="([^"]+)"/.exec(tag)![1];
+      expect(html).toContain(`<label for="${fieldId}">`);
+    }
+    expect(html).toContain("Block 1 · Heading");
+    expect(html).toContain("Block 2 · Paragraph 1");
+    expect(html).toContain("Review invalid fields");
+    expect(html).not.toContain("<script>");
+    await controller.save();
+    expect(keys()).toBe(0);
+    expect(client.saveDraft).not.toHaveBeenCalled();
+  });
+  it("maps denied hero, CTA and footer link targets to the href field, without marking their labels", () => {
+    const { controller } = setup();
+    const full = revision();
+    full.blocks[0].props.action = { label: "Hero action", href: "/contact" };
+    full.blocks.push(
+      {
+        id: "a2000000-0000-4000-8000-000000000003",
+        type: "cta",
+        props: { label: "Action", href: "/contact" },
+      },
+      {
+        id: "a2000000-0000-4000-8000-000000000004",
+        type: "footer",
+        props: {
+          text: "Footer",
+          links: [
+            { label: "Good", href: "/privacy" },
+            { label: "Bad", href: "/contact" },
+          ],
+        },
+      },
+    );
+    controller.selectRevision(full);
+    controller.edit((draft) => {
+      (draft.blocks[0].props.action as { href: string }).href = "javascript:unsafe";
+      draft.blocks[2].props.href = "https://unapproved.example";
+      (draft.blocks[3].props.links as { href: string }[])[1].href = "//unapproved.example";
+    });
+    const state = controller.getSnapshot();
+    const feedback = describeDraftIssues(state.draft, state.issues);
+    expect(feedback.map((item) => item.target)).toEqual([
+      { kind: "field", path: "/blocks/0/props/action/href" },
+      { kind: "field", path: "/blocks/2/props/href" },
+      { kind: "field", path: "/blocks/3/props/links/1/href" },
+    ]);
+    const html = markup(controller);
+    expect(html.match(/aria-invalid="true"/g)).toHaveLength(3);
+    expect(html).toContain("Block 4 · Footer link 2 path or approved HTTPS link");
+  });
+  it("removes stale inline errors after correction and rebuilds field targets after reordering", () => {
+    const { controller } = setup();
+    controller.selectRevision(revision());
+    controller.edit((draft) => {
+      draft.blocks[0].props.heading = "";
+    });
+    controller.moveBlock(revision().blocks[0].id, 1);
+    const state = controller.getSnapshot();
+    expect(describeDraftIssues(state.draft, state.issues)[0]).toMatchObject({
+      target: { kind: "field", path: "/blocks/1/props/heading" },
+      message: "Block 2 · Heading: Check the required text, format and length.",
+    });
+    controller.edit((draft) => {
+      draft.blocks[1].props.heading = "Fixed heading";
+    });
+    expect(controller.getSnapshot().issues).toEqual([]);
+    const html = markup(controller);
+    expect(html).not.toContain('aria-invalid="true"');
+    expect(html).not.toContain("Review invalid fields");
+    expect(html).not.toContain("Content needs review");
+    expect(html).toContain("Fixed heading");
+  });
+  it("targets the affected block even for duplicate IDs and deduplicates repeated validator findings", () => {
+    const { controller } = setup();
+    controller.selectRevision(revision());
+    controller.edit((draft) => {
+      draft.blocks[1].id = draft.blocks[0].id;
+    });
+    const state = controller.getSnapshot();
+    const issue = state.issues.find((issue) => issue.code === "block_id_duplicate")!;
+    const feedback = describeDraftIssues(state.draft, [issue, issue]);
+    expect(feedback).toHaveLength(1);
+    expect(feedback[0].target).toEqual({ kind: "block", path: "/blocks/1" });
+    expect(
+      describeDraftIssues(state.draft, [{ path: "/unfamiliar", code: "future_error" }])[0].target,
+    ).toEqual({ kind: "summary" });
+  });
+  it("describes preserved recovery issues without pretending there are editable targets", () => {
+    const { controller } = setup();
+    controller.openRecovery(revision().id, document.id, { schemaVersion: 5, original: "Preserve" });
+    const state = controller.getSnapshot();
+    expect(describeDraftIssues(state.draft, state.issues)[0].target).toEqual({ kind: "summary" });
+    const html = markup(controller);
+    expect(html).toContain("Content needs review");
+    expect(html).toContain("Read-only recovery");
+    expect(html).not.toContain("Review invalid fields");
+    expect(html).not.toContain("data-cms-field=");
+  });
+  it("focuses an exact field attribute and falls back to the summary if the target is disabled or missing", () => {
+    const field = {
+      getAttribute: vi.fn(() => "/seo/canonicalPath"),
+      matches: vi.fn(() => false),
+      focus: vi.fn(),
+    };
+    const summary = { focus: vi.fn() };
+    const root = {
+      querySelectorAll: vi.fn(() => [field]),
+      querySelector: vi.fn(() => summary),
+    } as unknown as HTMLElement;
+    const feedback = describeDraftIssues(revision(), [
+      { path: "/seo/canonicalPath", code: "canonical_path_invalid" },
+    ])[0];
+    focusDraftFeedback(root, feedback);
+    expect(field.focus).toHaveBeenCalledOnce();
+    expect(summary.focus).not.toHaveBeenCalled();
+    field.matches.mockReturnValue(true);
+    focusDraftFeedback(root, feedback);
+    expect(summary.focus).toHaveBeenCalledOnce();
+    field.matches.mockReturnValue(false);
+    field.getAttribute.mockReturnValue("/different");
+    focusDraftFeedback(root, feedback);
+    expect(summary.focus).toHaveBeenCalledTimes(2);
+    expect(root.querySelectorAll).toHaveBeenCalledWith("[data-cms-field]");
+    expect(field.matches).toHaveBeenCalledWith(":disabled");
   });
 });
 
