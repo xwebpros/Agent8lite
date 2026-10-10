@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readPinnedNode } from "./node-runtime.mjs";
 
 const root = await fs.realpath(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
 const artifact = path.join(root, "dist/runtime");
@@ -104,7 +105,8 @@ function probe(args) {
 }
 try {
   const workspace = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
-  if (process.argv.length !== 2 || process.version !== "v" + workspace.engines.node)
+  const pinnedNode = await readPinnedNode(root);
+  if (process.argv.length !== 2 || process.version !== "v" + pinnedNode)
     throw new Error("runtime_verification_configuration_invalid");
   await checkedDirectory(path.join(root, "dist"));
   const actual = await records(artifact);
@@ -119,7 +121,7 @@ try {
   const files = actual.filter((record) => record.path !== "artifact-manifest.json");
   if (
     manifest.schemaVersion !== 1 ||
-    manifest.node !== workspace.engines.node ||
+    manifest.node !== pinnedNode ||
     manifest.typescript !== workspace.dependencies.typescript ||
     manifest.packageManager !== workspace.packageManager ||
     JSON.stringify(manifest.entrypoints) !== JSON.stringify(entrypoints) ||

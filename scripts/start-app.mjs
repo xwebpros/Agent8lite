@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { launchConfiguration } from "./launch-config.mjs";
+import { NodeRuntimeError, readPinnedNode } from "./node-runtime.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -152,7 +153,7 @@ export function supervise(
 
 async function main() {
   const workspace = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
-  const config = launchConfiguration(process.env, workspace);
+  const config = launchConfiguration(process.env, workspace, process.version, await readPinnedNode(root));
   if (process.argv.length !== 2) throw new Error("launch_configuration_invalid");
   const next = JSON.parse(await fs.readFile(path.join(root, "node_modules/next/package.json"), "utf8"));
   if (next.version !== workspace.dependencies.next) throw new Error("launch_next_version_invalid");
@@ -175,6 +176,7 @@ async function main() {
       JSON.stringify({
         status: "ready",
         mode: config.mode,
+        node: process.version,
         port: ready.port,
         identityMode: "unconfigured",
         mlsMode: "mock",
@@ -208,7 +210,10 @@ export async function runApplication() {
       "launch_demo_secrets_required",
     ];
     console.error(
-      JSON.stringify({ code: allowed.includes(error.message) ? error.message : "application_launch_failed" }),
+      JSON.stringify({
+        code: allowed.includes(error.message) ? error.message : "application_launch_failed",
+        ...(error instanceof NodeRuntimeError ? error.diagnostics() : {}),
+      }),
     );
     process.exitCode = 1;
     if (process.connected) process.disconnect();

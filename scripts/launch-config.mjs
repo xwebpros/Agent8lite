@@ -1,3 +1,5 @@
+import { assertNodeRuntime } from "./node-runtime.mjs";
+
 // A supplied PORT, even an invalid/empty one, must never fall back to local ports.
 export function hostedLaunchRequired(environment) {
   return (
@@ -9,12 +11,17 @@ export function hostedLaunchRequired(environment) {
 }
 
 // Hosted launch deliberately does not inherit local development/provider settings.
-export function launchConfiguration(environment, workspace, nodeVersion = process.version) {
-  if (nodeVersion !== `v${workspace.engines.node}`) throw new Error("launch_node_version_invalid");
+export function launchConfiguration(
+  environment,
+  workspace,
+  nodeVersion = process.version,
+  pinnedNode = workspace.engines.node,
+) {
+  const demo = environment.HOSTED_DEMO_ENABLED === "true";
+  assertNodeRuntime(nodeVersion, pinnedNode, demo, "launch_node_version_invalid");
   const portText = environment.PORT;
   if (!/^[1-9][0-9]{0,4}$/.test(portText ?? "") || Number(portText) > 65535)
     throw new Error("launch_port_required");
-  const demo = environment.HOSTED_DEMO_ENABLED === "true";
   if (demo) {
     if (
       typeof environment.DEMO_ACCESS_PASSWORD !== "string" ||

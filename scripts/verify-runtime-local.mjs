@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readPinnedNode } from "./node-runtime.mjs";
 
 // Explicitly local verification: no secret-file reads, migration identity, seed/reset or worker dispatch.
 const root = await fs.realpath(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
@@ -222,9 +223,8 @@ async function compiledCliHealth() {
   await stop(state);
 }
 try {
-  const workspace = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
   check(
-    process.argv.length === 2 && process.version === "v" + workspace.engines.node,
+    process.argv.length === 2 && process.version === "v" + (await readPinnedNode(root)),
     "runtime_local_configuration_invalid",
   );
   // Resource/import verification must pass before executing any API with the fixture runtime role.

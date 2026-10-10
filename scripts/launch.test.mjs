@@ -1,7 +1,17 @@
 import { EventEmitter } from "node:events";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { hostedLaunchRequired, launchConfiguration } from "./launch-config.mjs";
+import {
+  assertNodeRuntime,
+  hostedDemoNodeRange,
+  NodeRuntimeError,
+  nodeRuntimeAllowed,
+  readPinnedNode,
+} from "./node-runtime.mjs";
 import { supervise } from "./start-app.mjs";
 
 const workspace = { engines: { node: "24.19.0" } };
@@ -11,6 +21,269 @@ const environment = {
   DATABASE_URL: "postgresql://runtime:fixture@127.0.0.1:55432/estate",
 };
 const configure = (extra) => launchConfiguration({ ...environment, ...extra }, workspace, "v24.19.0");
+const preview = {
+  ...environment,
+  HOSTED_DEMO_ENABLED: "true",
+  DATABASE_URL: undefined,
+  DEMO_ACCESS_PASSWORD: "fixture-preview-password",
+  DEMO_SESSION_SECRET: "fixture-session-secret-at-least-thirty-two",
+};
+const installWorkspace = { engines: { node: ">=22.13.0 <23 || >=24.0.0 <25" } };
+const pin = "24.19.0";
+
+describe("explicit hosted-demo runtime policy", () => {
+  it("declares the accepted install envelope independently of the authoritative file pin", () => {
+    expect(hostedDemoNodeRange).toBe(">=22.13.0 <23 || >=24.0.0 <25");
+    expect(nodeRuntimeAllowed("v24.19.0", hostedDemoNodeRange, false)).toBe(false);
+    expect(nodeRuntimeAllowed("v24.19.0", hostedDemoNodeRange, true)).toBe(false);
+  });
+  it.each([
+    "v22.13.0",
+    "v22.13.1",
+    "v22.14.0",
+    "v22.99.99",
+    "v24.0.0",
+    "v24.0.1",
+    "v24.18.0",
+    "v24.19.0",
+    "v24.20.0",
+    "v24.99.99",
+  ])("permits canonical supported demo runtime%s without widening full application mode", (version) => {
+    expect(nodeRuntimeAllowed(version, pin, true)).toBe(true);
+    expect(nodeRuntimeAllowed(version, pin, false)).toBe(version === "v" + pin);
+    expect(() => assertNodeRuntime(version, pin, true, "launch_node_version_invalid")).not.toThrow();
+  });
+  it.each([
+    "v20.9.0",
+    "v22.0.0",
+    "v22.12.99",
+    "v21.99.99",
+    "v23.0.0",
+    "v23.99.99",
+    "v25.0.0",
+    "v26.0.0",
+    "v22.13.0-rc.1",
+    "v24.19.0-rc.1",
+    "v24.19.0+build.1",
+    "24.19.0",
+    "V24.19.0",
+    "v024.19.0",
+    "v24.019.0",
+    "v24.19.00",
+    "v24.19",
+    "v24.19.0.1",
+    "v24.x.0",
+    " v24.19.0",
+    "v24.19.0 ",
+    "v24.19.0\n",
+    "v24.19.0\u0000",
+    "v24.19.0\nPRIVATE_HOST_CONFIGURATION",
+    "v24.10000.0",
+    "",
+    undefined,
+    null,
+    24,
+  ])("rejects out-of-range/noncanonical actual version%s in both modes", (version) => {
+    expect(nodeRuntimeAllowed(version, pin, true)).toBe(false);
+    expect(nodeRuntimeAllowed(version, pin, false)).toBe(false);
+  });
+  it.each([
+    undefined,
+    null,
+    "",
+    "v24.19.0",
+    "24.19",
+    "24.19.0-rc.1",
+    "24.19.0\nPRIVATE_PIN",
+    "24.019.0",
+    hostedDemoNodeRange,
+  ])("never replaces an invalid authoritative pin%s with the install envelope", (invalidPin) => {
+    expect(nodeRuntimeAllowed("v24.19.0", invalidPin, true)).toBe(false);
+    expect(nodeRuntimeAllowed("v24.19.0", invalidPin, false)).toBe(false);
+  });
+  it.each([undefined, false, null, "true", "false", "TRUE", "1", 1, 0, {}, []])(
+    "does not relax the exact pin for nonliteral demo=true%s",
+    (demo) => {
+      expect(nodeRuntimeAllowed("v22.13.0", pin, demo)).toBe(false);
+      expect(nodeRuntimeAllowed("v24.18.0", pin, demo)).toBe(false);
+      expect(nodeRuntimeAllowed("v24.19.0", pin, demo)).toBe(true);
+      const error = new NodeRuntimeError("launch_node_version_invalid", "v22.13.0", pin, demo);
+      expect(error.diagnostics()).toEqual({ node: "v22.13.0", requiredNode: pin });
+    },
+  );
+  it("returns only canonical safe diagnostics and fixed validation errors, without hostile input strings", () => {
+    for (const demo of [true, false]) {
+      const injected = "v24.19.0\nPRIVATE_TOKEN\u001b[31m";
+      let observed;
+      try {
+        assertNodeRuntime(injected, "PRIVATE_PIN", demo, "launch_node_version_invalid");
+      } catch (error) {
+        observed = error;
+      }
+      expect(observed).toBeInstanceOf(NodeRuntimeError);
+      expect(observed.message).toBe("launch_node_version_invalid");
+      expect(observed.diagnostics()).toEqual({
+        node: "unavailable",
+        requiredNode: demo ? hostedDemoNodeRange : "unavailable",
+      });
+      expect(Object.keys(observed.diagnostics()).sort()).toEqual(["node", "requiredNode"]);
+      expect(JSON.stringify(observed.diagnostics())).not.toMatch(/PRIVATE_|TOKEN|PIN|31m/);
+    }
+    const validError = new NodeRuntimeError("launch_node_version_invalid", "v24.18.0", pin, false);
+    const exported = validError.diagnostics();
+    try {
+      exported.node = "PRIVATE_FORGED_VERSION";
+      exported.requiredNode = "PRIVATE_FORGED_REQUIREMENT";
+    } catch {}
+    expect(validError.diagnostics()).toEqual({ node: "v24.18.0", requiredNode: pin });
+  });
+  it("does not stringify hostile actual-version or pin objects when rejecting or reporting them", () => {
+    let hooks = 0;
+    const hostile = {
+      toString() {
+        hooks++;
+        throw new Error("PRIVATE_TO_STRING");
+      },
+      valueOf() {
+        hooks++;
+        throw new Error("PRIVATE_VALUE_OF");
+      },
+    };
+    expect(nodeRuntimeAllowed(hostile, pin, true)).toBe(false);
+    expect(nodeRuntimeAllowed("v24.19.0", hostile, true)).toBe(false);
+    expect(
+      new NodeRuntimeError("launch_node_version_invalid", hostile, hostile, false).diagnostics(),
+    ).toEqual({ node: "unavailable", requiredNode: "unavailable" });
+    expect(hooks).toBe(0);
+  });
+  it("reads only the authoritative pin file and fails closed for missing/invalid contents", async () => {
+    const base = await fs.realpath(os.tmpdir());
+    const directory = await fs.mkdtemp(path.join(base, "estate-node-pin-test-"));
+    try {
+      await fs.writeFile(path.join(directory, "package.json"), JSON.stringify(installWorkspace));
+      await expect(readPinnedNode(directory)).rejects.toThrow();
+      for (const value of [pin, pin + "\n", pin + "\r\n"]) {
+        await fs.writeFile(path.join(directory, ".node-version"), value);
+        expect(await readPinnedNode(directory)).toBe(pin);
+      }
+      for (const value of [
+        "",
+        hostedDemoNodeRange,
+        "v24.19.0",
+        "24.19.0-rc.1",
+        "24.019.0",
+        "24.19.0\nPRIVATE_PIN",
+      ]) {
+        await fs.writeFile(path.join(directory, ".node-version"), value);
+        await expect(readPinnedNode(directory)).rejects.toThrow("node_pin_configuration_invalid");
+      }
+    } finally {
+      if (
+        path.dirname(directory) !== base ||
+        !/^estate-node-pin-test-[a-z0-9]{6}$/i.test(path.basename(directory)) ||
+        (await fs.realpath(directory)) !== directory ||
+        (await fs.lstat(directory)).isSymbolicLink()
+      )
+        throw new Error("Unsafe owned pin-fixture cleanup path.");
+      await fs.rm(directory, { recursive: true, force: false });
+    }
+  });
+});
+
+describe("install-range metadata never authorizes a full application runtime", () => {
+  it("uses the explicit fourth pin and retains the existing exact-pin fixture default", () => {
+    expect(launchConfiguration(environment, installWorkspace, "v24.19.0", pin).mode).toBe("application");
+    expect(configure().mode).toBe("application");
+    expect(() => launchConfiguration(environment, installWorkspace, "v24.19.0")).toThrow(
+      "launch_node_version_invalid",
+    );
+  });
+  it.each(["v22.13.0", "v22.14.0", "v24.0.0", "v24.18.0", "v24.20.0"])(
+    "allows preview-only%s without DB/API authority",
+    (version) => {
+      const config = launchConfiguration(preview, installWorkspace, version, pin);
+      expect(config.mode).toBe("demo");
+      expect(config.port).toBe(43127);
+      const web = config.webEnvironment();
+      expect(web).toMatchObject({
+        HOSTED_DEMO_ENABLED: "true",
+        APP_ENV: "production",
+        DEV_AUTH_ENABLED: "false",
+        PORT: "43127",
+      });
+      expect(web).not.toHaveProperty("DATABASE_URL");
+      expect(web).not.toHaveProperty("API_ORIGIN");
+      expect(() => launchConfiguration(environment, installWorkspace, version, pin)).toThrow(
+        "launch_node_version_invalid",
+      );
+    },
+  );
+  it.each([undefined, "false", "TRUE", "True", "1", true])(
+    "requires the exact enabled environment string instead of a truthy preview flag%s",
+    (flag) => {
+      expect(() =>
+        launchConfiguration({ ...preview, HOSTED_DEMO_ENABLED: flag }, installWorkspace, "v22.13.0", pin),
+      ).toThrow("launch_node_version_invalid");
+    },
+  );
+  it.each([
+    [{ PORT: "" }, "launch_port_required"],
+    [{ PORT: "3000junk" }, "launch_port_required"],
+    [{ DEMO_ACCESS_PASSWORD: "short" }, "launch_demo_secrets_required"],
+    [{ DEMO_SESSION_SECRET: undefined }, "launch_demo_secrets_required"],
+    [{ WEB_ORIGIN: "http://public.example.test" }, "launch_web_origin_required"],
+    [{ WEB_ORIGIN: "https://public.example.test/private" }, "launch_web_origin_required"],
+    [{ ESTATE_BUILD_DIR: "../../.local" }, "launch_build_directory_invalid"],
+  ])("retains all independent preview guards after allowing Node22%s", (extra, code) => {
+    expect(() => launchConfiguration({ ...preview, ...extra }, installWorkspace, "v22.13.0", pin)).toThrow(
+      code,
+    );
+  });
+  it("keeps all database/provider/Node injection secrets out of a supported preview child", () => {
+    const config = launchConfiguration(
+      {
+        ...preview,
+        DATABASE_URL: "PRIVATE_DB",
+        MIGRATION_DATABASE_URL: "PRIVATE_MIGRATION",
+        WORKER_DATABASE_URL: "PRIVATE_WORKER",
+        CONTROL_DATABASE_URL: "PRIVATE_CONTROL",
+        STAFF_ISSUER_DATABASE_URL: "PRIVATE_ISSUER",
+        API_ORIGIN: "https://PRIVATE_API.example.test",
+        REDIS_URL: "PRIVATE_REDIS",
+        TRESTLE_CLIENT_SECRET: "PRIVATE_TRESTLE",
+        NODE_OPTIONS: "--require=PRIVATE_INJECTION",
+        NODE_PATH: "PRIVATE_MODULES",
+        NEXT_PUBLIC_DATABASE_URL: "PRIVATE_PUBLIC_DB",
+        DEV_AUTH_ENABLED: "true",
+        APP_ENV: "test",
+      },
+      installWorkspace,
+      "v22.13.0",
+      pin,
+    );
+    const web = config.webEnvironment();
+    for (const name of [
+      "DATABASE_URL",
+      "MIGRATION_DATABASE_URL",
+      "WORKER_DATABASE_URL",
+      "CONTROL_DATABASE_URL",
+      "STAFF_ISSUER_DATABASE_URL",
+      "API_ORIGIN",
+      "REDIS_URL",
+      "TRESTLE_CLIENT_SECRET",
+      "NODE_OPTIONS",
+      "NODE_PATH",
+      "NEXT_PUBLIC_DATABASE_URL",
+    ])
+      expect(web).not.toHaveProperty(name);
+    expect(web).toMatchObject({
+      APP_ENV: "production",
+      DEV_AUTH_ENABLED: "false",
+      HOSTED_DEMO_ENABLED: "true",
+    });
+    expect(JSON.stringify(web)).not.toContain("PRIVATE_");
+  });
+});
 
 describe("development command host selection", () => {
   it.each([

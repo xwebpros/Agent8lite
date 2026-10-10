@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readPinnedNode } from "./node-runtime.mjs";
 
 const root = await fs.realpath(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
 const dist = path.join(root, "dist");
@@ -69,11 +70,12 @@ async function emittedFiles(directory, prefix = "") {
 }
 async function build() {
   const workspace = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
+  const pinnedNode = await readPinnedNode(root);
   const compiler = JSON.parse(
     await fs.readFile(path.join(root, "node_modules/typescript/package.json"), "utf8"),
   ).version;
   if (
-    process.version !== "v" + workspace.engines.node ||
+    process.version !== "v" + pinnedNode ||
     process.argv.length !== 2 ||
     compiler !== workspace.dependencies.typescript
   )
@@ -108,7 +110,7 @@ async function build() {
   const files = await emittedFiles(temporary);
   const manifest = {
     schemaVersion: 1,
-    node: workspace.engines.node,
+    node: pinnedNode,
     typescript: compiler,
     packageManager: workspace.packageManager,
     entrypoints: { api: "apps/api/src/main.js", worker: "apps/worker/src/main.js" },
