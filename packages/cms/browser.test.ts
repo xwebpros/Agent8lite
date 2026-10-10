@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { instantiateTemplate, listTemplateDefinitions } from "../templates/catalog";
 import { inspectDraft } from "../templates/registry";
-import { BrowserContentError, browserDocumentVersion, copyBrowserJson, inspectBrowserDraft } from "./browser";
+import {
+  BrowserContentError,
+  browserDocumentVersion,
+  copyBrowserJson,
+  inspectBrowserDraft,
+  requireBrowserShape,
+} from "./browser";
 
 const policy = { approvedLinkOrigins: new Set(["https://trusted.example"]) };
 const starter = () => instantiateTemplate("agent-introduction", "1.0.0")!;
+function boundaryDraft(bytes: number) {
+  const draft = starter();
+  const paragraphs = [...Array.from({ length: 42 }, () => "界".repeat(2000)), ""];
+  draft.blocks = [{ id: draft.blocks[0].id, type: "text", props: { paragraphs } }];
+  const remaining = bytes - new TextEncoder().encode(JSON.stringify(draft)).byteLength;
+  paragraphs[42] = "界".repeat(Math.floor(remaining / 3)) + "x".repeat(remaining % 3);
+  return draft;
+}
 describe("browser registered-content adapter", () => {
   it("accepts all exact repository starters with detached JSON and server-equivalent issues", () => {
     for (const template of listTemplateDefinitions()) {
@@ -172,5 +186,29 @@ describe("browser registered-content adapter", () => {
     expect(Object.getPrototypeOf(copied)).toBe(Object.prototype);
     copied.items[1][0] = "changed";
     expect(value.items[1][0]).toBe("");
+  });
+  it("accepts a frozen revision with a complete 256 KiB draft plus its identity metadata", () => {
+    const draft = boundaryDraft(256 * 1024);
+    expect(inspectBrowserDraft(draft, policy).issues).toEqual([]);
+    const value = {
+      ...draft,
+      id: "a2000000-0000-4000-8000-000000000090",
+      documentId: "a2000000-0000-4000-8000-000000000010",
+      createdAt: "2026-10-10T00:00:00.000Z",
+    };
+    expect(new TextEncoder().encode(JSON.stringify(draft)).byteLength).toBe(256 * 1024);
+    const copied = requireBrowserShape("Revision", value);
+    expect(copied).toEqual(value);
+    expect(copied).not.toBe(value);
+    expect(copied.blocks).not.toBe(value.blocks);
+  });
+  it("keeps the independent draft byte limit inside the revision metadata allowance", () => {
+    const value = {
+      ...boundaryDraft(256 * 1024 + 1),
+      id: "a2000000-0000-4000-8000-000000000090",
+      documentId: "a2000000-0000-4000-8000-000000000010",
+      createdAt: "2026-10-10T00:00:00.000Z",
+    };
+    expect(() => requireBrowserShape("Revision", value)).toThrow(BrowserContentError);
   });
 });

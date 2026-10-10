@@ -153,6 +153,48 @@ describe("CMS editor command lifecycle", () => {
     expect(keys()).toBe(1);
     expect(saveDraft.mock.calls[0][0]).toEqual(saveDraft.mock.calls[1][0]);
   });
+  it.each(["success", "exact retry"])(
+    "saves a valid draft at the byte limit through %s without charging command metadata to content",
+    async (outcome) => {
+      const seen: CmsSaveCommand[] = [];
+      const { controller, keys } = setup({
+        saveDraft: async (command) => {
+          seen.push(structuredClone(command));
+          if (outcome === "exact retry" && seen.length === 1) {
+            command.body.blocks[0].props.paragraphs = ["transport changed its detached copy"];
+            throw new TypeError("response lost");
+          }
+          return receipt(command);
+        },
+      });
+      controller.startBlank();
+      expect(
+        controller.edit((draft) => {
+          const paragraphs = [...Array.from({ length: 42 }, () => "界".repeat(2000)), ""];
+          draft.blocks = [{ id: revision().blocks[0].id, type: "text", props: { paragraphs } }];
+          const remaining = 256 * 1024 - new TextEncoder().encode(JSON.stringify(draft)).byteLength;
+          paragraphs[42] = "界".repeat(Math.floor(remaining / 3)) + "x".repeat(remaining % 3);
+        }),
+      ).toBe(true);
+      const previous = controller.getSnapshot().draft;
+      expect(controller.previewDraft()).toEqual(previous);
+      expect(new TextEncoder().encode(JSON.stringify(previous)).byteLength).toBe(256 * 1024);
+      await controller.save();
+      expect(seen).toHaveLength(1);
+      if (outcome === "exact retry") {
+        expect(controller.getSnapshot().phase).toBe("uncertain");
+        await controller.save();
+        expect(seen[1]).toEqual(seen[0]);
+      }
+      expect(controller.getSnapshot()).toMatchObject({
+        phase: "saved",
+        etag: '"2"',
+        dirty: false,
+        draft: previous,
+      });
+      expect(keys()).toBe(1);
+    },
+  );
   it("preserves conflicting content and explicitly refreshes the document version before a fresh command", async () => {
     const saveDraft = vi.fn(async (command: CmsSaveCommand) => {
       if (command.ifMatch === '"1"') throw { status: 412 };

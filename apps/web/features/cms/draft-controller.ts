@@ -374,7 +374,10 @@ export class CmsDraftController {
         });
         return;
       }
-      const response = await this.options.client.saveDraft(copyBrowserJson(command));
+      const response = await this.options.client.saveDraft({
+        ...command,
+        body: copyBrowserJson(command.body),
+      });
       if (generation !== this.generation) return;
       const revision = requireBrowserShape("Revision", response.data);
       const version = browserDocumentVersion(response.etag);

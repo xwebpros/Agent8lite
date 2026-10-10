@@ -25,6 +25,7 @@ const validators = new Map<string, ValidateFunction>(
 const shapes = new Map<string, ValidateFunction>();
 for (const name of ["RevisionWrite", "Revision", "Document", "Site"])
   shapes.set(name, ajv.compile({ $ref: `estate:browser-content#/components/schemas/${name}` }));
+const browserJsonLimits = { maxDepth: 32, maxNodes: 20_000, maxBytes: 256 * 1024 };
 
 export class BrowserContentError extends Error {
   constructor(readonly code: string) {
@@ -35,7 +36,7 @@ export class BrowserContentError extends Error {
 /** Serialize bounded descriptor values without invoking input or inherited JSON hooks. */
 export function serializeBrowserJson(value: unknown): string {
   try {
-    return boundedCmsJson(value, { maxDepth: 32, maxNodes: 20_000, maxBytes: 256 * 1024 });
+    return boundedCmsJson(value, browserJsonLimits);
   } catch {
     throw new BrowserContentError("document_invalid_or_too_large");
   }
@@ -136,8 +137,26 @@ export function inspectBrowserDraft(value: unknown, policy: BrowserLinkPolicy) {
 }
 
 export function requireBrowserShape<T>(name: "Revision" | "Document" | "Site", value: T): T {
-  const detached = copyBrowserJson(value);
+  let detached: T;
+  try {
+    // A frozen Revision adds three identity/time fields to the independently bounded draft.
+    const limits =
+      name === "Revision"
+        ? {
+            ...browserJsonLimits,
+            maxNodes: browserJsonLimits.maxNodes + 3,
+            maxBytes: browserJsonLimits.maxBytes + 4096,
+          }
+        : browserJsonLimits;
+    detached = JSON.parse(boundedCmsJson(value, limits)) as T;
+  } catch {
+    throw new BrowserContentError("document_invalid_or_too_large");
+  }
   if (!shapes.get(name)!(detached)) throw new BrowserContentError("response_invalid");
+  if (name === "Revision") {
+    const revision = detached as BrowserRevision;
+    copyBrowserJson({ schemaVersion: revision.schemaVersion, blocks: revision.blocks, seo: revision.seo });
+  }
   return detached;
 }
 
