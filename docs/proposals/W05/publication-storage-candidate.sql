@@ -1,5 +1,5 @@
 -- PROPOSAL ONLY, 2026-10-10. Not a migration; no sequence is allocated.
--- Companion: publication-storage-review.md. Correction responds to root review287e9cd.
+-- Companion: publication-storage-review.md. Follow-up to root review9a95e93.
 -- Root must review ports, owners, grants, lock/fence probes and promotion first.
 -- The guard and final ROLLBACK are intentional. Never run this file against a DB.
 BEGIN;
@@ -96,6 +96,8 @@ CREATE TABLE app.cms_synthetic_namespace_permit (
   consumed boolean NOT NULL DEFAULT false,
   PRIMARY KEY (backend_pid,transaction_id,nonce),
   CHECK (valid_until>created_at AND valid_until<=created_at+interval '5 seconds'),
+  CHECK ((action IN ('bind','detach') AND minter_role='estate_cms_namespace_owner')
+    OR (action='domain_write' AND minter_role='estate_cms_domain_source_owner')),
   CHECK (action<>'bind' OR (next_binding_id IS NOT NULL AND target_tenant_id IS NOT NULL
     AND target_site_id IS NOT NULL AND domain_id IS NOT NULL AND domain_row_version IS NOT NULL
     AND domain_row_version BETWEEN 1 AND 9007199254740991 AND binding_expires_at IS NOT NULL)),
@@ -342,7 +344,9 @@ BEGIN
   SELECT p.* INTO receipt FROM app.cms_synthetic_namespace_permit p
     WHERE p.backend_pid=pg_backend_pid() AND p.transaction_id=pg_current_xact_id()
       AND p.nonce=selector AND p.hostname=p_hostname AND p.minter_role=current_user
-      AND NOT p.consumed AND p.valid_until>clock_timestamp();
+      AND ((current_user='estate_cms_namespace_owner' AND p.action IN ('bind','detach'))
+        OR (current_user='estate_cms_domain_source_owner' AND p.action='domain_write'))
+      AND NOT p.consumed AND p.created_at<=clock_timestamp() AND p.valid_until>clock_timestamp();
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Synthetic namespace command required' USING ERRCODE='42501';
   END IF;
@@ -404,7 +408,11 @@ BEGIN
   END IF;
   IF receipt.action='detach' AND TG_OP='DELETE' THEN
     UPDATE app.cms_synthetic_namespace_permit SET consumed=true
-      WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+      WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce
+        AND minter_role=current_user AND NOT consumed AND valid_until>clock_timestamp();
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Synthetic namespace permit unavailable' USING ERRCODE='42501';
+    END IF;
     RETURN OLD;
   END IF;
   IF receipt.action<>'bind' OR TG_OP NOT IN ('INSERT','UPDATE') THEN
@@ -428,7 +436,11 @@ BEGIN
     RAISE EXCEPTION 'Current synthetic domain unavailable' USING ERRCODE='40001';
   END IF;
   UPDATE app.cms_synthetic_namespace_permit SET consumed=true
-    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce
+      AND minter_role=current_user AND NOT consumed AND valid_until>clock_timestamp();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Synthetic namespace permit unavailable' USING ERRCODE='42501';
+  END IF;
   RETURN NEW;
 END;
 $head$;
@@ -494,7 +506,11 @@ BEGIN
     END IF;
   END IF;
   UPDATE app.cms_synthetic_namespace_permit SET consumed=true
-    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce;
+    WHERE backend_pid=receipt.backend_pid AND transaction_id=receipt.transaction_id AND nonce=receipt.nonce
+      AND minter_role=current_user AND NOT consumed AND valid_until>clock_timestamp();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Synthetic namespace permit unavailable' USING ERRCODE='42501';
+  END IF;
   IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END;
 $domain_guard$;
@@ -613,7 +629,11 @@ BEGIN
     RAISE EXCEPTION 'Current synthetic source unavailable' USING ERRCODE='42501';
   END IF;
   DELETE FROM app.cms_synthetic_namespace_permit
-    WHERE backend_pid=pg_backend_pid() AND transaction_id=pg_current_xact_id() AND nonce=selector;
+    WHERE backend_pid=pg_backend_pid() AND transaction_id=pg_current_xact_id() AND nonce=selector
+      AND minter_role=current_user AND consumed;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Synthetic namespace permit cleanup unavailable' USING ERRCODE='42501';
+  END IF;
   PERFORM set_config('app.cms_namespace_nonce','',true);
   RETURN QUERY SELECT next_value,next_binding,p_action='bind';
   -- Errors abort the statement: no counter-only/head-only success or TTL reset.
