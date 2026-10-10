@@ -2,6 +2,39 @@ import type { components } from "../../../../packages/contracts/generated/api";
 import styles from "./properties.module.css";
 
 export type PropertyListing = components["schemas"]["Listing"];
+type PropertyPage = components["schemas"]["PageListing"];
+
+/** A null page means no successful current read; only a current empty page means no matches. */
+export function PropertyResultFeedback({
+  page,
+  loading,
+  expired,
+  notice,
+}: {
+  page: PropertyPage | null;
+  loading: boolean;
+  expired: boolean;
+  notice: string;
+}) {
+  return (
+    <>
+      <p role="status" aria-live="polite" className={styles.notice}>
+        {loading
+          ? "Checking current synthetic properties…"
+          : expired
+            ? "Current synthetic results expired. Refresh to recheck access and availability."
+            : notice ||
+              (page
+                ? `${page.items.length} synthetic ${page.items.length === 1 ? "property" : "properties"} loaded${page.hasMore ? " — more available" : ""}.`
+                : "")}
+      </p>
+      {!loading && !expired && page?.items.length === 0 && (
+        <p className={styles.empty}>No currently permitted synthetic properties match these filters.</p>
+      )}
+    </>
+  );
+}
+
 export function propertyPrice(item: PropertyListing) {
   if (item.listPrice == null) return "Price withheld";
   try {

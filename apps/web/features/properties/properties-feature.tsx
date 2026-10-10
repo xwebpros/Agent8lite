@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import type { components } from "../../../../packages/contracts/generated/api";
 import { api, ApiError } from "../../lib/api";
 import { PropertyDetailFocus } from "./detail-focus";
-import { PropertyCard, PropertyDetail, type PropertyListing } from "./property-view";
+import { PropertyCard, PropertyDetail, type PropertyListing, PropertyResultFeedback } from "./property-view";
 import { propertiesAreCurrent, propertyExpiryDelay, PropertyReads } from "./read-lifecycle";
 import { loadMorePropertyPage, refreshPropertyPages } from "./refresh-pages";
 import {
@@ -43,7 +43,6 @@ export default function PropertiesFeature({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
   const [notice, setNotice] = useState("");
@@ -68,7 +67,8 @@ export default function PropertiesFeature({
   live.current = { scope: context, enabled, result };
   const base = `/dev/orgs/${session.activeOrgId}/mls/listings`;
   // Render guards apply before effects, so a changed scope/offline state cannot flash previous private data.
-  const scopedPage = enabled && result?.scope === context ? result.page : emptyPage;
+  const currentResult = enabled && result?.scope === context ? result.page : null;
+  const scopedPage = currentResult ?? emptyPage;
   const scopedDetail = enabled && detail?.scope === context ? detail.item : null;
   const expired = !propertiesAreCurrent([...scopedPage.items, ...(scopedDetail ? [scopedDetail] : [])]);
   const page = expired ? emptyPage : scopedPage;
@@ -82,7 +82,6 @@ export default function PropertiesFeature({
     consumedCursors.current = [];
     setResult(null);
     setDetail(null);
-    setLoaded(false);
     setLoading(false);
     setDetailLoading(false);
   }, [reads]);
@@ -140,7 +139,6 @@ export default function PropertiesFeature({
       if (!append) {
         consumedCursors.current = [];
         setResult(null);
-        setLoaded(false);
       }
       setLoading(true);
       setError("");
@@ -173,7 +171,6 @@ export default function PropertiesFeature({
             page: response.page,
           };
         });
-        setLoaded(true);
       } catch (failure) {
         if (!reads.current(request, live.current.scope, live.current.enabled)) return;
         // Stale cursors and source errors invalidate already displayed pages/details too.
@@ -451,16 +448,7 @@ export default function PropertiesFeature({
           {error}
         </p>
       )}
-      <p role="status" aria-live="polite" className={styles.notice}>
-        {loading
-          ? "Checking current synthetic properties…"
-          : (expired
-              ? "Current synthetic results expired. Refresh to recheck access and availability."
-              : notice) ||
-            (enabled && loaded
-              ? `${page.items.length} synthetic ${page.items.length === 1 ? "property" : "properties"} loaded${page.hasMore ? " — more available" : ""}.`
-              : "")}
-      </p>
+      <PropertyResultFeedback page={currentResult} loading={loading} expired={expired} notice={notice} />
       {enabled && selectedId && (
         <section
           id="property-detail-panel"
@@ -489,9 +477,6 @@ export default function PropertiesFeature({
           )}
           {currentDetail && <PropertyDetail item={currentDetail} timezone={session.profile.timezone} />}
         </section>
-      )}
-      {enabled && loaded && !loading && !page.items.length && (
-        <p className={styles.empty}>No currently permitted synthetic properties match these filters.</p>
       )}
       <ul className={styles.results} aria-label="Synthetic property results" aria-busy={loading}>
         {page.items.map((item) => (

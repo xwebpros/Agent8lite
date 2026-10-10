@@ -5,6 +5,7 @@ import {
   PropertyCard,
   PropertyDetail,
   propertyPrice,
+  PropertyResultFeedback,
 } from "../../apps/web/features/properties/property-view";
 import { emptyPropertyFilters, propertySearchParams } from "../../apps/web/features/properties/search-input";
 import { projectNativeMockListing } from "../../packages/mls";
@@ -184,5 +185,78 @@ describe("W07 responsive feature request/presentation seams (no browser acceptan
     expect(markup).toContain('aria-controls="property-detail-panel"');
     expect(registered).toBe(false);
     expect(markup).not.toMatch(/registerControl|isConnected|onOpen|ref=/);
+  });
+});
+
+describe("W07 current property result feedback (static presentation only)", () => {
+  const empty = { items: [], hasMore: false, nextCursor: null };
+  const feedback = (
+    page: Parameters<typeof PropertyResultFeedback>[0]["page"],
+    flags: Partial<Omit<Parameters<typeof PropertyResultFeedback>[0], "page">> = {},
+  ) =>
+    renderToStaticMarkup(
+      createElement(PropertyResultFeedback, { page, loading: false, expired: false, notice: "", ...flags }),
+    );
+
+  it("keeps an unavailable/currently unscoped read distinct from a successful empty read", () => {
+    const unavailable = feedback(null);
+    expect(unavailable).toContain('role="status"');
+    expect(unavailable).toContain('aria-live="polite"');
+    expect(unavailable).not.toMatch(/properties loaded|match these filters/);
+    const succeeded = feedback(empty);
+    expect(succeeded).toContain("0 synthetic properties loaded.");
+    expect(succeeded).toContain("No currently permitted synthetic properties match these filters.");
+  });
+
+  it.each([1, 2, 3])(
+    "announces %i currently loaded properties without exposing their fields",
+    async (count) => {
+      const snapshot = await mockSnapshot();
+      const item = projectNativeMockListing(snapshot.listings[0], snapshot.feeds[0], options.now)!;
+      const markup = feedback({
+        items: Array.from({ length: count }, () => item),
+        hasMore: count === 3,
+        nextCursor: count === 3 ? "private-synthetic-cursor" : null,
+      });
+      expect(markup).toContain(`${count} synthetic ${count === 1 ? "property" : "properties"} loaded`);
+      expect(markup.includes("more available")).toBe(count === 3);
+      expect(markup).not.toContain("match these filters");
+      expect(markup).not.toContain(item.id);
+      expect(markup).not.toContain(item.displayAddress);
+      expect(markup).not.toContain("private-synthetic-cursor");
+    },
+  );
+
+  it.each([0, 1])("does not turn an expired surface with %i list rows into no matches", async (count) => {
+    const snapshot = await mockSnapshot();
+    const item = projectNativeMockListing(snapshot.listings[0], snapshot.feeds[0], options.now)!;
+    const markup = feedback({ ...empty, items: count ? [item] : [] }, { expired: true });
+    expect(markup).toContain("Current synthetic results expired.");
+    expect(markup).not.toMatch(/properties? loaded|match these filters/);
+  });
+
+  it.each([0, 1])(
+    "announces a pending refresh/continuation with %i prior rows without a completed result",
+    async (count) => {
+      const snapshot = await mockSnapshot();
+      const item = projectNativeMockListing(snapshot.listings[0], snapshot.feeds[0], options.now)!;
+      const markup = feedback({ ...empty, items: count ? [item] : [] }, { loading: true });
+      expect(markup).toContain("Checking current synthetic properties…");
+      expect(markup).not.toMatch(/properties? loaded|match these filters/);
+    },
+  );
+
+  it("keeps the expiry-cleared notice visible after its private page is discarded", () => {
+    const markup = feedback(null, {
+      notice: "Current synthetic results expired. Refresh to recheck access and availability.",
+    });
+    expect(markup).toContain("Current synthetic results expired.");
+    expect(markup).not.toMatch(/properties? loaded|match these filters/);
+  });
+
+  it("escapes a notice and never claims a successful count after an unavailable read", () => {
+    const markup = feedback(null, { notice: "<script>unavailable()</script>" });
+    expect(markup).toContain("&lt;script&gt;");
+    expect(markup).not.toMatch(/<script|properties? loaded|match these filters/);
   });
 });
