@@ -2,6 +2,7 @@
 
 Branch: `feat/W07-native-mock-search`, from application foundation `38c42a5c5305c3092fdbb9b95fd080745e443111`.
 Owned checkout: `C:/Users/Monar/.codex/worktrees/8509/Agent8lite`.
+Final owned implementation checkpoint: `cbf222f1dcae40d93a65838b7bf6e7e3d455b507` (service capability expiry fix, responsive feature and final executed verification). This subsequent status-only commit records the handoff; implementation files remain at that checkpoint.
 
 ## Prepared and read
 
