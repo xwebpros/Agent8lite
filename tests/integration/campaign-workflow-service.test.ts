@@ -207,6 +207,9 @@ beforeAll(async () => {
   expect(
     (await admin.query("SELECT name FROM public.estate_migration WHERE name LIKE '0018-%'")).rowCount,
   ).toBe(1);
+  expect(
+    (await admin.query("SELECT name FROM public.estate_migration WHERE name LIKE '0019-%'")).rowCount,
+  ).toBe(1);
   expect((await admin.query("SELECT id FROM app.entitlement WHERE feature='marketing'")).rowCount).toBe(0);
   for (const tenant of [fixtures.orgA, fixtures.orgB])
     await admin.query(
@@ -565,7 +568,7 @@ describe("registered synthetic immutable workflow HTTP boundary", () => {
   });
 });
 
-describe("actual0017/0018 immutable native workflow draft service", () => {
+describe("actual0017–0019 immutable native workflow draft service", () => {
   it("appends generated definitions and explicit version ETags without modifying parent metadata or old definitions", async () => {
     const campaign = await parent();
     const first = await create(campaign.body.id);
@@ -1165,42 +1168,51 @@ describe("actual0017/0018 immutable native workflow draft service", () => {
       await expect(
         use(ownerA, (service) => service.create(campaign.body.id, message(id), { key: randomUUID() })),
       ).rejects.toMatchObject({ status: 422, code: "workflow_reference_unavailable" });
-    const variants: { changes: string; values?: unknown[]; code: string }[] = [
-      { changes: "editor_kind='unlayer'", code: "editor_unavailable" },
-      { changes: "name=' '", code: "design_unavailable" },
-      { changes: "content_hash=repeat('a',64)", code: "design_unavailable" },
-      {
-        changes: "design=$2::jsonb",
-        values: [JSON.stringify({ schemaVersion: 1, blocks: [{ type: "text", text: "Wrong rendering" }] })],
-        code: "design_unavailable",
-      },
-      {
-        changes: "design=$2::jsonb",
-        values: [
-          JSON.stringify({
-            schemaVersion: 1,
-            blocks: [{ type: "text", text: "Synthetic" }],
-            executable: "blocked",
-          }),
-        ],
-        code: "design_unavailable",
-      },
-      { changes: "rendered_content='{{contact.name}}'", code: "design_unavailable" },
-      { changes: "rendered_content='<script>unsafe</script>'", code: "design_unavailable" },
-      { changes: "rendered_content='https://unapproved.invalid'", code: "design_unavailable" },
+    const text = "Synthetic malformed fixture";
+    const native = { schemaVersion: 1, blocks: [{ type: "text", text }] };
+    const variants = [
+      { editor: "unlayer" },
+      { name: " " },
+      { hash: "a".repeat(64) },
+      { body: { schemaVersion: 1, blocks: [{ type: "text", text: "Wrong rendering" }] } },
+      { body: { ...native, executable: "blocked" } },
+      { content: "{{contact.name}}" },
+      { content: "<script>unsafe</script>" },
+      { content: "https://unapproved.invalid" },
     ];
     await expect(
       admin.query("UPDATE app.message_design SET version=0 WHERE id=$1", [wrongChannel.id]),
     ).rejects.toMatchObject({ code: "23514" });
     for (const variant of variants) {
-      const source = await design();
-      await admin.query(`UPDATE app.message_design SET ${variant.changes} WHERE id=$1`, [
-        source.id,
-        ...(variant.values ?? []),
-      ]);
+      //0019 denies corruption of existing immutable history, including privileged
+      //fixture edits. New explicit malformed migration fixtures remain unproven.
+      const id = randomUUID();
+      const row = {
+        name: "Synthetic workflow source",
+        editor: "native",
+        body: native,
+        content: text,
+        hash: createHash("sha256").update(text).digest("hex"),
+        ...variant,
+      };
+      await admin.query(
+        "INSERT INTO app.message_design(tenant_id,id,name,channel,editor_kind,design,rendered_content,content_hash)VALUES($1,$2,$3,'sms',$4,$5,$6,$7)",
+        [fixtures.orgA, id, row.name, row.editor, JSON.stringify(row.body), row.content, row.hash],
+      );
+      expect(
+        (await admin.query("SELECT history_ready FROM app.message_design WHERE id=$1", [id])).rows[0]
+          .history_ready,
+      ).toBe(false);
+      expect(
+        (
+          await admin.query("SELECT version FROM app.message_design_revision WHERE message_design_id=$1", [
+            id,
+          ])
+        ).rowCount,
+      ).toBe(0);
       await expect(
-        use(ownerA, (service) => service.create(campaign.body.id, message(source.id), { key: randomUUID() })),
-      ).rejects.toMatchObject({ status: 422, code: variant.code });
+        use(ownerA, (service) => service.create(campaign.body.id, message(id), { key: randomUUID() })),
+      ).rejects.toMatchObject({ status: 422, code: "workflow_reference_unavailable" });
     }
     expect(await countVersions(campaign.body.id)).toBe(0);
   });
@@ -1210,20 +1222,33 @@ describe("actual0017/0018 immutable native workflow draft service", () => {
       campaign = await parent(),
       source = await design();
     const fixture = await create(campaign.body.id, message(source.id), randomUUID(), member);
-    await admin.query("UPDATE app.message_design SET content_hash=repeat('a',64)WHERE id=$1", [source.id]);
+    await expect(
+      admin.query("UPDATE app.message_design SET content_hash=repeat('a',64)WHERE id=$1", [source.id]),
+    ).rejects.toMatchObject({ code: "23514", constraint: "native_design_unreferenced" });
+    await admin.query("UPDATE app.message_design SET availability_state='archived'WHERE id=$1", [source.id]);
     for (const read of [
       () => use(member, (service) => service.get(fixture.response.body.id)),
-      () => use(member, (service) => service.list(campaign.body.id)),
       () => use(member, (service) => service.create(campaign.body.id, fixture.body, { key: fixture.key })),
     ])
-      await expect(read()).rejects.toMatchObject({ status: 422, code: "design_unavailable" });
-    await admin.query("UPDATE app.message_design SET content_hash=$2 WHERE id=$1", [source.id, source.hash]);
+      await expect(read()).rejects.toMatchObject({ status: 404, code: "resource_unavailable" });
+    expect((await use(member, (service) => service.list(campaign.body.id))).items).toEqual([]);
+    expect(
+      (
+        await admin.query("SELECT content_hash FROM app.message_design_revision WHERE message_design_id=$1", [
+          source.id,
+        ])
+      ).rows[0].content_hash,
+    ).toBe(source.hash);
+    const currentSource = await design();
+    const currentFixture = await create(campaign.body.id, message(currentSource.id), randomUUID(), member);
     await admin.query("UPDATE app.role_definition SET permission_grants=$2 WHERE id=$1", [
       member.roleId,
       JSON.stringify([campaignGrants[1]]),
     ]);
     await expect(
-      use(member, (service) => service.create(campaign.body.id, fixture.body, { key: fixture.key })),
+      use(member, (service) =>
+        service.create(campaign.body.id, currentFixture.body, { key: currentFixture.key }),
+      ),
     ).rejects.toMatchObject({ status: 403, code: "permission_denied" });
     expect(await references(fixture.response.body.id)).toEqual({
       versions: 1,
