@@ -58,6 +58,9 @@ import CampaignWorkspace from "./campaign-workspace";
 import NotificationCenter from "./notification-center";
 import { safeNotificationHref } from "./notification-controller";
 import AppointmentAgenda from "./appointment-agenda";
+import TaskAgenda from "./task-agenda";
+import { partitionLoadedTasks, resolveTaskDrawerTiming, validTaskAgendaTimezone } from "./task-agenda-time";
+import { TaskCompletionProtocol, type TaskCompletionCommand } from "./task-completion";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -113,6 +116,27 @@ function initials(name: string) {
     .join("")
     .toUpperCase();
 }
+function completionContext(
+  active: Session | null,
+  memberId: string,
+  token: string,
+  revision: number,
+): string | null {
+  return active?.activeOrgId &&
+    memberId &&
+    token &&
+    active.permissions.includes("crm.tasks.read") &&
+    active.permissions.includes("crm.tasks.write")
+    ? JSON.stringify([
+        active.userId,
+        active.activeOrgId,
+        memberId,
+        token,
+        revision,
+        [...active.permissions].sort(),
+      ])
+    : null;
+}
 
 export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeaturesEnabled: boolean }) {
   const pathname = usePathname();
@@ -154,6 +178,14 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const [notificationPending, setNotificationPending] = useState(false);
   const notificationProtected = useRef(false);
   const [invitationTransfer, setInvitationTransfer] = useState<InvitationTransfer | null>(null);
+  const taskCompletion = useRef(new TaskCompletionProtocol());
+  const activeTaskCompletion = useRef<TaskCompletionCommand | null>(null);
+  const [, updateTaskCompletion] = useState(0);
+  const taskCompletionBinding = completionContext(session, member, csrf, accessRevision);
+  const currentAccessRevision = useRef(accessRevision);
+  currentAccessRevision.current = accessRevision;
+  taskCompletion.current.bind(taskCompletionBinding);
+  const taskPending = Boolean(taskCompletion.current.getSnapshot().command);
   const unsaved =
     dirty ||
     noteDirty ||
@@ -161,6 +193,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     cmsDirty ||
     campaignDirty ||
     notificationPending ||
+    taskPending ||
     Boolean(invitationTransfer);
   const [search, setSearch] = useState("");
   const [taskFilter, setTaskFilter] = useState("open");
@@ -178,6 +211,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const taskDrawerBaseline = useRef<{ task: Task; value: string } | null>(null);
+  if (!selectedTask) taskDrawerBaseline.current = null;
+  else if (taskDrawerBaseline.current?.task !== selectedTask)
+    taskDrawerBaseline.current = { task: selectedTask, value: localDateTime(selectedTask.dueAt) };
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [invitationAcceptance, setInvitationAcceptance] = useState<{
@@ -191,7 +228,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const updateAccepted = useRef(false);
   const reloadProtected = useRef(false);
   reloadProtected.current =
-    unsaved || busy || cmsProtected.current || campaignProtected.current || notificationProtected.current;
+    unsaved ||
+    busy ||
+    cmsProtected.current ||
+    campaignProtected.current ||
+    notificationProtected.current ||
+    Boolean(taskCompletion.current.getSnapshot().command);
   const protectCms = useCallback((value: boolean) => {
     cmsProtected.current = value;
     if (value) reloadProtected.current = true;
@@ -220,6 +262,19 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const syntheticEnabled = syntheticFeaturesEnabled && syntheticIdentity && Boolean(session);
   const canCapture = permission("crm.contacts.write") && permission("crm.leads.write");
   const canTask = permission("crm.tasks.write");
+  const taskAgendaContext = JSON.stringify([
+    session?.userId,
+    session?.activeOrgId,
+    member,
+    accessRevision,
+    scope,
+    session?.profile.timezone,
+    organization?.timezone,
+    Boolean(refreshed),
+    session?.permissions,
+  ]);
+  const currentTaskAgenda = useRef(taskAgendaContext);
+  currentTaskAgenda.current = taskAgendaContext;
   const visibleNavigation = navigation.filter((item) => {
     if (item.id === "properties") return syntheticEnabled && permission("mls.read");
     if (item.id === "websites")
@@ -258,7 +313,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     async (active: Session) => {
       if (!active.activeOrgId) return;
       const epoch = ++refreshEpoch.current;
-      if (cmsProtected.current || campaignProtected.current || notificationProtected.current) {
+      if (
+        cmsProtected.current ||
+        campaignProtected.current ||
+        notificationProtected.current ||
+        taskCompletion.current.getSnapshot().command
+      ) {
         setLoading(false);
         return;
       }
@@ -323,6 +383,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           err.status === 403 &&
           ["permission_denied", "entitlement_disabled"].includes(err.code ?? "");
         if (err instanceof ApiError && [401, 403].includes(err.status) && !unrelatedCrmDenial) {
+          taskCompletion.current.bind(null);
+          activeTaskCompletion.current = null;
+          setBusy(false);
+          updateTaskCompletion((value) => value + 1);
           setAccessRevision((value) => value + 1);
           commandKeys.current.clear();
           ++detailEpoch.current;
@@ -361,6 +425,21 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       try {
         const result = await api<Session>("/v1/session");
         if (epoch !== sessionEpoch.current) return;
+        const binding = completionContext(
+          result.data,
+          result.headers.get("X-Member-Id") || "",
+          result.headers.get("X-CSRF-Token") || "",
+          currentAccessRevision.current,
+        );
+        if (
+          taskCompletion.current.getSnapshot().command &&
+          taskCompletion.current.getSnapshot().command?.context !== binding
+        ) {
+          activeTaskCompletion.current = null;
+          setBusy(false);
+        }
+        taskCompletion.current.bind(binding);
+        updateTaskCompletion((value) => value + 1);
         setSession(result.data);
         retainedSession.current = result.data;
         setSyntheticIdentity(result.headers.get("X-Synthetic-Identity") === "true");
@@ -384,6 +463,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           return null;
         }
         setSession(null);
+        taskCompletion.current.bind(null);
+        activeTaskCompletion.current = null;
+        setBusy(false);
+        updateTaskCompletion((value) => value + 1);
         retainedSession.current = null;
         setSyntheticIdentity(false);
         setData(emptyData);
@@ -405,6 +488,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   useEffect(() => {
     void readSession();
   }, [readSession]);
+  useEffect(() => {
+    taskCompletion.current.bind(taskCompletionBinding);
+    return () => taskCompletion.current.bind(null);
+  }, [taskCompletionBinding]);
   useEffect(() => {
     setOnline(navigator.onLine);
     const on = () => {
@@ -495,9 +582,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       if (reloadProtected.current) {
         setActivatedUpdate(true);
         setNotice(
-          notificationProtected.current
-            ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
-            : "The app update activated. Finish or discard your current draft before reloading.",
+          taskCompletion.current.getSnapshot().command
+            ? "The app update activated. Reconcile the unconfirmed task completion before reloading."
+            : notificationProtected.current
+              ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
+              : "The app update activated. Finish or discard your current draft before reloading.",
         );
         return;
       }
@@ -534,6 +623,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     explicitKey?: string,
   ) {
     if (!online) throw new Error("You’re offline. Your draft is still in this tab; reconnect before saving.");
+    if (taskCompletion.current.getSnapshot().command && /\/tasks(?:\/|$)/.test(path))
+      throw new Error("Reconcile the unconfirmed task completion before changing tasks.");
     const context = commandContext.current;
     const fingerprint = `${session?.activeOrgId}:${path}:${method}:${JSON.stringify(body)}:${version ?? ""}`;
     let key = explicitKey || commandKeys.current.get(fingerprint);
@@ -604,6 +695,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   }
   async function continueInvitation(transfer: InvitationTransfer, identity: "owner" | "agent") {
     if (busy || !online) return;
+    if (taskCompletion.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed task completion before changing identity.");
+      return;
+    }
     if (
       unsaved &&
       !window.confirm("Discard other invitation drafts and continue as the synthetic recipient?")
@@ -639,6 +734,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     capturedContact.current = null;
   }
   function closeDetail() {
+    if (taskCompletion.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed task completion before leaving task details.");
+      return;
+    }
     if (busy || (unsaved && !window.confirm("Discard the unsaved changes?"))) return;
     setDirty(false);
     setDetailError("");
@@ -682,11 +781,22 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           await command<Lead>(`${base}/leads/${selectedLead.id}`, input, "PATCH", selectedLead.version),
         );
       } else if (detailKind === "task" && selectedTask) {
+        const dueInput = event.currentTarget.elements.namedItem("dueAt");
+        if (!(dueInput instanceof HTMLInputElement)) throw new Error("Task timing could not be verified.");
+        const timing = resolveTaskDrawerTiming(
+          { dueAt: selectedTask.dueAt, timezone: selectedTask.timezone },
+          dueInput.defaultValue,
+          fields.get("dueAt"),
+          (value) => ({
+            dueAt: new Date(value).toISOString(),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }),
+        );
         const input: Schema<"TaskWrite"> = {
           title: String(fields.get("title")).trim(),
-          dueAt: new Date(String(fields.get("dueAt"))).toISOString(),
+          dueAt: timing.dueAt,
           assigneeMemberId: selectedTask.assigneeMemberId,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          timezone: timing.timezone,
           priority: String(fields.get("priority")) as Task["priority"],
           state: String(fields.get("state")) as Task["state"],
           leadId: selectedTask.leadId,
@@ -712,6 +822,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   function openModal(next: "lead" | "task") {
+    if (next === "task" && taskCompletion.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed task completion before changing tasks.");
+      return;
+    }
     setError("");
     setNotice("");
     setDirty(false);
@@ -781,33 +895,117 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       setBusy(false);
     }
   }
-  async function completeTask(task: Task) {
-    if (!session?.activeOrgId) return;
+  async function sendTaskCompletion(snapshot: TaskCompletionCommand) {
+    const active = session;
+    if (
+      !active?.activeOrgId ||
+      !taskCompletion.current.isBoundTo(taskCompletionBinding) ||
+      !taskCompletion.current.isCurrent(snapshot)
+    )
+      return;
+    reloadProtected.current = true;
+    activeTaskCompletion.current = snapshot;
+    updateTaskCompletion((value) => value + 1);
     setBusy(true);
     setError("");
+    const abort = new AbortController();
+    const timeout = window.setTimeout(() => abort.abort(), 20000);
     try {
-      const input: Schema<"TaskWrite"> = {
-        title: task.title,
-        dueAt: task.dueAt,
-        timezone: task.timezone,
-        assigneeMemberId: task.assigneeMemberId,
-        leadId: task.leadId,
-        priority: task.priority,
-        state: "done",
-      };
-      await command<Task>(`/v1/orgs/${session.activeOrgId}/tasks/${task.id}`, input, "PATCH", task.version);
-      setNotice("Task completed.");
-      await refresh(session);
+      const result = await api<Task>(`/v1/orgs/${active.activeOrgId}/tasks/${snapshot.taskId}`, {
+        method: "PATCH",
+        signal: abort.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrf,
+          "Idempotency-Key": snapshot.key,
+          "If-Match": `"${snapshot.version}"`,
+        },
+        body: JSON.stringify(snapshot.body),
+      });
+      if (!taskCompletion.current.isCurrent(snapshot)) return;
+      if (!taskCompletion.current.acknowledge(snapshot, result.data, result.headers.get("ETag"))) {
+        setError(
+          "Task completion could not be verified. Reconcile the original command before changing tasks or leaving this view.",
+        );
+        return;
+      }
+      updateTaskCompletion((value) => value + 1);
+      setNotice("Task completion acknowledged. Refreshing current task records.");
+      await refresh(active);
     } catch (err) {
+      const outcome = taskCompletion.current.reject(snapshot, err);
+      if (outcome === "ignored") return;
+      if (err instanceof ApiError && [401, 403].includes(err.status)) {
+        taskCompletion.current.bind(null);
+        setAccessRevision((value) => value + 1);
+        ++refreshEpoch.current;
+        setData(emptyData);
+        setRefreshed(null);
+      }
       setError(
-        err instanceof ApiError && err.status === 412
-          ? "This task changed since you opened it. Refresh and review its latest version before retrying."
-          : err instanceof Error
-            ? err.message
-            : "Task could not be completed.",
+        outcome === "unknown"
+          ? "Task completion is unconfirmed. Reconcile the retained original command; its input and key have not changed."
+          : err instanceof ApiError && err.status === 412
+            ? "This task changed since you opened it. Refresh and review its latest version before retrying."
+            : "Task completion was rejected or access is unavailable. Refresh and review current records before trying again.",
       );
     } finally {
-      setBusy(false);
+      window.clearTimeout(timeout);
+      updateTaskCompletion((value) => value + 1);
+      if (activeTaskCompletion.current === snapshot) {
+        activeTaskCompletion.current = null;
+        setBusy(false);
+      }
+    }
+  }
+  async function completeTask(task: Task) {
+    if (
+      !session?.activeOrgId ||
+      busy ||
+      !online ||
+      changingOrganization ||
+      loading ||
+      !permission("crm.tasks.read") ||
+      !canTask ||
+      !csrf ||
+      !taskCompletion.current.isBoundTo(taskCompletionBinding) ||
+      document.visibilityState !== "visible"
+    )
+      return;
+    if (reloadProtected.current || taskCompletion.current.getSnapshot().command) {
+      setError("Resolve the current draft or unconfirmed task completion before changing tasks.");
+      return;
+    }
+    const current = data.tasks.find(
+      (row) => row.id === task.id && row.version === task.version && row.state === "open",
+    );
+    if (!current) return;
+    try {
+      const snapshot = taskCompletion.current.begin(current, crypto.randomUUID());
+      reloadProtected.current = true;
+      await sendTaskCompletion(snapshot);
+    } catch {
+      setError(
+        "Task timing or completion input is unavailable. Refresh current records before trying again.",
+      );
+    }
+  }
+  async function reconcileTaskCompletion() {
+    if (
+      !session?.activeOrgId ||
+      busy ||
+      !online ||
+      changingOrganization ||
+      !canTask ||
+      !permission("crm.tasks.read") ||
+      !taskCompletion.current.isBoundTo(taskCompletionBinding) ||
+      document.visibilityState !== "visible"
+    )
+      return;
+    try {
+      await sendTaskCompletion(taskCompletion.current.retry());
+    } catch {
+      setError("There is no current unconfirmed task completion to reconcile.");
     }
   }
   async function moveLead(lead: Lead, toStageId: string) {
@@ -837,6 +1035,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function switchOrganization(id: string) {
+    if (taskCompletion.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed task completion before switching organizations.");
+      return;
+    }
     if (cmsProtected.current || campaignProtected.current || notificationProtected.current) {
       setError(
         notificationProtected.current
@@ -893,6 +1095,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
   }
   async function logout() {
+    if (taskCompletion.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed task completion before signing out.");
+      return;
+    }
     if (cmsProtected.current || campaignProtected.current || notificationProtected.current) {
       setError(
         notificationProtected.current
@@ -968,6 +1174,43 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     }
     router.push("/pipeline?lead=" + encodeURIComponent(id));
   }
+  function taskAgendaAllowed() {
+    if (
+      currentTaskAgenda.current !== taskAgendaContext ||
+      !online ||
+      busy ||
+      loading ||
+      changingOrganization ||
+      document.visibilityState !== "visible" ||
+      !refreshed ||
+      !permission("crm.tasks.read") ||
+      !validTaskAgendaTimezone(organization?.timezone) ||
+      partitionLoadedTasks(data.tasks, new Date().toISOString(), session?.profile.timezone).state !== "ready"
+    )
+      return false;
+    if (reloadProtected.current) {
+      setError(
+        taskCompletion.current.getSnapshot().command
+          ? "Reconcile the unconfirmed task completion before opening task details or leaving this view."
+          : "Resolve the current draft or unconfirmed command before opening task details or leaving this view.",
+      );
+      return false;
+    }
+    return true;
+  }
+  function openAgendaTask(id: string) {
+    if (!taskAgendaAllowed() || !data.tasks.some((task) => task.id === id && task.state === "open")) return;
+    router.push("/tasks?task=" + encodeURIComponent(id));
+  }
+  function completeAgendaTask(task: Task) {
+    if (
+      !taskAgendaAllowed() ||
+      !canTask ||
+      !data.tasks.some((row) => row.id === task.id && row.version === task.version && row.state === "open")
+    )
+      return;
+    void completeTask(task);
+  }
   const nameFor = (lead: Lead) =>
     data.contacts.find((contact) => contact.id === lead.contactId)?.displayName || "Authorized lead";
   const openTasks = data.tasks.filter((task) => task.state === "open");
@@ -982,7 +1225,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           type="button"
           className={`task-check ${task.state === "done" ? "done" : ""}`}
           aria-label={`Complete task: ${task.title}`}
-          disabled={task.state !== "open" || busy || !online || !canTask}
+          disabled={task.state !== "open" || busy || !online || !canTask || taskPending}
           onClick={() => void completeTask(task)}
         >
           {task.state === "done" && <Check size={16} />}
@@ -1095,7 +1338,25 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     );
 
   return (
-    <div className="workspace">
+    <div
+      className="workspace"
+      onClickCapture={(event) => {
+        if (!taskCompletion.current.getSnapshot().command || !(event.target instanceof Element)) return;
+        const anchor = event.target.closest("a[href]");
+        if (!(anchor instanceof HTMLAnchorElement)) return;
+        const destination = new URL(anchor.href);
+        if (
+          destination.origin !== window.location.origin ||
+          (destination.pathname === window.location.pathname &&
+            destination.search === window.location.search &&
+            destination.hash)
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        setError("Reconcile the unconfirmed task completion before navigating away.");
+      }}
+    >
       <a className="skip-link" href="#main">
         Skip to main content
       </a>
@@ -1254,16 +1515,36 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <span>You’re offline. Saving is disabled. Drafts stay in this tab’s memory.</span>
             </div>
           )}
+          {taskPending && view !== "dashboard" && (
+            <div className="connection-banner" role="status">
+              <Clock3 size={19} />
+              <span>
+                A task completion is unconfirmed. Reconcile its original command before navigating or changing
+                tasks.
+              </span>
+              <Button
+                variant="secondary"
+                disabled={
+                  !online || busy || changingOrganization || !canTask || !permission("crm.tasks.read")
+                }
+                onClick={() => void reconcileTaskCompletion()}
+              >
+                Reconcile task completion
+              </Button>
+            </div>
+          )}
           {(waiting || activatedUpdate) && (
             <div className="connection-banner update" role="status">
               <Download size={19} />
               <span>
                 An app update is ready.
-                {notificationPending
-                  ? " Reconcile the unconfirmed read command in Notifications before updating or reloading."
-                  : unsaved || busy
-                    ? " Finish or discard your draft before updating."
-                    : " Reload when you’re ready."}
+                {taskPending
+                  ? " Reconcile the unconfirmed task completion before updating or reloading."
+                  : notificationPending
+                    ? " Reconcile the unconfirmed read command in Notifications before updating or reloading."
+                    : unsaved || busy
+                      ? " Finish or discard your draft before updating."
+                      : " Reload when you’re ready."}
               </span>
               <Button
                 variant="secondary"
@@ -1401,7 +1682,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   campaignDirty ||
                   Boolean(invitationTransfer)
                 }
-                onClick={() => router.push("/notifications")}
+                onClick={() => {
+                  if (taskCompletion.current.getSnapshot().command) {
+                    setError("Reconcile the unconfirmed task completion before opening Notifications.");
+                    return;
+                  }
+                  router.push("/notifications");
+                }}
               >
                 Return to notifications
               </Button>
@@ -1516,45 +1803,39 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 Counts do not represent engagement or revenue.
               </p>
               <div className="dashboard-grid">
-                <section className="panel agenda">
-                  <PanelHeading
-                    icon={<ListTodo size={18} />}
-                    title="Your next steps"
-                    action={
-                      <Link href="/tasks">
-                        View all <ArrowRight size={14} />
-                      </Link>
-                    }
-                  />
-                  {openTasks.length ? (
-                    <div>
-                      {taskRows([...openTasks].sort((a, b) => a.dueAt.localeCompare(b.dueAt)).slice(0, 5))}
-                    </div>
-                  ) : (
-                    <Empty
-                      icon={<CircleCheck size={28} />}
-                      title={
-                        refreshed && permission("crm.tasks.read")
-                          ? "A little breathing room"
-                          : "Tasks unavailable"
-                      }
-                    >
-                      {refreshed && permission("crm.tasks.read")
-                        ? "No open follow-ups in your current scope. Add your next task when you’re ready."
-                        : "Reconnect and refresh to see your next steps."}
-                    </Empty>
-                  )}
-                  <div className="panel-footer">
-                    <Button
-                      variant="quiet"
-                      disabled={!canTask || !online || busy || !member}
-                      onClick={() => openModal("task")}
-                    >
-                      <Plus size={16} />
-                      Add a follow-up
-                    </Button>
-                  </div>
-                </section>
+                <TaskAgenda
+                  contextKey={taskAgendaContext}
+                  tasks={data.tasks}
+                  userTimezone={session.profile.timezone}
+                  organizationTimezone={organization?.timezone}
+                  scope={scope}
+                  refreshedAt={refreshed}
+                  hasMore={Boolean(cursors.tasks)}
+                  loading={loading}
+                  online={online && !changingOrganization}
+                  canRead={permission("crm.tasks.read")}
+                  canComplete={canTask && Boolean(member)}
+                  blocked={
+                    busy ||
+                    changingOrganization ||
+                    dirty ||
+                    noteDirty ||
+                    tagDirty ||
+                    cmsProtected.current ||
+                    campaignProtected.current ||
+                    notificationProtected.current
+                  }
+                  completionPending={taskPending}
+                  onReconcile={() => void reconcileTaskCompletion()}
+                  onOpenTask={openAgendaTask}
+                  onCompleteTask={completeAgendaTask}
+                  onViewTasks={() => {
+                    if (taskAgendaAllowed()) router.push("/tasks");
+                  }}
+                  onAddTask={() => {
+                    if (taskAgendaAllowed() && canTask) openModal("task");
+                  }}
+                />
                 <section className="panel pipeline-summary">
                   <PanelHeading
                     icon={<Kanban size={18} />}
@@ -2618,11 +2899,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       <input
                         name="dueAt"
                         type="datetime-local"
-                        defaultValue={localDateTime(selectedTask.dueAt)}
+                        defaultValue={taskDrawerBaseline.current?.value || ""}
                         required
                       />
                       <span className="field-help">
-                        Your device’s local time: {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                        Unchanged time preserves the stored instant and timezone. Changed wall times use your
+                        device timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}. Ambiguous or
+                        skipped times follow your device’s daylight-saving resolution.
                       </span>
                     </label>
                     <label>

@@ -284,6 +284,21 @@ try {
     invalidPage.status === 422 && (await invalidPage.json()).code === "limit_invalid",
     "runtime_local_appointment_query_failed",
   );
+  const taskPage = ajv.compile({ $ref: "contract#/components/schemas/PageTask" });
+  const taskPath = `/v1/orgs/${identity.activeOrgId}/tasks`;
+  const tasks = await request(synthetic, `${taskPath}?limit=25&scope=own`, { headers: { cookie } });
+  check(
+    tasks.status === 200 &&
+      taskPage(await tasks.json()) &&
+      tasks.headers.get("cache-control")?.includes("private") &&
+      !tasks.headers.has("etag"),
+    "runtime_local_task_read_failed",
+  );
+  const invalidTasks = await request(synthetic, `${taskPath}?limit=0`, { headers: { cookie } });
+  check(
+    invalidTasks.status === 422 && (await invalidTasks.json()).code === "limit_invalid",
+    "runtime_local_task_query_failed",
+  );
   for (const forwarding of [
     { forwarded: "for=203.0.113.42" },
     { "x-real-ip": "203.0.113.42" },
@@ -374,6 +389,7 @@ if (failure) {
       compiledCli: "healthy-owned-instance",
       syntheticSession: "created-read-revoked",
       storedAppointments: "contract-valid-private-read-and-query-denial",
+      loadedTasks: "contract-valid-private-read-and-query-denial",
       forwardedRequestsDenied: 4,
       productionModesDenied: 2,
       cliListenFailure: "closed",

@@ -5,6 +5,7 @@ import { validateSchema } from "./contract-validation";
 import * as models from "./models";
 import { cursorBinding, decodeCursor, encodeCursor } from "./cursors";
 import { assertDelegation } from "../../../packages/auth/permissions";
+import { requireEntitlement } from "../../../packages/auth/entitlements";
 
 type Row = Record<string, any>;
 type Body = Record<string, any>;
@@ -40,10 +41,17 @@ function text(value: string) {
   return value.trim();
 }
 function timezone(value: string) {
+  if (
+    typeof value !== "string" ||
+    value.length > 80 ||
+    (value !== "UTC" && !/^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+$/.test(value))
+  )
+    throw new AccessError(422, "timezone_invalid", "A valid named IANA timezone is required.");
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    const resolved = new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions().timeZone;
+    if (typeof resolved !== "string" || (resolved !== "UTC" && !resolved.includes("/"))) throw new Error();
   } catch {
-    throw new AccessError(422, "timezone_invalid", "A valid IANA timezone is required.");
+    throw new AccessError(422, "timezone_invalid", "A valid named IANA timezone is required.");
   }
   return value;
 }
@@ -69,6 +77,88 @@ export class CrmService {
       return `((r.created_by_member_id=${memberPlaceholder} AND NOT EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL)) OR EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL AND ${assigned}))`;
     }
     return "TRUE";
+  }
+
+  private taskLeadScope(permission: "crm.leads.read" | "crm.leads.write"): Scope | null {
+    const scope = this.context.permissions.find((grant) => grant.code === permission)?.scope;
+    return scope === "own" || scope === "team" || scope === "organization" ? scope : null;
+  }
+
+  private taskLeadPredicate(memberPlaceholder: string, writing = false) {
+    const permissions = writing
+      ? (["crm.leads.read", "crm.leads.write"] as const)
+      : (["crm.leads.read"] as const);
+    const clauses = ["l.archived_at IS NULL", "c.archived_at IS NULL"];
+    for (const permission of permissions) {
+      const scope = this.taskLeadScope(permission);
+      if (!scope) return "FALSE";
+      clauses.push(this.memberScope("l.owner_member_id", scope, memberPlaceholder));
+      // A supplied/stale source scope cannot stand in for the current actor's actual role grant.
+      clauses.push(`EXISTS(SELECT 1 FROM app.membership source_member
+        JOIN app.role_definition source_role ON(source_role.tenant_id,source_role.id)=(source_member.tenant_id,source_member.role_id)
+        WHERE source_member.tenant_id=l.tenant_id AND source_member.user_id=app.current_actor()
+          AND source_member.id=${memberPlaceholder} AND source_member.status='active'
+          AND source_role.permission_grants @> '[{"code":"${permission}","scope":"${scope}"}]'::jsonb)`);
+    }
+    return clauses.join(" AND ");
+  }
+
+  private taskSourceSql(memberPlaceholder: string, writing = false) {
+    return `(r.lead_id IS NULL OR EXISTS(SELECT 1 FROM app.lead l
+      JOIN app.contact c ON(c.tenant_id,c.id)=(l.tenant_id,l.contact_id)
+      WHERE(l.tenant_id,l.id)=(r.tenant_id,r.lead_id) AND ${this.taskLeadPredicate(memberPlaceholder, writing)}))`;
+  }
+
+  private async taskAuthority(writing = false): Promise<Scope> {
+    const permission = writing ? "crm.tasks.write" : "crm.tasks.read";
+    const scope = requirePermission(this.context, permission);
+    if (!["own", "team", "organization"].includes(scope))
+      throw new AccessError(403, "permission_denied", "Current task authority is required.");
+    const current = await this.client.query(
+      `SELECT 1 FROM app.membership m
+       JOIN app.role_definition task_role ON(task_role.tenant_id,task_role.id)=(m.tenant_id,m.role_id)
+       JOIN app.organization o ON o.id=m.tenant_id
+       WHERE current_user='estate_runtime' AND session_user='estate_runtime'
+         AND app.current_tenant()=$1::uuid AND app.current_actor()=$2::uuid
+         AND m.tenant_id=$1 AND m.user_id=$2 AND m.id=$3 AND m.role_id=$4
+         AND m.status='active' AND o.status='active' AND task_role.permission_grants @> $5::jsonb
+       FOR SHARE OF m,task_role,o`,
+      [
+        this.context.organizationId,
+        this.context.userId,
+        this.context.memberId,
+        this.context.roleId,
+        JSON.stringify([{ code: permission, scope }]),
+      ],
+    );
+    if (!current.rowCount)
+      throw new AccessError(403, "permission_denied", "Current task authority is unavailable.");
+    await requireEntitlement(this.client, permission);
+    await requireEntitlement(this.client, permission, { lock: false });
+    return scope;
+  }
+
+  private async lockTaskSources(ids: (string | null | undefined)[]) {
+    const sources = [...new Set(ids.filter((id): id is string => id != null))].sort();
+    for (const id of sources) {
+      assertUuid(id);
+      const statement = `SELECT l.id,l.owner_member_id FROM app.lead l
+        JOIN app.contact c ON(c.tenant_id,c.id)=(l.tenant_id,l.contact_id)
+        WHERE l.tenant_id=app.current_tenant() AND l.id=$1 AND $2::uuid IS NOT NULL
+          AND ${this.taskLeadPredicate("$2", true)}`;
+      const parameters = [id, this.context.memberId];
+      const locked = await this.client.query(`${statement} FOR SHARE OF l,c`, parameters);
+      const source = locked.rows[0] ?? notFound();
+      if ([this.taskLeadScope("crm.leads.read"), this.taskLeadScope("crm.leads.write")].includes("team"))
+        await this.client.query(
+          `SELECT office_id,member_id FROM app.office_member WHERE tenant_id=app.current_tenant()
+           AND member_id=ANY($1::uuid[]) ORDER BY office_id,member_id FOR SHARE`,
+          [[this.context.memberId, source.owner_member_id]],
+        );
+      // Re-evaluate after waited source/office locks; an earlier WHERE test is not use-time proof.
+      if (!(await this.client.query(statement, parameters)).rowCount) notFound();
+    }
+    await requireEntitlement(this.client, "crm.tasks.write", { lock: false });
   }
 
   private resource(resource: string) {
@@ -111,13 +201,33 @@ export class CrmService {
   async row(resource: string, id: string, writing = false, lock = false) {
     assertUuid(id);
     const configuration = this.resource(resource);
-    const scope = requirePermission(this.context, writing ? configuration.write : configuration.read);
+    const scope =
+      resource === "tasks"
+        ? await this.taskAuthority(writing)
+        : requirePermission(this.context, writing ? configuration.write : configuration.read);
     const archived = ["contacts", "leads"].includes(resource) ? "AND r.archived_at IS NULL" : "";
-    const result = await this.client.query(
-      `SELECT ${this.select(resource)} FROM app.${configuration.table} r WHERE r.tenant_id=app.current_tenant() AND r.id=$1 AND $2::uuid IS NOT NULL AND ${this.scopeSql(resource, scope, "$2")} ${archived} ${lock ? "FOR UPDATE OF r" : ""}`,
-      [id, this.context.memberId],
-    );
-    return result.rows[0] ?? notFound();
+    const statement = `SELECT ${this.select(resource)} FROM app.${configuration.table} r WHERE r.tenant_id=app.current_tenant() AND r.id=$1 AND $2::uuid IS NOT NULL AND ${this.scopeSql(resource, scope, "$2")} ${resource === "tasks" ? `AND ${this.taskSourceSql("$2", writing)}` : ""} ${archived}`;
+    const parameters = [id, this.context.memberId];
+    const result = await this.client.query(`${statement} ${lock ? "FOR UPDATE OF r" : ""}`, parameters);
+    let row = result.rows[0] ?? notFound();
+    if (resource === "tasks") {
+      if (writing && lock) {
+        if (scope === "team")
+          await this.client.query(
+            `SELECT office_id,member_id FROM app.office_member WHERE tenant_id=app.current_tenant()
+             AND member_id=ANY($1::uuid[]) ORDER BY office_id,member_id FOR SHARE`,
+            [[this.context.memberId, row.assignee_member_id]],
+          );
+        await this.lockTaskSources([row.lead_id]);
+        // A lock wait can outlive the current assignee's team relationship, even for standalone tasks.
+        // Recheck the original task before any proposed replacement assignee can be considered.
+        row = (await this.client.query(statement, parameters)).rows[0] ?? notFound();
+      }
+      await requireEntitlement(this.client, writing ? configuration.write : configuration.read, {
+        lock: false,
+      });
+    }
+    return row;
   }
 
   async detail(resource: string, id: string) {
@@ -126,7 +236,8 @@ export class CrmService {
 
   async list(resource: string, query: Record<string, unknown>) {
     const configuration = this.resource(resource);
-    const scope = requirePermission(this.context, configuration.read);
+    const scope =
+      resource === "tasks" ? await this.taskAuthority() : requirePermission(this.context, configuration.read);
     const limit = query.limit === undefined ? 25 : Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new AccessError(422, "limit_invalid", "Limit must be between 1 and 100.");
@@ -162,6 +273,7 @@ export class CrmService {
       "($2::uuid IS NULL OR r.id>$2::uuid)",
     ];
     if (["contacts", "leads"].includes(resource)) where.push("r.archived_at IS NULL");
+    if (resource === "tasks") where.push(this.taskSourceSql("$1"));
     if (filter.q) {
       params.push(`%${String(filter.q).replace(/[\\%_]/g, "\\$&")}%`);
       where.push(
@@ -222,6 +334,7 @@ export class CrmService {
       `SELECT ${this.select(resource)} FROM app.${configuration.table} r WHERE ${where.join(" AND ")} ORDER BY r.id LIMIT $3`,
       params,
     );
+    if (resource === "tasks") await requireEntitlement(this.client, configuration.read, { lock: false });
     const hasMore = result.rows.length > limit;
     const rows = result.rows.slice(0, limit);
     if (resource === "pipeline-stages") rows.sort((a, b) => a.position - b.position);
@@ -270,7 +383,10 @@ export class CrmService {
       const parentId = routeKey.split("/")[5];
       const action = routeKey.split("/")[6];
       if (resource === "leads" && action === "notes") await this.row("leads", parentId, true);
-      else if (["contacts", "leads", "tasks"].includes(resource) && entity?.id)
+      else if (resource === "tasks" && entity?.id) {
+        await this.row("tasks", entity.id, true, true);
+        await this.lockTaskSources([entity.leadId, (body as Body | null)?.leadId]);
+      } else if (["contacts", "leads"].includes(resource) && entity?.id)
         await this.row(resource, entity.id, true);
       return {
         body: entity,
@@ -449,8 +565,9 @@ export class CrmService {
         ],
       );
     } else if (resource === "tasks") {
+      await this.taskAuthority(true);
       await this.activeMember(body.assigneeMemberId, scope);
-      if (body.leadId) await this.row("leads", body.leadId, true);
+      await this.lockTaskSources([body.leadId]);
       const result = await this.client.query(
         `INSERT INTO app.task(tenant_id,lead_id,assignee_member_id,title,description,due_at,due_timezone,priority,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [
@@ -503,11 +620,12 @@ export class CrmService {
         await this.event("lead.assigned", "lead", id, Number(row.row_version), owner ? [owner] : []);
     } else if (resource === "tasks") {
       await this.activeMember(body.assigneeMemberId, scope);
-      if (body.leadId) await this.row("leads", body.leadId, true);
+      const effectiveLead = body.leadId === undefined ? current.lead_id : body.leadId;
+      await this.lockTaskSources([current.lead_id, effectiveLead]);
       const result = await this.client.query(
         `UPDATE app.task SET lead_id=$1,assignee_member_id=$2,title=$3,description=$4,due_at=$5,due_timezone=$6,priority=$7,state=$8,updated_at=now(),row_version=row_version+1 WHERE id=$9 RETURNING *`,
         [
-          body.leadId === undefined ? current.lead_id : body.leadId,
+          effectiveLead,
           body.assigneeMemberId,
           text(body.title),
           body.description ?? current.description,
@@ -669,15 +787,16 @@ export class CrmService {
     if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to)
       throw new AccessError(422, "period_invalid", "Valid date interval required.");
     const leadScope = requirePermission(this.context, "crm.leads.read");
-    const taskScope = requirePermission(this.context, "crm.tasks.read");
+    const taskScope = await this.taskAuthority();
     const counts = await this.client.query(
       `SELECT count(*) FROM app.lead r WHERE r.archived_at IS NULL AND $1::uuid IS NOT NULL AND ${this.scopeSql("leads", leadScope, "$1")} AND r.created_at BETWEEN $2 AND $3`,
       [this.context.memberId, from.toISOString(), to.toISOString()],
     );
     const tasks = await this.client.query(
-      `SELECT r.* FROM app.task r WHERE r.state='open' AND $1::uuid IS NOT NULL AND ${this.scopeSql("tasks", taskScope, "$1")} ORDER BY r.due_at LIMIT 20`,
+      `SELECT r.* FROM app.task r WHERE r.tenant_id=app.current_tenant() AND r.state='open' AND $1::uuid IS NOT NULL AND ${this.scopeSql("tasks", taskScope, "$1")} AND ${this.taskSourceSql("$1")} ORDER BY r.due_at LIMIT 20`,
       [this.context.memberId],
     );
+    await requireEntitlement(this.client, "crm.tasks.read", { lock: false });
     return {
       period: { from: from.toISOString(), to: to.toISOString(), timezone: this.context.timezone },
       metrics: [
