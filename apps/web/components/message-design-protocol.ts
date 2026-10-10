@@ -86,7 +86,7 @@ export function messageDesignJson(value: unknown, limit = messageDesignBodyLimit
       )
         throw new Error();
       const descriptor = Object.getOwnPropertyDescriptor(item, key);
-      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new Error();
+      if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error();
       Object.defineProperty(result, key, {
         value: copy(descriptor.value, depth + 1),
         enumerable: true,
@@ -106,7 +106,11 @@ export function messageDesignJson(value: unknown, limit = messageDesignBodyLimit
   }
 }
 export function copyMessageDesign<T>(value: T, limit = messageDesignBodyLimit): T {
-  return JSON.parse(messageDesignJson(value, limit)) as T;
+  return JSON.parse(messageDesignJson(value, limit), (_key, item: unknown) => {
+    if (item !== null && typeof item === "object" && !Array.isArray(item))
+      Object.setPrototypeOf(item, null);
+    return item;
+  }) as T;
 }
 export function freezeMessageDesign<T>(value: T): T {
   if (value && typeof value === "object") {
@@ -194,13 +198,20 @@ export function nativeTextBlocks(value: MessageDesignBody): NativeTextDesign | n
   return validEditorBlocks(design) ? design : null;
 }
 export function messageDesignWriteFromReceipt(value: Schema<"MessageDesign">): MessageDesignBody | null {
+  let data: Schema<"MessageDesign">;
+  try {
+    data = copyMessageDesign(value, messageDesignResponseLimit);
+  } catch {
+    return null;
+  }
+  if (!validDesign(data) || !Number.isSafeInteger(data.version) || data.version < 1) return null;
   const body: MessageDesignBody = {
-    name: value.name,
-    channel: value.channel,
-    editor: value.editor,
-    design: value.design,
-    content: value.content,
-    ...(value.subject == null ? {} : { subject: value.subject }),
+    name: data.name,
+    channel: data.channel,
+    editor: data.editor,
+    design: data.design,
+    content: data.content,
+    ...(data.subject == null ? {} : { subject: data.subject }),
   };
   return messageDesignIssues(body).length ? null : requireMessageDesignWrite(body);
 }

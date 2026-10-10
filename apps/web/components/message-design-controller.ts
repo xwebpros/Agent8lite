@@ -296,7 +296,7 @@ export class MessageDesignController {
       content: "",
     };
     this.update({
-      input,
+      input: copyMessageDesign(input),
       baseline: null,
       selected: null,
       targetId: null,
