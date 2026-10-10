@@ -109,6 +109,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const view: View = navigation.some((item) => item.id === segment) ? (segment as View) : "dashboard";
   const [session, setSession] = useState<Session | null>(null);
   const [syntheticIdentity, setSyntheticIdentity] = useState(false);
+  const [accessRevision, setAccessRevision] = useState(0);
   const [csrf, setCsrf] = useState("");
   const [member, setMember] = useState("");
   const [profileVersion, setProfileVersion] = useState<number | null>(null);
@@ -138,6 +139,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const [standalone, setStandalone] = useState(false);
   const [ios, setIos] = useState(false);
   const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
+  const [activatedUpdate, setActivatedUpdate] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -148,8 +150,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     job: Schema<"Job">;
   } | null>(null);
   const commandKeys = useRef(new Map<string, string>());
+  const commandContext = useRef("");
+  commandContext.current = `${session?.userId || ""}:${session?.activeOrgId || ""}:${member}`;
   const capturedContact = useRef<Contact | null>(null);
   const updateAccepted = useRef(false);
+  const reloadProtected = useRef(false);
+  reloadProtected.current = unsaved || busy;
   const dialog = useRef<HTMLDialogElement>(null);
   const detailDialog = useRef<HTMLDialogElement>(null);
   const refreshEpoch = useRef(0);
@@ -228,6 +234,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         setRefreshed(null);
         setError(err instanceof Error ? err.message : "Workspace could not refresh.");
         if (err instanceof ApiError && [401, 403].includes(err.status)) {
+          setAccessRevision((value) => value + 1);
+          commandKeys.current.clear();
           ++detailEpoch.current;
           setSelectedContact(null);
           setSelectedLead(null);
@@ -376,7 +384,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     window.addEventListener("beforeinstallprompt", prompt);
     window.addEventListener("appinstalled", installed);
     const changed = () => {
-      if (updateAccepted.current) window.location.reload();
+      if (!updateAccepted.current) return;
+      if (reloadProtected.current) {
+        setActivatedUpdate(true);
+        setNotice("The app update activated. Finish or discard your current draft before reloading.");
+        return;
+      }
+      window.location.reload();
     };
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.addEventListener("controllerchange", changed);
@@ -409,6 +423,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     explicitKey?: string,
   ) {
     if (!online) throw new Error("You’re offline. Your draft is still in this tab; reconnect before saving.");
+    const context = commandContext.current;
     const fingerprint = `${session?.activeOrgId}:${path}:${method}:${JSON.stringify(body)}:${version ?? ""}`;
     let key = explicitKey || commandKeys.current.get(fingerprint);
     if (!key) {
@@ -422,6 +437,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     };
     if (version) headers["If-Match"] = `"${version}"`;
     const result = await api<T>(path, { method, headers, body: JSON.stringify(body) });
+    if (context !== commandContext.current)
+      throw new ApiError(
+        503,
+        "Access context changed while this command was in flight. Its response cannot be applied to the current workspace.",
+        "command_context_changed",
+      );
     receiveHeaders?.(result.headers);
     if (!explicitKey) commandKeys.current.delete(fingerprint);
     return result.data;
@@ -1013,7 +1034,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <span>You’re offline. Saving is disabled. Drafts stay in this tab’s memory.</span>
             </div>
           )}
-          {waiting && (
+          {(waiting || activatedUpdate) && (
             <div className="connection-banner update" role="status">
               <Download size={19} />
               <span>
@@ -1026,11 +1047,16 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 variant="secondary"
                 disabled={unsaved || busy || !online}
                 onClick={() => {
+                  if (reloadProtected.current || !online) return;
+                  if (activatedUpdate) {
+                    window.location.reload();
+                    return;
+                  }
                   updateAccepted.current = true;
-                  waiting.postMessage({ type: "ACTIVATE_UPDATE" });
+                  waiting?.postMessage({ type: "ACTIVATE_UPDATE" });
                 }}
               >
-                Update app
+                {activatedUpdate ? "Reload updated app" : "Update app"}
               </Button>
             </div>
           )}
@@ -1786,7 +1812,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             settingsPanel === "consent" &&
             (syntheticEnabled ? (
               <ConsentPanel
-                key={`${session.userId}:${session.activeOrgId}:${scope}`}
+                key={`${session.userId}:${session.activeOrgId}:${member}:${scope}:${session.permissions.join(",")}:${accessRevision}`}
                 session={session}
                 memberId={member}
                 scope={scope}

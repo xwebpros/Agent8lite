@@ -79,6 +79,9 @@ export default function ConsentPanel({
   const channelEpoch = useRef(0);
   const lifetime = useRef(0);
   const checkingRef = useRef(false);
+  const commandInFlight = useRef(false);
+  const evidenceSnapshot = useRef<EvidenceAttempt | null>(null);
+  const ledgerSnapshot = useRef<LedgerAttempt | null>(null);
   const protectedRef = useRef(false);
   const firstInput = useRef<HTMLSelectElement>(null);
   const current = history.find((item) => item.key === currentKey);
@@ -104,8 +107,10 @@ export default function ConsentPanel({
     setContactId("");
     setChannelId("");
     setEvidenceAttempt(null);
+    evidenceSnapshot.current = null;
     setProof(null);
     setLedgerAttempt(null);
+    ledgerSnapshot.current = null;
     setHistory([]);
     setCurrentKey("");
     setReviewed(false);
@@ -153,9 +158,6 @@ export default function ConsentPanel({
   );
   useEffect(() => {
     if (!protectedRef.current) void loadContacts();
-    return () => {
-      ++epoch.current;
-    };
   }, [loadContacts]);
   useEffect(() => {
     onDirty(dirty || uncertain || pending);
@@ -209,6 +211,7 @@ export default function ConsentPanel({
       !online ||
       working ||
       loading ||
+      commandInFlight.current ||
       accessDenied ||
       !canRecord ||
       !channelId ||
@@ -217,10 +220,12 @@ export default function ConsentPanel({
     )
       return;
     const generation = lifetime.current;
-    const attempt = evidenceAttempt || {
+    const attempt = evidenceSnapshot.current || {
       body: { contactChannelId: channelId, purpose },
       key: crypto.randomUUID(),
     };
+    commandInFlight.current = true;
+    evidenceSnapshot.current = attempt;
     setEvidenceAttempt(attempt);
     setDirty(true);
     setWorking(true);
@@ -242,7 +247,10 @@ export default function ConsentPanel({
         response.policyVersion !== policy ||
         !response.evidenceRef.startsWith("synthetic-evidence:") ||
         !uuid.test(response.evidenceRef.slice("synthetic-evidence:".length)) ||
-        !Number.isFinite(new Date(response.expiresAt).getTime())
+        !Number.isFinite(new Date(response.expiresAt).getTime()) ||
+        Boolean(
+          proof && (response.evidenceRef !== proof.evidenceRef || response.expiresAt !== proof.expiresAt),
+        )
       )
         throw new Error("The evidence response could not be verified. Reconcile this exact request.");
       setProof(response);
@@ -257,6 +265,7 @@ export default function ConsentPanel({
       setRejected(!ambiguous(err));
       failure(err);
     } finally {
+      commandInFlight.current = false;
       setWorking(false);
     }
   }
@@ -269,12 +278,18 @@ export default function ConsentPanel({
     });
   }
   async function recordConsent(replay?: Recorded) {
-    if (!online || working || accessDenied || loading || !canRecord) return;
-    if (!replay && !ledgerAttempt && (!reviewed || !channelId || (action === "grant" && (!proof || expired))))
+    if (!online || working || commandInFlight.current || accessDenied || loading || !canRecord) return;
+    if (
+      !replay &&
+      !ledgerAttempt &&
+      (!reviewed ||
+        !channelId ||
+        (action === "grant" && (!proof || new Date(proof.expiresAt).getTime() <= Date.now())))
+    )
       return;
     const generation = lifetime.current;
     const attempt: LedgerAttempt = replay ||
-      ledgerAttempt || {
+      ledgerSnapshot.current || {
         key: crypto.randomUUID(),
         body: {
           contactChannelId: channelId,
@@ -284,7 +299,9 @@ export default function ConsentPanel({
           evidenceRef: action === "grant" ? proof!.evidenceRef : `staff-withdrawal:${crypto.randomUUID()}`,
         },
       };
+    commandInFlight.current = true;
     if (!replay) {
+      ledgerSnapshot.current = attempt;
       setLedgerAttempt(attempt);
       setCurrentKey(attempt.key);
       setDirty(true);
@@ -328,6 +345,7 @@ export default function ConsentPanel({
       }
       failure(err);
     } finally {
+      commandInFlight.current = false;
       setWorking(false);
     }
   }
@@ -373,7 +391,15 @@ export default function ConsentPanel({
     return () => window.clearInterval(timer);
   }, [pending, online, canReadJobs, working, checkJobs]);
   function resetWorkflow() {
-    if (working || uncertain || pending || (ledgerAttempt && !current && !rejected)) return;
+    if (
+      working ||
+      loading ||
+      commandInFlight.current ||
+      uncertain ||
+      pending ||
+      (ledgerAttempt && !current && !rejected)
+    )
+      return;
     if (
       dirty &&
       !window.confirm(
@@ -386,8 +412,10 @@ export default function ConsentPanel({
     setChannelId("");
     setChannels([]);
     setEvidenceAttempt(null);
+    evidenceSnapshot.current = null;
     setProof(null);
     setLedgerAttempt(null);
+    ledgerSnapshot.current = null;
     setCurrentKey("");
     setReviewed(false);
     setDirty(false);
@@ -396,7 +424,7 @@ export default function ConsentPanel({
     setNotice("");
     setAction("withdraw");
     setPurpose("email_marketing");
-    firstInput.current?.focus();
+    window.requestAnimationFrame(() => firstInput.current?.focus());
   }
 
   if (!canRecord)
@@ -460,6 +488,7 @@ export default function ConsentPanel({
             <h3>Review a synthetic consent command</h3>
             <div className="settings-form">
               <fieldset disabled={working || loading || !online || locked || !choicesLoaded}>
+                <legend className="visually-hidden">Synthetic consent source and purpose</legend>
                 <label htmlFor="consent-contact">
                   Contact
                   <select
@@ -628,7 +657,12 @@ export default function ConsentPanel({
                     type="checkbox"
                     checked={reviewed}
                     disabled={
-                      working || !channelId || (action === "grant" && (!proof || expired)) || uncertain
+                      working ||
+                      loading ||
+                      !online ||
+                      !channelId ||
+                      (action === "grant" && (!proof || expired)) ||
+                      uncertain
                     }
                     onChange={(event) => {
                       setReviewed(event.target.checked);
