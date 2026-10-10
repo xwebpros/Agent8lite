@@ -188,6 +188,80 @@ describe("W07 responsive feature request/presentation seams (no browser acceptan
   });
 });
 
+describe("W07 precise property facts and resilient timestamp presentation", () => {
+  async function listing() {
+    const snapshot = await mockSnapshot();
+    return projectNativeMockListing(snapshot.listings[0], snapshot.feeds[0], options.now)!;
+  }
+  function render(view: "card" | "detail", item: Awaited<ReturnType<typeof listing>>, timezone: string) {
+    return renderToStaticMarkup(
+      view === "card"
+        ? createElement(PropertyCard, { item, timezone, onOpen: () => {} })
+        : createElement(PropertyDetail, { item, timezone }),
+    );
+  }
+
+  it.each([
+    [100.25, "$100.25"],
+    [100.5, "$100.50"],
+    [0.01, "$0.01"],
+    [999999999999.99, "$999,999,999,999.99"],
+  ] as const)("retains the stored two-decimal price %s", async (listPrice, expected) => {
+    const item = { ...(await listing()), listPrice };
+    expect(propertyPrice(item)).toBe(expected);
+    expect(render("card", item, "UTC")).toContain(expected);
+    expect(render("detail", item, "UTC")).toContain(expected);
+  });
+
+  it("preserves whole/zero prices and does not turn a withheld price into zero", async () => {
+    const item = await listing();
+    expect(propertyPrice({ ...item, listPrice: 100 })).toBe("$100");
+    expect(propertyPrice({ ...item, listPrice: 0 })).toBe("$0");
+    expect(propertyPrice({ ...item, listPrice: null })).toBe("Price withheld");
+  });
+
+  it("retains decimal precision in the existing plain-currency fallback", async () => {
+    const item = { ...(await listing()), listPrice: 100.25, currency: "invalid currency" };
+    expect(propertyPrice(item)).toBe("100.25 invalid currency");
+  });
+
+  it.each(["card", "detail"] as const)(
+    "uses labelled UTC in %s when the renderer does not recognize the supplied timezone",
+    async (view) => {
+      const item = {
+        ...(await listing()),
+        sourceUpdatedAt: "2026-10-10T10:30:00Z",
+        expiresAt: "2026-10-10T10:45:00Z",
+      };
+      const markup = render(view, item, "Unknown/Synthetic-Client-Zone");
+      expect(markup).toContain("10:30 AM UTC");
+      expect(markup).toContain("10:45 AM UTC");
+      expect(markup).toContain('dateTime="2026-10-10T10:45:00Z"');
+      expect(markup).not.toContain("Unknown/Synthetic-Client-Zone");
+    },
+  );
+
+  it("still formats a recognized profile timezone instead of choosing the runtime's local zone", async () => {
+    const item = {
+      ...(await listing()),
+      sourceUpdatedAt: "2026-10-10T10:30:00Z",
+      expiresAt: "2026-10-10T10:45:00Z",
+    };
+    const markup = render("card", item, "America/Los_Angeles");
+    expect(markup).toContain("3:30 AM");
+    expect(markup).toContain("3:45 AM");
+    expect(markup).not.toContain("AM UTC");
+  });
+
+  it.each([null, "invalid-source-time"])(
+    "labels source time %j unavailable without crashing",
+    async (sourceUpdatedAt) => {
+      const item = { ...(await listing()), sourceUpdatedAt };
+      expect(render("detail", item, "UTC")).toContain("Source update: Unavailable");
+    },
+  );
+});
+
 describe("W07 current property result feedback (static presentation only)", () => {
   const empty = { items: [], hasMore: false, nextCursor: null };
   const feedback = (

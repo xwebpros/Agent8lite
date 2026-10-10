@@ -37,23 +37,37 @@ export function PropertyResultFeedback({
 
 export function propertyPrice(item: PropertyListing) {
   if (item.listPrice == null) return "Price withheld";
+  // The native price column stores two decimal places; whole values retain their compact display.
+  const precision = {
+    minimumFractionDigits: Number.isInteger(item.listPrice) ? 0 : 2,
+    maximumFractionDigits: 2,
+  };
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: item.currency,
-      maximumFractionDigits: 0,
+      ...precision,
     }).format(item.listPrice);
   } catch {
-    return `${item.listPrice.toLocaleString("en-US")} ${item.currency}`;
+    return `${item.listPrice.toLocaleString("en-US", precision)} ${item.currency}`;
   }
 }
 function date(value: string | null | undefined, timezone: string) {
   if (!value) return "Unavailable";
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: timezone,
-  }).format(new Date(value));
+  const instant = new Date(value);
+  if (!Number.isFinite(instant.getTime())) return "Unavailable";
+  const format = (timeZone: string) =>
+    new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone }).format(instant);
+  try {
+    return format(timezone);
+  } catch {
+    // A server-accepted timezone may be unavailable in the client's timezone database.
+    try {
+      return `${format("UTC")} UTC`;
+    } catch {
+      return "Unavailable";
+    }
+  }
 }
 export function PropertyAttribution({ item, timezone }: { item: PropertyListing; timezone: string }) {
   return (
