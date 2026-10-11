@@ -133,6 +133,11 @@ import {
 } from "./record-archive";
 import { RecordArchiveController, type RecordArchiveOutcome } from "./record-archive-controller";
 import RecordArchivePanel from "./record-archive-panel";
+import {
+  ContactMergeProtocol,
+  contactMergeContext,
+} from "./contact-merge";
+import { ContactMergeController } from "./contact-merge-controller";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -354,6 +359,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const archiveController = useRef(new RecordArchiveController(recordArchive.current));
   const [, updateArchive] = useState(0);
   const [archiveDenied, setArchiveDenied] = useState(false);
+  const contactMerge = useRef(new ContactMergeProtocol());
+  const contactMergeController = useRef(new ContactMergeController(contactMerge.current));
+  const [, updateContactMerge] = useState(0);
+  const [contactMergeDenied, setContactMergeDenied] = useState(false);
   const archiveBinding = archiveDenied
     ? null
     : recordArchiveContext({ session, memberId: member, csrf, accessRevision });
@@ -362,6 +371,14 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   recordArchive.current.bind(archiveBinding);
   const archiveSnapshot = recordArchive.current.getSnapshot();
   const archivePending = Boolean(archiveSnapshot.command);
+  const contactMergeBinding = contactMergeDenied
+    ? null
+    : contactMergeContext({ session, memberId: member, csrf, accessRevision });
+  const currentContactMergeBinding = useRef(contactMergeBinding);
+  currentContactMergeBinding.current = contactMergeBinding;
+  contactMerge.current.bind(contactMergeBinding);
+  const contactMergeSnapshot = contactMerge.current.getSnapshot();
+  const contactMergePending = Boolean(contactMergeSnapshot.command);
   const unsaved =
     dirty ||
     noteDirty ||
@@ -377,6 +394,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     assignmentDirty ||
     taskCreatePending ||
     archivePending ||
+    contactMergePending ||
     Boolean(invitationTransfer);
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
@@ -1026,6 +1044,16 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         currentArchiveBinding.current = nextArchiveBinding;
         setArchiveDenied(false);
         updateArchive((value) => value + 1);
+        const nextContactMergeBinding = contactMergeContext({
+          session: result.data,
+          memberId: result.headers.get("X-Member-Id") || "",
+          csrf: result.headers.get("X-CSRF-Token") || "",
+          accessRevision: currentAccessRevision.current,
+        });
+        contactMerge.current.bind(nextContactMergeBinding);
+        currentContactMergeBinding.current = nextContactMergeBinding;
+        setContactMergeDenied(false);
+        updateContactMerge((value) => value + 1);
         currentLeadCaptureBinding.current = nextLeadBinding;
         setLeadCaptureDenied(false);
         updateLeadCapture((value) => value + 1);
@@ -1120,6 +1148,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       currentTaskCreateDraft.current = null;
       recordArchive.current.bind(null);
       currentArchiveBinding.current = null;
+      contactMerge.current.bind(null);
+      currentContactMergeBinding.current = null;
       stageTransition.current.bind(null);
       currentStageBinding.current = null;
       activeStageTransition.current = null;
@@ -1490,7 +1520,9 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       if (reloadProtected.current) {
         setActivatedUpdate(true);
         setNotice(
-          recordArchive.current.getSnapshot().command
+          contactMerge.current.getSnapshot().command
+            ? "The app update activated. Reconcile the unconfirmed merge before reloading."
+            : recordArchive.current.getSnapshot().command
             ? "The app update activated. Reconcile the unconfirmed archive before reloading."
             : leadAssignment.current.getSnapshot().command
               ? "The app update activated. Reconcile the unconfirmed lead assignment before reloading."
@@ -1546,6 +1578,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       throw new Error("Reconcile the unconfirmed task creation before another command.");
     if (recordArchive.current.getSnapshot().command)
       throw new Error("Reconcile the unconfirmed archive before another command.");
+    if (contactMerge.current.getSnapshot().command)
+      throw new Error("Reconcile the unconfirmed merge before another command.");
     if (leadAssignment.current.getSnapshot().command)
       throw new Error("Reconcile the unconfirmed lead assignment before another command.");
     if (stageTransition.current.getSnapshot().command)
@@ -1582,7 +1616,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     return result.data;
   }
   async function loadMore(resource: "contacts" | "leads" | "tasks") {
-    if (taskCreate.current.getSnapshot().command || recordArchive.current.getSnapshot().command) return;
+    if (taskCreate.current.getSnapshot().command || recordArchive.current.getSnapshot().command || contactMerge.current.getSnapshot().command) return;
     if (stageTransition.current.getSnapshot().command || leadAssignment.current.getSnapshot().command) return;
     const cursor = cursors[resource];
     if (!cursor || !session?.activeOrgId) return;
@@ -2254,6 +2288,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           Boolean(stageTransition.current.getSnapshot().command) ||
           Boolean(taskCreate.current.getSnapshot().command) ||
           Boolean(recordArchive.current.getSnapshot().command) ||
+          Boolean(contactMerge.current.getSnapshot().command) ||
           currentContactUI.current.noteDirty ||
           currentContactUI.current.tagDirty,
       })
@@ -2481,7 +2516,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             leadCapture.current.getSnapshot().sequence ||
             stageTransition.current.getSnapshot().command ||
             leadAssignment.current.getSnapshot().command ||
-            recordArchive.current.getSnapshot().command,
+            recordArchive.current.getSnapshot().command ||
+            contactMerge.current.getSnapshot().command,
         ),
       })
     );
@@ -2740,6 +2776,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               currentAssignmentDraft.current ||
               taskCreate.current.getSnapshot().command ||
               recordArchive.current.getSnapshot().command ||
+              contactMerge.current.getSnapshot().command ||
               (!ownCommand && taskEdit.current.getSnapshot().command),
           ),
           taskId,
@@ -3169,7 +3206,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               leadCapture.current.getSnapshot().sequence ||
               stageTransition.current.getSnapshot().command ||
               taskCreate.current.getSnapshot().command ||
-              recordArchive.current.getSnapshot().command,
+              recordArchive.current.getSnapshot().command ||
+              contactMerge.current.getSnapshot().command,
           ),
         },
         leadId,
@@ -3452,6 +3490,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     currentArchiveBinding.current = null;
     currentArchiveUI.current.binding = null;
     setArchiveDenied(true);
+    contactMerge.current.bind(null);
+    currentContactMergeBinding.current = null;
+    setContactMergeDenied(true);
+    updateContactMerge((value) => value + 1);
     ++detailEpoch.current;
     selectedContactBinding.current = null;
     setSelectedContact(null);
@@ -3506,6 +3548,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               leadAssignment.current.getSnapshot().command ||
               currentAssignmentDraft.current ||
               taskCreate.current.getSnapshot().command ||
+              contactMerge.current.getSnapshot().command ||
               (retained && retained !== ownCommand),
           ),
         },
@@ -3722,7 +3765,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             contactEdit.current.getSnapshot().command ||
             leadCapture.current.getSnapshot().sequence ||
             taskCreate.current.getSnapshot().command ||
-            recordArchive.current.getSnapshot().command,
+            recordArchive.current.getSnapshot().command ||
+            contactMerge.current.getSnapshot().command,
         ),
       })
     );

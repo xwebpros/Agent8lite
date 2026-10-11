@@ -66,6 +66,27 @@ ajv.compile(
     await fs.readFile("packages/contracts/internal/native-campaign-draft-event-v1.schema.json", "utf8"),
   ),
 );
+ajv.compile(
+  JSON.parse(
+    await fs.readFile("packages/contracts/internal/native-contact-merged-event-v1.schema.json", "utf8"),
+  ),
+);
+const contactMergeAmendment = JSON.parse(
+  await fs.readFile("packages/contracts/amendments/ADR-049-contact-merge.json", "utf8"),
+);
+if (
+  !contactMergeAmendment.paths ||
+  !contactMergeAmendment.schemas ||
+  !Object.hasOwn(contactMergeAmendment.paths, "/v1/orgs/{orgId}/contact-duplicates") ||
+  !Object.hasOwn(contactMergeAmendment.paths, "/v1/orgs/{orgId}/contacts/{contactId}/merges") ||
+  !Object.hasOwn(contactMergeAmendment.paths, "/v1/orgs/{orgId}/contact-merges/{mergeId}") ||
+  !Object.hasOwn(contactMergeAmendment.schemas, "ContactDuplicate") ||
+  !Object.hasOwn(contactMergeAmendment.schemas, "PageContactDuplicate") ||
+  !Object.hasOwn(contactMergeAmendment.schemas, "ContactMergeRequest") ||
+  !Object.hasOwn(contactMergeAmendment.schemas, "ConsentMergeOutcome") ||
+  !Object.hasOwn(contactMergeAmendment.schemas, "ContactMerge")
+)
+  throw new Error("Unsupported approved contact-merge amendment shape.");
 for (const [name, schema] of Object.entries(api.components.schemas)) {
   ajv.compile({ ...schema, components: api.components });
   if (!schema.type && !schema.oneOf && !schema.anyOf && !schema.allOf)
@@ -101,8 +122,19 @@ for (const file of [
     if (amendedOperation.parameters.some((parameter) => parameter.name === "If-Match"))
       throw new Error("Original stage-transition contract unexpectedly contains If-Match.");
     amendedOperation.parameters.push(stageTransitionAmendment.parameter);
+    // Apply ADR-049 additive amendment: new paths and schemas
+    for (const [path, item] of Object.entries(contactMergeAmendment.paths)) {
+      if (Object.hasOwn(expected.paths, path))
+        throw new Error(`ADR-049 amendment path unexpectedly present in original: ${path}`);
+      expected.paths[path] = item;
+    }
+    for (const [name, schema] of Object.entries(contactMergeAmendment.schemas)) {
+      if (Object.hasOwn(expected.components.schemas, name))
+        throw new Error(`ADR-049 amendment schema unexpectedly present in original: ${name}`);
+      expected.components.schemas[name] = schema;
+    }
     if (JSON.stringify(expected) !== JSON.stringify(api))
-      throw new Error("Unreviewed OpenAPI drift beyond ADR-022 and ADR-043 amendments.");
+      throw new Error("Unreviewed OpenAPI drift beyond ADR-022, ADR-043 and ADR-049 amendments.");
   } else if (!source.equals(copied)) throw new Error(`Unreviewed contract drift: ${file}`);
 }
 if (process.argv.includes("--generated")) {
@@ -123,5 +155,5 @@ if (process.argv.includes("--generated")) {
   if (before !== after) throw new Error("Generated API types drifted. Run pnpm contracts:generate.");
 }
 console.log(
-  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022/043 amendments${process.argv.includes("--generated") ? ", generated types" : ""}.`,
+  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022/043/049 amendments${process.argv.includes("--generated") ? ", generated types" : ""}.`,
 );

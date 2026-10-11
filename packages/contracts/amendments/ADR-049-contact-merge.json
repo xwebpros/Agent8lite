@@ -1,0 +1,195 @@
+{
+  "decision": "ADR-049 additive contact duplicate-review and merge operations. Frozen blueprint contract unchanged; these paths and schemas are additive to the implementation openapi.json only.",
+  "paths": {
+    "/v1/orgs/{orgId}/contact-duplicates": {
+      "get": {
+        "operationId": "listContactDuplicates",
+        "x-permission": "crm.contacts.read",
+        "tags": ["CRM"],
+        "summary": "List Contact duplicate candidates",
+        "description": "Permission: crm.contacts.read. Returns pairs of unarchived Contacts in scope that share a normalized email or phone. Phone-only pairs are listed with phoneOnly:true and are never auto-merged.",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 512 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 50 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful authorized response.",
+            "headers": {
+              "X-Trace-Id": { "schema": { "type": "string", "maxLength": 80 }, "description": "Correlation ID; contains no contact data." }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PageContactDuplicate" } }
+            }
+          },
+          "400": { "description": "Bad request.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "401": { "description": "Unauthorized.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "403": { "description": "Forbidden.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "404": { "description": "Not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "409": { "description": "Conflict.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "412": { "description": "Precondition failed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "422": { "description": "Unprocessable entity.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "429": { "description": "Rate limited.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "503": { "description": "Service unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
+        }
+      }
+    },
+    "/v1/orgs/{orgId}/contacts/{contactId}/merges": {
+      "post": {
+        "operationId": "mergeContact",
+        "x-permission": "crm.contacts.write",
+        "tags": ["CRM"],
+        "summary": "Merge a source Contact into this Contact",
+        "description": "Permission: crm.contacts.write. Merges a source (duplicate) Contact into the survivor (this Contact). All unarchived Leads of the source must be in crm.leads.write scope. Phone-only matches require acknowledgePhoneOnly:true.",
+        "parameters": [
+          { "name": "orgId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "contactId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "maxLength": 100 } },
+          { "name": "X-CSRF-Token", "in": "header", "required": true, "schema": { "type": "string", "maxLength": 4096 } },
+          { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string", "maxLength": 100 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ContactMergeRequest" } }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted durable operation; poll the job or follow resultUrl to getContactMerge.",
+            "headers": {
+              "X-Trace-Id": { "schema": { "type": "string", "maxLength": 80 }, "description": "Correlation ID; contains no contact data." },
+              "ETag": { "schema": { "type": "string", "maxLength": 100 }, "description": "Survivor contact version after merge." }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Job" } }
+            }
+          },
+          "400": { "description": "Bad request.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "401": { "description": "Unauthorized.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "403": { "description": "Forbidden.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "404": { "description": "Not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "409": { "description": "Conflict.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "412": { "description": "Precondition failed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "422": { "description": "Unprocessable entity.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "429": { "description": "Rate limited.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "503": { "description": "Service unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
+        }
+      }
+    },
+    "/v1/orgs/{orgId}/contact-merges/{mergeId}": {
+      "get": {
+        "operationId": "getContactMerge",
+        "x-permission": "crm.contacts.read",
+        "tags": ["CRM"],
+        "summary": "Get the result of a contact merge",
+        "description": "Permission: crm.contacts.read. Returns the merge result including consent combination outcomes. The merged source is readable as archived-with-survivor.",
+        "parameters": [
+          { "name": "orgId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "mergeId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful authorized response.",
+            "headers": {
+              "X-Trace-Id": { "schema": { "type": "string", "maxLength": 80 }, "description": "Correlation ID; contains no contact data." }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ContactMerge" } }
+            }
+          },
+          "400": { "description": "Bad request.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "401": { "description": "Unauthorized.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "403": { "description": "Forbidden.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "404": { "description": "Not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "409": { "description": "Conflict.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "412": { "description": "Precondition failed.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "422": { "description": "Unprocessable entity.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "429": { "description": "Rate limited.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "503": { "description": "Service unavailable.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
+        }
+      }
+    }
+  },
+  "schemas": {
+    "ContactDuplicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contactIds", "contactVersions", "matchKinds", "phoneOnly"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "contactIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "minItems": 2, "maxItems": 2 },
+        "contactVersions": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2 },
+        "matchKinds": { "type": "array", "items": { "type": "string", "enum": ["email", "phone"] }, "minItems": 1 },
+        "phoneOnly": { "type": "boolean" }
+      }
+    },
+    "PageContactDuplicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "nextCursor", "hasMore"],
+      "properties": {
+        "items": { "type": "array", "items": { "$ref": "#/components/schemas/ContactDuplicate" } },
+        "nextCursor": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "hasMore": { "type": "boolean" }
+      }
+    },
+    "ContactMergeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceContactId", "sourceVersion"],
+      "properties": {
+        "sourceContactId": { "type": "string", "format": "uuid" },
+        "sourceVersion": { "type": "integer", "minimum": 1 },
+        "acknowledgePhoneOnly": { "type": "boolean" }
+      }
+    },
+    "ConsentMergeOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channelKind", "channelOrdinal", "purpose", "survivorState", "mergedState", "resultState", "conflict", "reason"],
+      "properties": {
+        "channelKind": { "type": "string", "enum": ["email", "phone"] },
+        "channelOrdinal": { "type": "integer", "minimum": 1 },
+        "purpose": { "type": "string", "enum": ["email_marketing", "sms_marketing", "listing_alert"] },
+        "survivorState": { "type": "string", "enum": ["unknown", "granted", "withdrawn"] },
+        "mergedState": { "type": "string", "enum": ["unknown", "granted", "withdrawn"] },
+        "resultState": { "type": "string", "enum": ["unknown", "granted", "withdrawn"] },
+        "conflict": { "type": "boolean" },
+        "reason": { "type": "string", "enum": ["withdrawal_wins", "later_verified_grant", "same_state", "unknown_kept_unknown"] }
+      }
+    },
+    "ContactMerge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "survivorContactId", "mergedContactId", "survivorVersion", "createdAt", "channelsMoved", "channelsCombined", "leadsMoved", "consentOutcomes"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "survivorContactId": { "type": "string", "format": "uuid" },
+        "mergedContactId": { "type": "string", "format": "uuid" },
+        "survivorVersion": { "type": "integer", "minimum": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "channelsMoved": { "type": "integer", "minimum": 0 },
+        "channelsCombined": { "type": "integer", "minimum": 0 },
+        "leadsMoved": { "type": "integer", "minimum": 0 },
+        "consentOutcomes": { "type": "array", "items": { "$ref": "#/components/schemas/ConsentMergeOutcome" } }
+      }
+    }
+  }
+}

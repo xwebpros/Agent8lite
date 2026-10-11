@@ -38,6 +38,15 @@ import {
   prepareCapturePost,
   type CapturePostCommand,
 } from "./capture-post-command";
+import {
+  contactMergedEvent,
+  contactMergeModel,
+  mergeJson,
+  mergeJobKind,
+  mergeReceipt,
+  prepareMerge,
+  type MergeCommand,
+} from "./contact-merge-command";
 
 type Row = Record<string, any>;
 type Body = Record<string, any>;
@@ -2919,5 +2928,716 @@ export class CrmService {
       notifications: [],
       integrationHealth: [],
     };
+  }
+
+  /** ADR-049: List contact duplicate candidates (shared normalized email or phone, both in scope). */
+  async listContactDuplicates(query: Record<string, unknown>) {
+    const context = detachedReadContext(this.context, "contact");
+    const scope = requirePermission(context, "crm.contacts.read");
+    const rawLimit = query.limit === undefined ? 25 : Number(query.limit);
+    if (!Number.isInteger(rawLimit) || rawLimit < 1 || rawLimit > 50)
+      throw new AccessError(422, "limit_invalid", "Limit must be between 1 and 50.");
+    const rawCursor = query.cursor === undefined ? null : String(query.cursor);
+    if (rawCursor !== null && (rawCursor.length > 512 || !/^[A-Za-z0-9+/=_-]+$/.test(rawCursor)))
+      throw new AccessError(422, "cursor_invalid", "Cursor format is invalid.");
+    // Decode signed cursor as a UUIDv5 lower bound
+    let afterId: string | null = null;
+    if (rawCursor) {
+      try {
+        const decoded = JSON.parse(Buffer.from(rawCursor, "base64url").toString("utf8"));
+        if (typeof decoded?.afterId === "string" && uuid.test(decoded.afterId))
+          afterId = decoded.afterId;
+        else throw new Error("bad cursor");
+      } catch {
+        throw new AccessError(422, "cursor_invalid", "Cursor is invalid or expired.");
+      }
+    }
+
+    await this.contactCommandAuthority(false, "contact");
+    await requireEntitlement(this.client, "crm.contacts.read", { lock: false });
+
+    // Scope predicate for the contact pair: both contacts must be in caller's current scope.
+    const scopeSql = this.scopeSql("contacts", scope, "$1");
+    // Find pairs sharing a normalized email; UNION pairs sharing a normalized phone.
+    // Deterministic pair id: UUIDv5 of the ordered (lower,higher) UUID pair using the nil namespace.
+    // Use a stable pair_id derived from the ordered pair to enable cursor-based pagination.
+    const statement = `
+      WITH contact_scope AS (
+        SELECT r.id, r.row_version FROM app.contact r
+        WHERE r.tenant_id = app.current_tenant() AND r.archived_at IS NULL
+          AND $1::uuid IS NOT NULL AND ${scopeSql}
+      ),
+      email_pairs AS (
+        SELECT
+          gen_random_uuid() AS pair_id,
+          LEAST(a.id, b.id) AS id_a,
+          GREATEST(a.id, b.id) AS id_b,
+          'email'::text AS match_kind
+        FROM app.contact_channel ca
+        JOIN app.contact_channel cb ON ca.normalized_value = cb.normalized_value
+          AND ca.kind = cb.kind AND ca.contact_id <> cb.contact_id
+          AND cb.tenant_id = app.current_tenant() AND cb.kind = 'email'
+        JOIN contact_scope a ON a.id = ca.contact_id
+        JOIN contact_scope b ON b.id = cb.contact_id AND b.id > a.id
+        WHERE ca.tenant_id = app.current_tenant() AND ca.kind = 'email'
+      ),
+      phone_pairs AS (
+        SELECT
+          gen_random_uuid() AS pair_id,
+          LEAST(a.id, b.id) AS id_a,
+          GREATEST(a.id, b.id) AS id_b,
+          'phone'::text AS match_kind
+        FROM app.contact_channel ca
+        JOIN app.contact_channel cb ON ca.normalized_value = cb.normalized_value
+          AND ca.kind = cb.kind AND ca.contact_id <> cb.contact_id
+          AND cb.tenant_id = app.current_tenant() AND cb.kind = 'phone'
+        JOIN contact_scope a ON a.id = ca.contact_id
+        JOIN contact_scope b ON b.id = cb.contact_id AND b.id > a.id
+        WHERE ca.tenant_id = app.current_tenant() AND ca.kind = 'phone'
+      ),
+      all_pairs AS (
+        SELECT id_a, id_b, array_agg(DISTINCT match_kind ORDER BY match_kind) AS match_kinds
+        FROM (SELECT id_a, id_b, match_kind FROM email_pairs
+              UNION ALL
+              SELECT id_a, id_b, match_kind FROM phone_pairs) combined
+        GROUP BY id_a, id_b
+      ),
+      pair_versions AS (
+        SELECT
+          p.id_a, p.id_b, p.match_kinds,
+          va.row_version AS version_a,
+          vb.row_version AS version_b
+        FROM all_pairs p
+        JOIN contact_scope va ON va.id = p.id_a
+        JOIN contact_scope vb ON vb.id = p.id_b
+      )
+      SELECT
+        md5(id_a::text || ':' || id_b::text)::uuid AS pair_id,
+        id_a, id_b, version_a, version_b, match_kinds,
+        (match_kinds = ARRAY['phone'::text]) AS phone_only
+      FROM pair_versions
+      WHERE ($2::uuid IS NULL OR
+        md5(id_a::text || ':' || id_b::text)::uuid > $2::uuid)
+      ORDER BY pair_id
+      LIMIT $3
+    `;
+    const limit = rawLimit + 1; // fetch one extra for hasMore
+    const result = await this.client.query(statement, [
+      context.memberId,
+      afterId,
+      Math.min(limit, 201), // cap at 200 candidates as per ADR-049
+    ]);
+
+    const rows = result.rows.slice(0, rawLimit);
+    const hasMore = result.rows.length > rawLimit;
+    const nextCursor =
+      hasMore && rows.length > 0
+        ? Buffer.from(JSON.stringify({ afterId: rows.at(-1)!.pair_id }), "utf8").toString("base64url")
+        : null;
+
+    return {
+      items: rows.map((row) => ({
+        id: String(row.pair_id),
+        contactIds: [String(row.id_a), String(row.id_b)],
+        contactVersions: [Number(row.version_a), Number(row.version_b)],
+        matchKinds: row.match_kinds as string[],
+        phoneOnly: Boolean(row.phone_only),
+      })),
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  /** ADR-049: Merge source Contact into survivor Contact (recoverable command). */
+  async mergeContact(
+    survivorId: string,
+    body: unknown,
+    key: string | undefined,
+    routeKey: string,
+    ifMatch: string | undefined,
+  ): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "contact");
+    const command = prepareMerge(survivorId, body, key, routeKey, ifMatch, context.organizationId);
+    const current = new CrmService(this.client, context, this.traceId);
+    const readScope = requirePermission(context, "crm.contacts.read");
+    const writeScope = requirePermission(context, "crm.contacts.write");
+
+    // Begin: authority lock + idempotency advisory lock
+    await current.contactCommandAuthority(true);
+    await requireEntitlement(this.client, "crm.contacts.write");
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${context.organizationId}:${context.userId}:${command.routeKey}:${command.key}`,
+    ]);
+
+    // Inspect saved receipt before touching any resource.
+    const savedReceipt = (
+      await this.client.query(
+        `SELECT request_hash, response_body, status_code, response_etag, response_ref,
+          expires_at > clock_timestamp() AS unexpired
+         FROM app.idempotency_record
+         WHERE tenant_id = app.current_tenant() AND actor_ref = $1
+           AND route_key = $2 AND key = $3`,
+        [context.userId, command.routeKey, command.key],
+      )
+    ).rows[0];
+
+    if (savedReceipt) {
+      if (savedReceipt.request_hash !== command.requestHash)
+        throw new AccessError(
+          409,
+          "idempotency_conflict",
+          "This idempotency key was used with a different request.",
+        );
+      if (!savedReceipt.unexpired)
+        throw new AccessError(
+          409,
+          "receipt_expired",
+          "The original command receipt has expired. Review the current record.",
+        );
+      const savedJob = mergeReceipt(savedReceipt.response_body, command);
+      const etagMatch =
+        typeof savedReceipt.response_etag === "string"
+          ? /^"([1-9][0-9]{0,15})"$/.exec(savedReceipt.response_etag)
+          : null;
+      if (
+        savedReceipt.status_code !== 202 ||
+        !etagMatch ||
+        typeof savedReceipt.response_ref !== "string" ||
+        savedReceipt.response_ref.toLowerCase() !== command.survivorId
+      )
+        throw new AccessError(503, "receipt_unavailable", "The saved merge receipt is unavailable.");
+      // Verify the stored job still exists.
+      const storedJob = await this.client.query(
+        `SELECT 1 FROM app.integration_job WHERE tenant_id = app.current_tenant()
+          AND id = $1 AND kind = $2 AND state = 'succeeded' AND result_ref = $3
+          AND requesting_member_id = $4`,
+        [savedJob.id, mergeJobKind, command.survivorId, context.memberId],
+      );
+      if (storedJob.rowCount !== 1)
+        throw new AccessError(503, "receipt_unavailable", "The saved merge receipt is unavailable.");
+      // Replay: recheck authority and authorization
+      await current.contactCommandAuthority(false);
+      await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
+      // Survivor must still be readable (may be archived since merge, but is accessible)
+      const survivorRecheck = await this.client.query(
+        `SELECT id FROM app.contact WHERE tenant_id = app.current_tenant() AND id = $1`,
+        [command.survivorId],
+      );
+      if (!survivorRecheck.rowCount) notFound();
+      return { body: savedJob, status: 202, etag: savedReceipt.response_etag };
+    }
+
+    // Fresh merge: acquire locks in ascending UUID order (Contact → Leads → channels/consent/offices)
+    const [firstId, secondId] =
+      command.survivorId < command.sourceId
+        ? [command.survivorId, command.sourceId]
+        : [command.sourceId, command.survivorId];
+
+    // Contact scope predicate (read AND write)
+    const survivorScopeSql = `(${this.scopeSql("contacts", readScope, "$2")} AND ${this.scopeSql("contacts", writeScope, "$2")})`;
+
+    // Peek survivor (without lock) to get its contact_id before locking
+    const survivorPeek = await this.client.query(
+      `SELECT r.id, r.row_version FROM app.contact r
+       WHERE r.tenant_id = app.current_tenant() AND r.id = $1 AND r.archived_at IS NULL
+         AND $2::uuid IS NOT NULL AND ${survivorScopeSql}`,
+      [command.survivorId, context.memberId],
+    );
+    if (!survivorPeek.rowCount) notFound();
+
+    const sourcePeek = await this.client.query(
+      `SELECT r.id, r.row_version, r.birthday FROM app.contact r
+       WHERE r.tenant_id = app.current_tenant() AND r.id = $1 AND r.archived_at IS NULL
+         AND $2::uuid IS NOT NULL AND ${survivorScopeSql}`,
+      [command.sourceId, context.memberId],
+    );
+    if (!sourcePeek.rowCount) notFound();
+
+    // Lock both contacts FOR UPDATE in ascending UUID order to avoid deadlock
+    await this.client.query(
+      `SELECT id FROM app.contact WHERE tenant_id = app.current_tenant() AND id = $1
+       AND archived_at IS NULL FOR UPDATE`,
+      [firstId],
+    );
+    await this.client.query(
+      `SELECT id FROM app.contact WHERE tenant_id = app.current_tenant() AND id = $1
+       AND archived_at IS NULL FOR UPDATE`,
+      [secondId],
+    );
+
+    // Recheck after lock — version and scope
+    const survivorLocked = (
+      await this.client.query(
+        `SELECT r.id, r.row_version, r.birthday, r.merged_into_contact_id FROM app.contact r
+         WHERE r.tenant_id = app.current_tenant() AND r.id = $1 AND r.archived_at IS NULL
+           AND $2::uuid IS NOT NULL AND ${survivorScopeSql}`,
+        [command.survivorId, context.memberId],
+      )
+    ).rows[0] ?? notFound();
+
+    const sourceLocked = (
+      await this.client.query(
+        `SELECT r.id, r.row_version, r.birthday, r.merged_into_contact_id FROM app.contact r
+         WHERE r.tenant_id = app.current_tenant() AND r.id = $1 AND r.archived_at IS NULL
+           AND $2::uuid IS NOT NULL AND ${survivorScopeSql}`,
+        [command.sourceId, context.memberId],
+      )
+    ).rows[0] ?? notFound();
+
+    // Verify versions from If-Match and body
+    if (Number(survivorLocked.row_version) !== command.survivorExpectedVersion)
+      throw new AccessError(412, "revision_changed", "Survivor contact changed. Reload before retrying.");
+    if (Number(sourceLocked.row_version) !== command.sourceExpectedVersion)
+      throw new AccessError(412, "revision_changed", "Source contact changed. Reload before retrying.");
+
+    // Lock source Leads FOR UPDATE (in ascending id order)
+    const sourceLeadsResult = await this.client.query(
+      `SELECT l.id, l.owner_member_id, l.row_version FROM app.lead l
+       WHERE l.tenant_id = app.current_tenant() AND l.contact_id = $1
+         AND l.archived_at IS NULL ORDER BY l.id FOR UPDATE`,
+      [command.sourceId],
+    );
+    const sourceLeads = sourceLeadsResult.rows;
+
+    // Check all source leads are in crm.leads.write scope
+    const leadsWriteScope = this.taskLeadScope("crm.leads.write");
+    if (sourceLeads.length > 0) {
+      if (!leadsWriteScope)
+        throw new AccessError(
+          409,
+          "merge_requires_lead_scope",
+          "You lack crm.leads.write permission. Assign source leads to contacts you manage first.",
+        );
+      const leadScopeSql = this.memberScope("l.owner_member_id", leadsWriteScope, "$2");
+      const leadScopeCheck = await this.client.query(
+        `SELECT l.id FROM app.lead l
+         WHERE l.tenant_id = app.current_tenant() AND l.contact_id = $1
+           AND l.archived_at IS NULL AND NOT (${leadScopeSql}) AND $2::uuid IS NOT NULL`,
+        [command.sourceId, context.memberId],
+      );
+      if (leadScopeCheck.rowCount)
+        throw new AccessError(
+          409,
+          "merge_requires_lead_scope",
+          "One or more source leads are outside your current crm.leads.write scope.",
+        );
+    }
+
+    // Phone-only match guard: triggered only when contacts share a phone but NO email channel.
+    const sharedEmail = await this.client.query(
+      `SELECT 1 FROM app.contact_channel ca
+       JOIN app.contact_channel cb ON ca.normalized_value = cb.normalized_value
+         AND ca.kind = cb.kind
+       WHERE ca.tenant_id = app.current_tenant() AND ca.contact_id = $1 AND ca.kind = 'email'
+         AND cb.tenant_id = app.current_tenant() AND cb.contact_id = $2 AND cb.kind = 'email'
+       LIMIT 1`,
+      [command.survivorId, command.sourceId],
+    );
+    const sharedPhone = await this.client.query(
+      `SELECT 1 FROM app.contact_channel ca
+       JOIN app.contact_channel cb ON ca.normalized_value = cb.normalized_value
+         AND ca.kind = cb.kind
+       WHERE ca.tenant_id = app.current_tenant() AND ca.contact_id = $1 AND ca.kind = 'phone'
+         AND cb.tenant_id = app.current_tenant() AND cb.contact_id = $2 AND cb.kind = 'phone'
+       LIMIT 1`,
+      [command.survivorId, command.sourceId],
+    );
+    const phoneOnlyMatch = sharedPhone.rowCount > 0 && !sharedEmail.rowCount;
+    if (phoneOnlyMatch && !command.acknowledgePhoneOnly)
+      throw new AccessError(
+        409,
+        "merge_phone_only_unacknowledged",
+        "These contacts share only a phone number. Set acknowledgePhoneOnly:true to confirm.",
+      );
+
+    // Lock team office membership if needed
+    if (readScope === "team" || writeScope === "team") {
+      const memberIds = new Set<string>([context.memberId]);
+      for (const lead of sourceLeads) if (lead.owner_member_id) memberIds.add(lead.owner_member_id);
+      await this.client.query(
+        `SELECT office_id, member_id FROM app.office_member
+         WHERE tenant_id = app.current_tenant() AND member_id = ANY($1::uuid[])
+         ORDER BY office_id, member_id FOR SHARE`,
+        [[...memberIds].sort()],
+      );
+    }
+
+    // Re-check authority and capability after all waits
+    await current.contactCommandAuthority(false);
+    await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
+
+    // Check revision limits
+    const survivorVersion = Number(survivorLocked.row_version);
+    const sourceVersion = Number(sourceLocked.row_version);
+    if (survivorVersion >= Number.MAX_SAFE_INTEGER)
+      throw new AccessError(409, "revision_exhausted", "Survivor contact revision cannot be advanced.");
+
+    const timestamp = await current.commandClock();
+    const mergeId = randomUUID();
+
+    // --- Execute merge effects ---
+
+    // 1. Move/combine channels
+    // Source channels whose (kind, normalized_value) the survivor lacks → re-parent to survivor
+    const sourceChannels = await this.client.query(
+      `SELECT cc.id, cc.kind, cc.normalized_value, cc.is_primary, cc.active
+       FROM app.contact_channel cc
+       WHERE cc.tenant_id = app.current_tenant() AND cc.contact_id = $1 ORDER BY cc.id FOR UPDATE`,
+      [command.sourceId],
+    );
+
+    let channelsMoved = 0;
+    let channelsCombined = 0;
+    const survivorChannelIds: string[] = [];
+    const combinedPairs: Array<{ survivorChannelId: string; sourceChannelId: string; channelKind: "email" | "phone" }> =
+      [];
+
+    for (const srcCh of sourceChannels.rows) {
+      // Check if survivor already has a channel with this (kind, normalized_value)
+      const existingInSurvivor = await this.client.query(
+        `SELECT id FROM app.contact_channel
+         WHERE tenant_id = app.current_tenant() AND contact_id = $1
+           AND kind = $2 AND normalized_value = $3 LIMIT 1`,
+        [command.survivorId, srcCh.kind, srcCh.normalized_value],
+      );
+
+      if (!existingInSurvivor.rowCount) {
+        // Move: re-parent to survivor
+        await this.client.query(
+          `UPDATE app.contact_channel SET contact_id = $1, is_primary = FALSE
+           WHERE tenant_id = app.current_tenant() AND id = $2`,
+          [command.survivorId, srcCh.id],
+        );
+        survivorChannelIds.push(srcCh.id);
+        channelsMoved++;
+      } else {
+        // Combine: mark combined_into on the source channel
+        const survivorChannelId = existingInSurvivor.rows[0].id;
+        await this.client.query(
+          `UPDATE app.contact_channel SET combined_into_channel_id = $1
+           WHERE tenant_id = app.current_tenant() AND id = $2`,
+          [survivorChannelId, srcCh.id],
+        );
+        if (srcCh.kind === "email" || srcCh.kind === "phone") {
+          combinedPairs.push({
+            survivorChannelId,
+            sourceChannelId: srcCh.id,
+            channelKind: srcCh.kind as "email" | "phone",
+          });
+        }
+        channelsCombined++;
+      }
+    }
+
+    // 2. Combine consent for combined channel pairs
+    const consentOutcomes: components["schemas"]["ConsentMergeOutcome"][] = [];
+    // Get survivor channel ordinals (ordered by created_at, then id)
+    const survivorAllChannels = await this.client.query(
+      `SELECT id, kind, ROW_NUMBER() OVER (PARTITION BY kind ORDER BY created_at, id) AS ordinal
+       FROM app.contact_channel
+       WHERE tenant_id = app.current_tenant() AND contact_id = $1 ORDER BY kind, created_at, id`,
+      [command.survivorId],
+    );
+    const channelOrdinalMap = new Map<string, number>();
+    for (const ch of survivorAllChannels.rows) channelOrdinalMap.set(ch.id, Number(ch.ordinal));
+
+    for (const pair of combinedPairs) {
+      const purposes = ["email_marketing", "sms_marketing", "listing_alert"] as const;
+      for (const purpose of purposes) {
+        // Get latest decisive consent event for each side
+        const survivorConsent = await this.client.query(
+          `SELECT cs.state, cs.verified_at FROM app.consent_state cs
+           WHERE cs.tenant_id = app.current_tenant() AND cs.channel_id = $1 AND cs.purpose = $2
+           ORDER BY cs.recorded_at DESC LIMIT 1`,
+          [pair.survivorChannelId, purpose],
+        );
+        const sourceConsent = await this.client.query(
+          `SELECT cs.state, cs.verified_at FROM app.consent_state cs
+           WHERE cs.tenant_id = app.current_tenant() AND cs.channel_id = $1 AND cs.purpose = $2
+           ORDER BY cs.recorded_at DESC LIMIT 1`,
+          [pair.sourceChannelId, purpose],
+        );
+
+        const survivorState: "unknown" | "granted" | "withdrawn" =
+          (survivorConsent.rows[0]?.state as "unknown" | "granted" | "withdrawn") ?? "unknown";
+        const mergedState: "unknown" | "granted" | "withdrawn" =
+          (sourceConsent.rows[0]?.state as "unknown" | "granted" | "withdrawn") ?? "unknown";
+
+        // Apply withdrawal-wins rule
+        let resultState: "unknown" | "granted" | "withdrawn";
+        let reason: "withdrawal_wins" | "later_verified_grant" | "same_state" | "unknown_kept_unknown";
+
+        if (survivorState === "unknown" && mergedState === "unknown") {
+          resultState = "unknown";
+          reason = "unknown_kept_unknown";
+        } else if (survivorState === "granted" && mergedState === "granted") {
+          resultState = "granted";
+          reason = "same_state";
+        } else if (survivorState === "withdrawn" && mergedState === "withdrawn") {
+          resultState = "withdrawn";
+          reason = "same_state";
+        } else if (survivorState === "withdrawn" || mergedState === "withdrawn") {
+          // Check if there is a later verified grant that overrides
+          const lastWithdrawalAt = await this.client.query(
+            `SELECT MAX(cs.recorded_at) AS last_withdrawal FROM app.consent_state cs
+             WHERE cs.tenant_id = app.current_tenant()
+               AND cs.channel_id = ANY($1::uuid[]) AND cs.purpose = $2 AND cs.state = 'withdrawn'`,
+            [[pair.survivorChannelId, pair.sourceChannelId], purpose],
+          );
+          const laterGrant = await this.client.query(
+            `SELECT 1 FROM app.consent_state cs
+             WHERE cs.tenant_id = app.current_tenant()
+               AND cs.channel_id = ANY($1::uuid[]) AND cs.purpose = $2 AND cs.state = 'granted'
+               AND cs.verified_at IS NOT NULL
+               AND cs.recorded_at > $3`,
+            [
+              [pair.survivorChannelId, pair.sourceChannelId],
+              purpose,
+              lastWithdrawalAt.rows[0]?.last_withdrawal,
+            ],
+          );
+          if (laterGrant.rowCount) {
+            resultState = "granted";
+            reason = "later_verified_grant";
+          } else {
+            resultState = "withdrawn";
+            reason = "withdrawal_wins";
+          }
+        } else {
+          // One is unknown, one is granted or withdrawn
+          resultState = survivorState !== "unknown" ? survivorState : mergedState;
+          reason = "same_state";
+        }
+
+        const conflict = survivorState !== mergedState && survivorState !== "unknown" && mergedState !== "unknown";
+
+        // Update survivor channel consent_state if it changed
+        if (resultState !== survivorState) {
+          await this.client.query(
+            `INSERT INTO app.consent_state(tenant_id, channel_id, purpose, state, recorded_at, verified_at)
+             VALUES($1, $2, $3, $4, $5, NULL)
+             ON CONFLICT (tenant_id, channel_id, purpose) DO UPDATE
+               SET state = EXCLUDED.state, recorded_at = EXCLUDED.recorded_at, verified_at = NULL
+             WHERE app.consent_state.state <> EXCLUDED.state`,
+            [context.organizationId, pair.survivorChannelId, purpose, resultState, timestamp],
+          );
+        }
+
+        const ordinal = channelOrdinalMap.get(pair.survivorChannelId) ?? 0;
+        if (ordinal > 0) {
+          consentOutcomes.push({
+            channelKind: pair.channelKind,
+            channelOrdinal: ordinal,
+            purpose,
+            survivorState,
+            mergedState,
+            resultState,
+            conflict,
+            reason,
+          });
+        }
+      }
+    }
+
+    // 3. Re-point source Leads to survivor
+    let leadsMoved = 0;
+    for (const lead of sourceLeads) {
+      await this.client.query(
+        `UPDATE app.lead SET contact_id = $1, updated_at = $2, row_version = row_version + 1
+         WHERE tenant_id = app.current_tenant() AND id = $3 AND row_version = $4`,
+        [command.survivorId, timestamp, lead.id, String(lead.row_version)],
+      );
+      leadsMoved++;
+    }
+
+    // 4. Update survivor: null birthday if source provides a non-null value and survivor's is null
+    const sourceBirthday = sourceLocked.birthday;
+    const survivorBirthday = survivorLocked.birthday;
+    if (sourceBirthday !== null && sourceBirthday !== undefined && (survivorBirthday === null || survivorBirthday === undefined)) {
+      await this.client.query(
+        `UPDATE app.contact SET birthday = $1, updated_at = $2
+         WHERE tenant_id = app.current_tenant() AND id = $3`,
+        [sourceBirthday, timestamp, command.survivorId],
+      );
+    }
+
+    // 5. Advance survivor version
+    const survivorUpdated = await this.client.query(
+      `UPDATE app.contact SET updated_at = $1, row_version = row_version + 1
+       WHERE tenant_id = app.current_tenant() AND id = $2 AND row_version = $3 AND archived_at IS NULL
+       RETURNING row_version`,
+      [timestamp, command.survivorId, String(survivorVersion)],
+    );
+    if (survivorUpdated.rowCount !== 1)
+      throw new AccessError(412, "revision_changed", "Survivor contact changed. Reload before retrying.");
+    const newSurvivorVersion = Number(survivorUpdated.rows[0].row_version);
+
+    // 6. Archive source (advance version, set archived_at and merged_into)
+    const sourceUpdated = await this.client.query(
+      `UPDATE app.contact SET archived_at = $1, updated_at = $1, row_version = row_version + 1,
+         merged_into_contact_id = $2
+       WHERE tenant_id = app.current_tenant() AND id = $3 AND row_version = $4 AND archived_at IS NULL
+       RETURNING row_version`,
+      [timestamp, command.survivorId, command.sourceId, String(sourceVersion)],
+    );
+    if (sourceUpdated.rowCount !== 1)
+      throw new AccessError(412, "revision_changed", "Source contact changed. Reload before retrying.");
+    const newSourceVersion = Number(sourceUpdated.rows[0].row_version);
+
+    // 7. Write contact_merge record
+    await this.client.query(
+      `INSERT INTO app.contact_merge(tenant_id, id, actor_member_id, survivor_contact_id, merged_contact_id,
+         survivor_version, merged_version, channels_moved, channels_combined, leads_moved, consent_outcomes, created_at)
+       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        context.organizationId,
+        mergeId,
+        context.memberId,
+        command.survivorId,
+        command.sourceId,
+        newSurvivorVersion,
+        newSourceVersion,
+        channelsMoved,
+        channelsCombined,
+        leadsMoved,
+        JSON.stringify(consentOutcomes),
+        timestamp,
+      ],
+    );
+
+    // 8. Write internal contact.merged outbox event
+    const mergedEvt = contactMergedEvent(
+      context.organizationId,
+      command.survivorId,
+      newSurvivorVersion,
+      command.sourceId,
+      newSourceVersion,
+      channelsMoved,
+      channelsCombined,
+      leadsMoved,
+      this.traceId,
+      timestamp,
+    );
+    await this.client.query(
+      `INSERT INTO app.outbox(tenant_id, id, event_type, aggregate_id, payload, initiating_actor_id, created_at, updated_at)
+       VALUES($1, $2, 'contact.merged', $3, $4, $5, $6, $6)`,
+      [
+        context.organizationId,
+        mergedEvt.eventId,
+        command.survivorId,
+        mergeJson(mergedEvt),
+        context.userId,
+        timestamp,
+      ],
+    );
+
+    // 9. Write contact.archived outbox event for the source
+    const { contactArchivedEvent: archivedEvt } = await import("./archive-command");
+    const archivedEvent = archivedEvt(
+      context.organizationId,
+      command.sourceId,
+      newSourceVersion,
+      this.traceId,
+      timestamp,
+    );
+    await this.client.query(
+      `INSERT INTO app.outbox(tenant_id, id, event_type, aggregate_id, payload, initiating_actor_id, created_at, updated_at)
+       VALUES($1, $2, 'contact.archived', $3, $4, $5, $6, $6)`,
+      [
+        context.organizationId,
+        archivedEvent.eventId,
+        command.sourceId,
+        mergeJson(archivedEvent),
+        context.userId,
+        timestamp,
+      ],
+    );
+
+    // 10. Audit
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id, actor_ref, action, resource_type, resource_id, trace_id, safe_diff, created_at, updated_at)
+       VALUES($1, $2, 'contact.merged', 'contact', $3, $4, $5, $6, $6)`,
+      [
+        context.organizationId,
+        context.userId,
+        command.survivorId,
+        this.traceId,
+        mergeJson({
+          survivorVersion: newSurvivorVersion,
+          mergedContactId: command.sourceId,
+          mergedVersion: newSourceVersion,
+          channelsMoved,
+          channelsCombined,
+          leadsMoved,
+        }),
+        timestamp,
+      ],
+    );
+
+    // 11. Insert Job and receipt
+    const resultUrl = `/v1/orgs/${context.organizationId}/contact-merges/${mergeId}`;
+    const insertedJob = await this.client.query(
+      `INSERT INTO app.integration_job(tenant_id, kind, state, result_ref, requesting_member_id, created_at, updated_at)
+       VALUES($1, $2, 'succeeded', $3, $4, $5, $5) RETURNING id, created_at`,
+      [context.organizationId, mergeJobKind, command.survivorId, context.memberId, timestamp],
+    );
+    const jobRow = insertedJob.rows[0];
+    const jobBody = {
+      id: jobRow.id,
+      state: "succeeded" as const,
+      kind: mergeJobKind,
+      createdAt: new Date(jobRow.created_at).toISOString(),
+      resultUrl,
+      error: null,
+    };
+    const job = mergeReceipt(jobBody, command);
+    const etag = `"${newSurvivorVersion}"`;
+
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+       (tenant_id, actor_ref, route_key, key, request_hash, response_body, status_code,
+        response_etag, response_ref, expires_at, created_at, updated_at)
+       VALUES($1, $2, $3, $4, $5, $6, 202, $7, $8, clock_timestamp() + interval '1 day', $9, $9)`,
+      [
+        context.organizationId,
+        context.userId,
+        command.routeKey,
+        command.key,
+        command.requestHash,
+        mergeJson(job),
+        etag,
+        command.survivorId,
+        timestamp,
+      ],
+    );
+
+    // Final recheck
+    await current.contactCommandAuthority(false);
+    await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
+
+    return { body: job, status: 202, etag };
+  }
+
+  /** ADR-049: Get the result of a contact merge. */
+  async getContactMerge(mergeId: string): Promise<Mutation> {
+    assertUuid(mergeId);
+    const context = detachedReadContext(this.context, "contact");
+    const readScope = requirePermission(context, "crm.contacts.read");
+    await this.contactCommandAuthority(false, "contact");
+    await requireEntitlement(this.client, "crm.contacts.read", { lock: false });
+
+    // Scope check: survivor must be in caller's read scope; merged contact is readable as archived
+    const result = await this.client.query(
+      `SELECT cm.* FROM app.contact_merge cm
+       JOIN app.contact r ON (r.tenant_id, r.id) = (cm.tenant_id, cm.survivor_contact_id)
+       WHERE cm.tenant_id = app.current_tenant() AND cm.id = $1
+         AND $2::uuid IS NOT NULL
+         AND ${this.scopeSql("contacts", readScope, "$2")}`,
+      [mergeId, context.memberId],
+    );
+    const row = result.rows[0];
+    if (!row) notFound();
+
+    return { body: contactMergeModel(row), status: 200 };
   }
 }

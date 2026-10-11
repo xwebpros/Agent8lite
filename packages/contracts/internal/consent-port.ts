@@ -74,3 +74,34 @@ export interface NativeConsentPort {
   /** Re-resolve source authorization and consent/suppression state immediately before future dispatch. */
   assertCurrent(snapshot: ConsentSnapshot): Promise<ConsentSnapshot>;
 }
+
+/** Outcome of combining a source channel's consent into the survivor during a contact merge. */
+export interface ConsentMergeOutcome {
+  readonly channelKind: "email" | "phone";
+  readonly channelOrdinal: number;
+  readonly purpose: ConsentPurpose;
+  readonly survivorState: "unknown" | "granted" | "withdrawn";
+  readonly mergedState: "unknown" | "granted" | "withdrawn";
+  readonly resultState: "unknown" | "granted" | "withdrawn";
+  readonly conflict: boolean;
+  readonly reason: "withdrawal_wins" | "later_verified_grant" | "same_state" | "unknown_kept_unknown";
+}
+
+export interface MergeConsentResult {
+  readonly outcomes: readonly ConsentMergeOutcome[];
+}
+
+/** Port for combining consent ledgers when merging a source contact channel into a survivor channel.
+ * Called transaction-locally; never delivers messages or writes beyond consent state rows. */
+export interface NativeMergeConsentPort {
+  /** Combine consent for each (survivorChannelId, sourceChannelId) pair in a merge.
+   * Withdrawal wins; a later verified grant on either ledger overrides only if it occurred after
+   * the most recent withdrawal. Updates survivor channel consent_state rows in place within the
+   * open transaction; the source ledger rows are never modified or deleted. */
+  combineForMerge(
+    survivorChannelId: string,
+    sourceChannelId: string,
+    survivorChannelOrdinal: number,
+    channelKind: "email" | "phone",
+  ): Promise<ConsentMergeOutcome[]>;
+}

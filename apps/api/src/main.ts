@@ -766,7 +766,28 @@ class ApiController {
                 : await admin.list(resource as "offices" | "business-profiles", req.query);
             else if (resource === "leads" && id && action === "notes") body = await crm.notes(id);
             else if (resource === "leads" && id && action === "activity") body = await crm.activity(id);
-            else if (!action)
+            // ADR-049: contact duplicate candidates and merge result
+            else if (resource === "contact-duplicates" && !id && !action) {
+              if (
+                req.body !== undefined ||
+                req.headers["transfer-encoding"] !== undefined ||
+                Number(req.headers["content-length"] || 0) > 0
+              )
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              const allowedDupParams = new Set(["limit", "cursor"]);
+              const unknownDupParam = Object.keys(req.query).find((k) => !allowedDupParams.has(k));
+              if (unknownDupParam)
+                throw new AccessError(422, "query_invalid", `Unknown query parameter: ${unknownDupParam}`);
+              body = await crm.listContactDuplicates(req.query);
+            } else if (resource === "contact-merges" && id && !action) {
+              if (
+                req.body !== undefined ||
+                req.headers["transfer-encoding"] !== undefined ||
+                Number(req.headers["content-length"] || 0) > 0
+              )
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              body = await crm.getContactMerge(id);
+            } else if (!action)
               body = id ? await crm.detail(resource, id) : await crm.list(resource, req.query);
             else throw new AccessError(404, "route_unavailable", "Route unavailable.");
             const version = (body as { version?: number }).version;
@@ -831,6 +852,22 @@ class ApiController {
               revision(req),
               req.headers["idempotency-key"] as string | undefined,
               `${req.method} ${req.path}`,
+            );
+          } else if (
+            // ADR-049: merge a source contact into the survivor contact
+            resource === "contacts" &&
+            req.method === "POST" &&
+            id &&
+            action === "merges"
+          ) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.mergeContact(
+              id,
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+              req.headers["if-match"] as string | undefined,
             );
           } else if (
             ["contacts", "leads"].includes(resource) &&
