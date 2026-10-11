@@ -3055,6 +3055,7 @@ export class CrmService {
     key: string | undefined,
     routeKey: string,
     ifMatch: string | undefined,
+    requestBase?: string,
   ): Promise<Mutation> {
     const context = detachedReadContext(this.context, "contact");
     const command = prepareMerge(survivorId, body, key, routeKey, ifMatch, context.organizationId);
@@ -3242,7 +3243,7 @@ export class CrmService {
        LIMIT 1`,
       [command.survivorId, command.sourceId],
     );
-    const phoneOnlyMatch = sharedPhone.rowCount > 0 && !sharedEmail.rowCount;
+    const phoneOnlyMatch = (sharedPhone.rowCount ?? 0) > 0 && !(sharedEmail.rowCount ?? 0);
     if (phoneOnlyMatch && !command.acknowledgePhoneOnly)
       throw new AccessError(
         409,
@@ -3575,7 +3576,8 @@ export class CrmService {
     );
 
     // 11. Insert Job and receipt
-    const resultUrl = `/v1/orgs/${context.organizationId}/contact-merges/${mergeId}`;
+    const resultPath = `/v1/orgs/${context.organizationId}/contact-merges/${mergeId}`;
+    const resultUrl = requestBase ? `${requestBase}${resultPath}` : resultPath;
     const insertedJob = await this.client.query(
       `INSERT INTO app.integration_job(tenant_id, kind, state, result_ref, requesting_member_id, created_at, updated_at)
        VALUES($1, $2, 'succeeded', $3, $4, $5, $5) RETURNING id, created_at`,
@@ -3619,7 +3621,7 @@ export class CrmService {
   }
 
   /** ADR-049: Get the result of a contact merge. */
-  async getContactMerge(mergeId: string): Promise<Mutation> {
+  async getContactMerge(mergeId: string): Promise<unknown> {
     assertUuid(mergeId);
     const context = detachedReadContext(this.context, "contact");
     const readScope = requirePermission(context, "crm.contacts.read");
@@ -3638,6 +3640,6 @@ export class CrmService {
     const row = result.rows[0];
     if (!row) notFound();
 
-    return { body: contactMergeModel(row), status: 200 };
+    return contactMergeModel(row);
   }
 }

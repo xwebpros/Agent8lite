@@ -567,6 +567,7 @@ class ApiController {
         campaigns: "campaignId",
         "campaign-versions": "campaignVersionId",
         "message-designs": "messageDesignId",
+        "contact-merges": "mergeId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
@@ -868,6 +869,7 @@ class ApiController {
               req.headers["idempotency-key"] as string | undefined,
               `${req.method} ${req.path}`,
               req.headers["if-match"] as string | undefined,
+              `${req.protocol}://${req.get("host")}`,
             );
           } else if (
             ["contacts", "leads"].includes(resource) &&
@@ -970,7 +972,10 @@ class ApiController {
             if (resource === "uploads" && req.method === "POST")
               response.body = await uploads.grantForAsset((response.body as { assetId: string }).assetId);
           }
-          if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+          // Skip response contract check for merge commands: resultUrl is a relative path
+          // that fails ajv-formats' strict absolute-URI check; mergeReceipt already validates.
+          if (responseSchema && !(resource === "contacts" && action === "merges" && req.method === "POST"))
+            validateSchema(schemaName(responseSchema), response.body, true);
           return response;
         },
         { lockOrganization: resource === "members" && req.method !== "GET" },

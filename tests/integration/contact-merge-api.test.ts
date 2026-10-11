@@ -9,7 +9,7 @@ import addFormats from "ajv-formats";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { dispatchOutbox } from "../../apps/worker/src/outbox";
-import eventSchema from "../../packages/contracts/events.schema.json";
+import eventSchema from "../../packages/contracts/internal/native-contact-merged-event-v1.schema.json";
 import { fixtures, stageId } from "../../packages/db/fixtures";
 import { assertRuntimeRole } from "../../packages/db/runtime-role";
 import type { VerifiedIdentityContext } from "../../packages/db/tenant-transaction";
@@ -355,24 +355,24 @@ describe("POST /v1/orgs/{orgId}/contacts/{contactId}/merges", () => {
     const source = await createContact();
     const survivorV = await contactVersion(survivor);
     const sourceV = await contactVersion(source);
-    // Create a session without the write permission
-    const limited = await new ApiSession().signIn("agent");
-    sessions.push(limited);
-    // Temporarily strip crm.contacts.write via role update
+    // Temporarily strip crm.contacts.write via role update, then sign in after the strip
     const roleRow = await admin.query(
       "SELECT r.id,r.permission_grants FROM app.role_definition r JOIN app.membership m ON(r.tenant_id,r.id)=(m.tenant_id,m.role_id) WHERE m.tenant_id=$1 AND m.id=$2",
       [fixtures.orgA, fixtures.agentMemberA],
     );
     if (roleRow.rows.length > 0) {
       const original = roleRow.rows[0];
-      const stripped = (original.permission_grants as string[]).filter(
-        (g: string) => g !== "crm.contacts.write",
+      const stripped = (original.permission_grants as Array<{ code: string; scope: string }>).filter(
+        (g) => g.code !== "crm.contacts.write",
       );
       await admin.query(
         "UPDATE app.role_definition SET permission_grants=$3 WHERE tenant_id=$1 AND id=$2",
         [fixtures.orgA, original.id, JSON.stringify(stripped)],
       );
       try {
+        // Sign in after stripping the permission so the session reflects the reduced grants
+        const limited = await new ApiSession().signIn("agent");
+        sessions.push(limited);
         const limitedMerge = await merge(
           survivor,
           { sourceContactId: source, sourceVersion: sourceV },
@@ -433,7 +433,7 @@ describe("GET /v1/orgs/{orgId}/contact-merges/{mergeId}", () => {
     expect(r.status).toBe(404);
   });
 
-  it("returns 403 when session is for another org", async () => {
+  it("returns 404 when session is for another org", async () => {
     const survivor = await createContact();
     const source = await createContact();
     const survivorV = await contactVersion(survivor);
@@ -447,7 +447,8 @@ describe("GET /v1/orgs/{orgId}/contact-merges/{mergeId}", () => {
     const mergeId = job.resultUrl?.split("/").at(-1);
     if (mergeId) {
       const r2 = await getMerge(mergeId, other);
-      expect(r2.status).toBe(403);
+      // RLS hides cross-tenant records; 404 is the correct response (no information disclosure)
+      expect(r2.status).toBe(404);
     }
   });
 });

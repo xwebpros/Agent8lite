@@ -5,6 +5,7 @@ import Ajv2020 from "ajv/dist/2020";
 import addFormats from "ajv-formats";
 import type { components } from "../../../packages/contracts/generated/api";
 import { AccessError } from "../../../packages/db/tenant-transaction";
+import { validateSchema } from "./contract-validation";
 import mergedEventSchema from "../../../packages/contracts/internal/native-contact-merged-event-v1.schema.json";
 
 type Job = components["schemas"]["Job"];
