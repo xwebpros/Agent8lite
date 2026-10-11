@@ -772,6 +772,16 @@ class ApiController {
               req.headers["idempotency-key"] as string | undefined,
               `${req.method} ${req.path}`,
             );
+          } else if (resource === "tasks" && req.method === "PATCH" && id && !action) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.patchTask(
+              id,
+              req.body,
+              revision(req),
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
           } else if (resource === "contacts" && req.method === "PATCH" && id && !action) {
             if (Object.keys(req.query).length)
               throw new AccessError(422, "query_invalid", "This command has no query parameters.");

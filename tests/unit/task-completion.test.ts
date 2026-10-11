@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { TaskCompletionProtocol } from "../../apps/web/components/task-completion";
+import { TaskEditProtocol } from "../../apps/web/components/task-edit";
 import { ApiError, type Schema } from "../../apps/web/lib/api";
 
 const taskId = "dc000000-0000-4000-8000-000000000001";
@@ -19,31 +19,46 @@ function task(): Schema<"Task"> {
     version: 7,
   };
 }
+function completion(source: Schema<"Task">) {
+  return {
+    task: source,
+    body: {
+      assigneeMemberId: source.assigneeMemberId,
+      ...(Object.hasOwn(source, "leadId") ? { leadId: source.leadId } : {}),
+      ...(Object.hasOwn(source, "description") ? { description: source.description ?? "" } : {}),
+      title: source.title,
+      dueAt: source.dueAt,
+      timezone: source.timezone,
+      priority: source.priority,
+      state: "done" as const,
+    },
+  };
+}
 function setup() {
-  const protocol = new TaskCompletionProtocol();
+  const protocol = new TaskEditProtocol();
   protocol.bind("user:org:member:access:csrf");
   const source = task();
-  const command = protocol.begin(source, key);
+  const command = protocol.begin(completion(source), key);
   const receipt = { ...source, state: "done" as const, version: 8 };
   return { protocol, command, source, receipt };
 }
 
 describe("context-bound completion acknowledgement and original-command reconciliation", () => {
   it("does not authorize null or unbound callback context", () => {
-    const protocol = new TaskCompletionProtocol();
+    const protocol = new TaskEditProtocol();
     expect(protocol.isBoundTo(null)).toBe(false);
     expect(protocol.isBoundTo("previous-context")).toBe(false);
     protocol.bind(null);
     expect(protocol.isBoundTo(null)).toBe(false);
   });
   it("recognizes the exact current verified callback binding before a command exists", () => {
-    const protocol = new TaskCompletionProtocol();
+    const protocol = new TaskEditProtocol();
     protocol.bind("user:org:member:access:csrf");
     expect(protocol.isBoundTo("user:org:member:access:csrf")).toBe(true);
     expect(protocol.isBoundTo("user:other-org:member:access:csrf")).toBe(false);
     expect(protocol.isBoundTo("user:org:member:access:rotated-csrf")).toBe(false);
     expect(protocol.isBoundTo(null)).toBe(false);
-    protocol.clear();
+    protocol.bind("user:org:member:access:csrf");
     expect(protocol.isBoundTo("user:org:member:access:csrf")).toBe(true);
   });
   it.each([null, "user:other-org:member:access:csrf", "user:org:member:changed-access:csrf"])(
@@ -64,14 +79,14 @@ describe("context-bound completion acknowledgement and original-command reconcil
     },
   );
   it("does not authorize an empty binding even if a caller supplied one", () => {
-    const protocol = new TaskCompletionProtocol();
+    const protocol = new TaskEditProtocol();
     protocol.bind("");
     expect(protocol.isBoundTo("")).toBe(false);
-    expect(() => protocol.begin(task(), key)).toThrow();
+    expect(() => protocol.begin(completion(task()), key)).toThrow();
   });
   it("captures original body/key/revision before yielding and never retains the mutable source", () => {
     const { protocol, command, source } = setup();
-    expect(command).toEqual({
+    expect(command).toMatchObject({
       context: "user:org:member:access:csrf",
       taskId,
       version: 7,
@@ -98,22 +113,26 @@ describe("context-bound completion acknowledgement and original-command reconcil
     expect(Object.isFrozen(protocol.getSnapshot())).toBe(true);
   });
   it("requires a bound context and an explicit valid key", () => {
-    const protocol = new TaskCompletionProtocol();
-    expect(() => protocol.begin(task(), key)).toThrow();
+    const protocol = new TaskEditProtocol();
+    expect(() => protocol.begin(completion(task()), key)).toThrow();
     protocol.bind("verified-context");
     for (const invalid of ["", "new-key", " PRIVATE ", "dc000000-0000-4000-8000-00000000000x"])
-      expect(() => protocol.begin(task(), invalid)).toThrow();
+      expect(() => protocol.begin(completion(task()), invalid)).toThrow();
     expect(protocol.getSnapshot().command).toBeNull();
   });
-  it.each(["done", "cancelled"] as const)("does not create a new completion for%s source", (state) => {
-    const protocol = new TaskCompletionProtocol();
-    protocol.bind("context");
-    expect(() => protocol.begin({ ...task(), state }, key)).toThrow();
-    expect(protocol.getSnapshot().phase).toBe("idle");
-  });
+  it.each(["done", "cancelled"] as const)(
+    "unified command retains the verified%s source rather than inventing an open snapshot",
+    (state) => {
+      const protocol = new TaskEditProtocol();
+      protocol.bind("context");
+      const command = protocol.begin(completion({ ...task(), state }), key);
+      expect(command.originalTask.state).toBe(state);
+      expect(command.body.state).toBe("done");
+    },
+  );
   it("blocks unrelated completions and retry until an outcome is unknown", () => {
     const { protocol } = setup();
-    expect(() => protocol.begin({ ...task(), id: leadId }, memberId)).toThrow();
+    expect(() => protocol.begin(completion({ ...task(), id: leadId }), memberId)).toThrow();
     expect(() => protocol.retry()).toThrow();
   });
   it.each([
@@ -136,7 +155,10 @@ describe("context-bound completion acknowledgement and original-command reconcil
     (status) => {
       const { protocol, command } = setup();
       expect(protocol.reject(command, new ApiError(status, "rejected"))).toBe("cleared");
-      expect(protocol.getSnapshot()).toEqual({ command: null, phase: "idle" });
+      expect(protocol.getSnapshot()).toEqual({
+        command: null,
+        phase: status === 412 ? "conflict" : "rejected",
+      });
       expect(protocol.isCurrent(command)).toBe(false);
     },
   );
@@ -168,7 +190,7 @@ describe("context-bound completion acknowledgement and original-command reconcil
     const newer = { ...receipt, title: "Newer authoritative title", state: "open" as const, version: 9 };
     const before = JSON.stringify(newer);
     expect(protocol.acknowledge(command, receipt, '"8"')).toBe(true);
-    expect(protocol.getSnapshot()).toEqual({ command: null, phase: "idle" });
+    expect(protocol.getSnapshot()).toEqual({ command: null, phase: "acknowledged" });
     expect(JSON.stringify(newer)).toBe(before);
     expect(protocol.acknowledge(command, receipt, '"8"')).toBe(false);
   });
@@ -205,7 +227,7 @@ describe("context-bound completion acknowledgement and original-command reconcil
     );
   });
   it("retains uppercase original UUID input while accepting the database's canonical lowercase receipt", () => {
-    const protocol = new TaskCompletionProtocol();
+    const protocol = new TaskEditProtocol();
     protocol.bind("context");
     const original = {
       ...task(),
@@ -213,17 +235,17 @@ describe("context-bound completion acknowledgement and original-command reconcil
       assigneeMemberId: memberId.toUpperCase(),
       leadId: leadId.toUpperCase(),
     };
-    const command = protocol.begin(original, key);
+    const command = protocol.begin(completion(original), key);
     expect(command.taskId).toBe(original.id);
     expect(command.body.assigneeMemberId).toBe(original.assigneeMemberId);
     expect(command.body.leadId).toBe(original.leadId);
     expect(protocol.acknowledge(command, { ...task(), state: "done", version: 8 }, '"8"')).toBe(true);
   });
   it("retains exact original title but accepts the server's documented whitespace trimming", () => {
-    const protocol = new TaskCompletionProtocol();
+    const protocol = new TaskEditProtocol();
     protocol.bind("context");
     const original = { ...task(), title: "  Synthetic follow-up  " };
-    const command = protocol.begin(original, key);
+    const command = protocol.begin(completion(original), key);
     expect(command.body.title).toBe(original.title);
     expect(
       protocol.acknowledge(
@@ -234,11 +256,11 @@ describe("context-bound completion acknowledgement and original-command reconcil
     ).toBe(true);
   });
   it("does not infer an unlink when original PATCH input omitted the optional lead field", () => {
-    const protocol = new TaskCompletionProtocol();
+    const protocol = new TaskEditProtocol();
     protocol.bind("context");
     const original = task();
-    delete original.leadId;
-    const command = protocol.begin(original, key);
+    const { leadId: _omitted, ...body } = completion(original).body;
+    const command = protocol.begin({ task: original, body }, key);
     expect(Object.hasOwn(command.body, "leadId")).toBe(false);
     expect(protocol.acknowledge(command, { ...task(), state: "done", version: 8 }, '"8"')).toBe(true);
   });
@@ -271,11 +293,11 @@ describe("context-bound completion acknowledgement and original-command reconcil
     const hook = vi.fn(() => "PRIVATE_SOURCE");
     Object.defineProperty(receipt, "title", { enumerable: true, get: hook });
     expect(protocol.acknowledge(command, receipt, '"8"')).toBe(false);
-    const another = new TaskCompletionProtocol();
+    const another = new TaskEditProtocol();
     another.bind("context");
     const hostile = task();
     Object.defineProperty(hostile, "dueAt", { enumerable: true, get: hook });
-    expect(() => another.begin(hostile, key)).toThrow();
+    expect(() => another.begin({ task: hostile, body: completion(task()).body }, key)).toThrow();
     expect(hook).not.toHaveBeenCalled();
   });
 });

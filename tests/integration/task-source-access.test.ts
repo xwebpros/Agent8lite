@@ -174,9 +174,7 @@ async function direct<T>(
 }
 async function directMark(task: Schemas["Task"], key = randomUUID()) {
   return direct((crm) =>
-    crm.idempotent(key, `PATCH ${endpoint(task.id)}`, write(task), `"${task.version}"`, () =>
-      crm.update("tasks", task.id, write(task), `"${task.version}"`),
-    ),
+    crm.patchTask(task.id, write(task), `"${task.version}"`, key, `PATCH ${endpoint(task.id)}`),
   );
 }
 async function waitForLock() {
