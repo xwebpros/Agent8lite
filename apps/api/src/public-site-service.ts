@@ -40,7 +40,7 @@ async function withPublicSiteTransaction<T>(
        FROM app.membership m
        JOIN app.role_definition r ON (r.tenant_id,r.id)=(m.tenant_id,m.role_id)
        JOIN app.organization o ON o.id=m.tenant_id
-       WHERE m.tenant_id=$1 AND m.status='active' AND r.name='owner'
+       WHERE m.tenant_id=$1 AND m.status='active' AND lower(r.name)='owner'
        ORDER BY m.id LIMIT 1 FOR SHARE OF m,r,o`,
       [organizationId],
     );
