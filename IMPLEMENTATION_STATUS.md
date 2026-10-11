@@ -1,17 +1,18 @@
 # Implementation status — 2026-10-11
 
-## ADR-052 public site service — in progress (Claude Code)
+## ADR-052 public site service — complete (Claude Code)
 
-ADR-052 written at `af59791`. Implementation on `feat/W01-foundation`. Full isolated gate running.
+ADR-052 written at `af59791`. Implementation complete at `2db7813` on `feat/W01-foundation`.
 
-**API (`a988838`, `aae5c10`, `9a4eae6`, `41a0a98`):** `tryPublicSiteRoute` handles all 17 `/v1/public/**` operations. Key fixes applied:
-- Migration `0023-public-site-resolver.sql`: SECURITY DEFINER `app.resolve_published_site(uuid)` bypasses RLS for initial site tenant_id lookup.
-- `withPublicSiteTransaction`: uses `app.resolve_published_site` before setting `app.tenant_id`; membership query uses `lower(r.name)='owner'` to match seed role name 'Owner'.
-- `listSavedSearches`/`listFavorites`: validate site existence even when no visitor cookie present.
+**API (`a988838` → `2db7813`):** `tryPublicSiteRoute` handles all 17 `/v1/public/**` operations. Key fixes:
+- Migration `0023-public-site-resolver.sql` (`7648e1d`): SECURITY DEFINER `app.resolve_published_site(uuid)` (owned by postgres/BYPASSRLS) resolves published site tenant_id before tenant context is set; runtime GRANTs for `form_schema`, `form_entry`, `visitor_identity`, `saved_search`, `favorite` (previously never used by `estate_runtime`).
+- `withPublicSiteTransaction` (`aae5c10`): uses `app.resolve_published_site` before `set_config('app.tenant_id',…)`; membership query uses `lower(r.name)='owner'` to match seed role 'Owner' case-insensitively (`41a0a98`).
+- `listSavedSearches`/`listFavorites`: validate site existence via `app.resolve_published_site` before returning empty list for no-cookie visitors.
+- `submitInquiry` (`2db7813`): `sourceSubmissionId: key` (the idempotency UUID header) rather than `inquiry:${key}` which failed `native-capture-v1.schema.json` `format: "uuid"` validation.
 
-**Tests (`public-site-api.test.ts`):** Integration tests for form CRUD, idempotency, inquiry, analytics (with `consentPolicyVersion`), unsubscribe, visitor login lifecycle, saved-search/favorite guards, and site-not-found guard.
+**Tests (`aae5c10`):** 25 integration tests — form schema GET, form submit idempotency, inquiry, analytics (`consentPolicyVersion`), unsubscribe, visitor login lifecycle, saved-search/favorite guards, site-not-found guard. All **25/25** pass.
 
-**Verification (in progress):** TypeScript and Biome pass. Full isolated gate: running (all prior 150-file gates passed).
+**Verification:** Biome and TypeScript pass. Full `node scripts/test-isolated.mjs` at `2db7813`: **4,607/4,607 across 151 files, zero failures** (1 batch cold-start timeout; immediate rerun passes — same pattern as prior gates).
 
 ---
 
