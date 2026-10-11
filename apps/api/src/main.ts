@@ -53,6 +53,7 @@ import { createStaffPools } from "../../../packages/db/staff-pools";
 import { createStaffHttpAdapter } from "./control/http-adapter";
 import { withStaffTransaction } from "../../../packages/auth/staff-sessions";
 import { CampaignDraftService, campaignEtag } from "./marketing";
+import { BroadcastPreviewService } from "./marketing/broadcast-preview-service";
 import { CampaignWorkflowService, WorkflowCommandError } from "./marketing/workflow-service";
 import { MessageDesignDraftService } from "./marketing/message-design-service";
 import { MessageDesignCommandError } from "./marketing/message-design-errors";
@@ -688,6 +689,25 @@ class ApiController {
                 ifMatch: revision(req),
               });
             } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
+          if (resource === "broadcast-previews") {
+            // ADR-051: point-in-time segment count; confirmBroadcast stays on the unimplemented path.
+            localAccess(req);
+            if (req.method !== "POST" || id || action)
+              throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            const response: ApiCommandResponse = await new BroadcastPreviewService(
+              client,
+              context,
+              traceId,
+            ).preview(
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
             if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
             return response;
           }

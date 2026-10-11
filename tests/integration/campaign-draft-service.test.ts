@@ -526,15 +526,6 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
         } satisfies Schemas["EnrollmentWrite"],
       },
       {
-        path: `/v1/orgs/${ownerHttp.orgId}/broadcast-previews`,
-        method: "POST",
-        body: {
-          messageDesignId: randomUUID(),
-          filter: {},
-          timezone: "UTC",
-        } satisfies Schemas["BroadcastRequest"],
-      },
-      {
         path: `/v1/orgs/${ownerHttp.orgId}/broadcast-confirmations`,
         method: "POST",
         body: {
@@ -560,6 +551,14 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
         problem.code,
       );
     }
+    // ADR-051 deliberately implemented broadcast previews; an empty segment is a validation failure.
+    const previewResponse = await ownerHttp.command(`/v1/orgs/${ownerHttp.orgId}/broadcast-previews`, {
+      messageDesignId: randomUUID(),
+      filter: {},
+      timezone: "UTC",
+    } satisfies Schemas["BroadcastRequest"]);
+    expect(previewResponse.status).toBe(422);
+    expect((await campaignProblem(previewResponse, 422)).code).toBe("broadcast_invalid");
     expect((await campaignHttp(await ownerHttp.request(`${campaignPath()}/${id}`))).body.state).toBe("draft");
     expect(await references(id)).toEqual({ campaigns: 1, receipts: 1, audits: 1, events: 1 });
     for (const table of [
