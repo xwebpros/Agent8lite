@@ -1,5 +1,21 @@
 # Implementation status — 2026-10-11
 
+## M4 broadcast audience (segment) preview — ADR-051 (Claude Code)
+
+Resumed at the owner's request after the paused checkpoint below. ADR-051 (`0ecad35`), API (`e1c536d`) and PWA (`9b5f3cc`) implement the frozen `previewBroadcast` operation and segment authoring. No contract amendment, migration, dependency, outbox event or provider behavior. Nothing is sent or scheduled; `confirmBroadcast` stays on its existing unavailable path (`404`).
+
+- **API:** `POST /v1/orgs/{orgId}/broadcast-previews` (locally guarded synthetic route) returns `201 BroadcastPreview`. Organization-scoped `campaigns.send`, `campaigns.read`, `crm.leads.read`, `crm.contacts.read` plus per-reference grants and current marketing/CRM capability are rechecked before and after the computation. ADR-023 reference and native-design checks report on `BroadcastRequest` field paths. One SQL snapshot counts matched unarchived leads (all predicates; all tags; literal name substring), leads whose contact has an eligible destination for the design's channel (granted with verified synthetic evidence, no withdrawn same destination, no blocking suppression; consent-owned fragment `apps/api/src/consent-eligibility-sql.ts`, kept in step with `readEligibility`), and deduplicated estimated recipients. More than 5,000 matched leads returns `422 broadcast_audience_too_large` instead of a capped count. Dedicated receipt boundary inspected regardless of expiry; one audit (counts and opaque IDs only); no outbox; no writes outside receipt and audit.
+- **PWA:** Campaigns → **Preview broadcast audience** (shown only with `campaigns.send` + `campaigns.read`). Segment fields reuse the ADR-050 predicates and reference catalogue; design choice from the existing native design catalogue; timezone and optional intended send time; counts with expiry and a plain "nothing sent or scheduled" statement; no send/confirm control. Not a protected command: an unknown outcome keeps the request and key for **Retry this preview**. Results hide offline, when hidden and at expiry; `401` clears private segment data.
+- **Retained test changed deliberately:** `campaign-draft-service` listed broadcast previews among unavailable commands; it now asserts an empty segment is `422 broadcast_invalid`.
+
+Verification executed:
+- `broadcast-preview-api` in a fresh isolated database: **11/11** (consent states, withdrawn sibling destination, active vs expired suppression, archived lead, deduplicated recipients, every predicate, the 5,000 bound, organization-scope and grant denial, capability denial, foreign design/tag/owner references, audit privacy and no outbox, replay of historical counts, changed/expired/corrupt receipts, replay re-authorization, HTTP boundary).
+- `campaign-draft-service` **29/29** and `campaign-workflow-service` **38/38**, each in its own fresh database.
+- Broadcast protocol/controller/panel **17/17**; campaign unit group **239/239**; full pure suite **3,259/3,259** across 93 files (run before a final test-only type fix; the broadcast file was rerun 17/17 after it).
+- Root and web TypeScript and full Biome (473 files) pass.
+
+Not run: the full isolated gate, production build and runtime/launch probes (still held while the owner's Codex agent works in the same checkout), and any browser/axe/keyboard/device check. ADR-049 still awaits the owner's approve/revise/defer.
+
 ## Paused checkpoint — ADR-049 proposal, ADR-050 condition authoring, review notes (Claude Code)
 
 The owner asked for a pause to switch agents. Work ran on `feat/W01-foundation` in the shared checkout while a Codex agent committed in parallel (`cc26929`, Redis/CI; owner-confirmed, not reviewed by this session). At session start the development web `3000`, API `3001` and PostgreSQL `55432` were all down; only the local synthetic PostgreSQL cluster was restarted (`node scripts/local-db.mjs`) and it was left running. Owner untracked files were not staged or moved.
