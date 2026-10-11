@@ -260,7 +260,7 @@ export class PublicSiteService {
       const decision = await capture.capture({
         contactId,
         sourceId,
-        sourceSubmissionId: `inquiry:${key}`,
+        sourceSubmissionId: key,
         intent: "unknown",
       });
       // Use any published form schema for the entry record; inquiry does not require a specific form.
