@@ -4154,6 +4154,19 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const overdue = openTasks.filter((task) => new Date(task.dueAt).getTime() < Date.now());
   const greeting = session?.profile.displayName.split(" ")[0] || "there";
   const title = navigation.find((item) => item.id === view)?.name || "Dashboard";
+  // The open Task drawer renders its own recovery panel; avoid a second live region for one command.
+  const taskDrawerPanelShown = Boolean(
+    detailId &&
+      session &&
+      detailKind === "task" &&
+      !detailLoading &&
+      !stagePending &&
+      !taskCreatePending &&
+      !assignmentSnapshot.command &&
+      !contactSnapshot.command &&
+      !archiveSnapshot.command &&
+      (!taskEditSnapshot.command || detailId.toLowerCase() === taskEditSnapshot.command.taskId.toLowerCase()),
+  );
 
   const taskRows = (tasks: Task[]) =>
     tasks.map((task) => (
@@ -4481,30 +4494,31 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <span>You’re offline. Saving is disabled. Drafts stay in this tab’s memory.</span>
             </div>
           )}
-          {(taskPending || ["denied", "forgotten"].includes(taskEditSnapshot.phase)) && (
-            <TaskEditPanel
-              snapshot={taskEditSnapshot}
-              task={null}
-              draft={null}
-              online={online && !changingOrganization}
-              visible={contactVisible}
-              busy={busy}
-              reading={detailLoading}
-              canEdit={Boolean(taskEditBinding)}
-              canRead={Boolean(taskReadBinding)}
-              canRetry={taskEdit.current.canRetry()}
-              onDraftChange={() => {}}
-              onReconcile={() => void reconcileTaskEdit(taskEditSnapshot.command)}
-              onReview={() =>
-                void reviewTaskEdit(
-                  taskEditSnapshot.command?.taskId || (detailKind === "task" ? detailId : null),
-                  taskReadBinding,
-                  renderedDetailEpoch,
-                )
-              }
-              onForget={() => forgetTaskEdit(taskEditSnapshot.command)}
-            />
-          )}
+          {(taskPending || ["denied", "forgotten"].includes(taskEditSnapshot.phase)) &&
+            !taskDrawerPanelShown && (
+              <TaskEditPanel
+                snapshot={taskEditSnapshot}
+                task={null}
+                draft={null}
+                online={online && !changingOrganization}
+                visible={contactVisible}
+                busy={busy}
+                reading={detailLoading}
+                canEdit={Boolean(taskEditBinding)}
+                canRead={Boolean(taskReadBinding)}
+                canRetry={taskEdit.current.canRetry()}
+                onDraftChange={() => {}}
+                onReconcile={() => void reconcileTaskEdit(taskEditSnapshot.command)}
+                onReview={() =>
+                  void reviewTaskEdit(
+                    taskEditSnapshot.command?.taskId || (detailKind === "task" ? detailId : null),
+                    taskReadBinding,
+                    renderedDetailEpoch,
+                  )
+                }
+                onForget={() => forgetTaskEdit(taskEditSnapshot.command)}
+              />
+            )}
           {(waiting || activatedUpdate) && (
             <div className="connection-banner update" role="status">
               <Download size={19} />

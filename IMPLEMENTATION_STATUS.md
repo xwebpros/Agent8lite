@@ -1,5 +1,46 @@
 # Implementation status — 2026-10-11
 
+## M2 recoverable Contact/Lead archive (ADR-047) and Contact update event (ADR-048)
+
+**ADR-047** (design `54dff70`, API `5809fcd`, PWA `009805f`) implements the frozen `archiveContact` and `archiveLead` operations.
+- **Commands:** both are dedicated idempotent commands ahead of the generic path. They accept no query parameters and no content fields. They ignore `If-Match` because the contract declares none. Each returns a synchronous `202 Job` (`crm.contact.archived` / `crm.lead.archived`, `succeeded`) that can be read back through `GET /jobs/{jobId}`, with an `ETag` of the new version.
+- **Contact archive:** requires the intersection of current Contact read and write scope. It refuses with `409 contact_has_active_leads` while any Lead is active, and its `FOR UPDATE` lock serializes against concurrent Lead creation. It emits the frozen catalog's references-only `contact.archived` event and leaves channels and consent unchanged.
+- **Lead archive:** requires current Lead-write scope and an unarchived Contact. It writes a references-only `lead.archived` activity. It does not invent an outbox event, so the Lead-archive event-catalog gap stays documented under INV-03. Linked Tasks become unavailable through the existing ADR-036 source rules and are not mutated.
+- **Replay and receipts:** replay re-authorizes the archived record under current scope and validates the stored Job row. Expired, changed or corrupt receipts never re-execute.
+- **PWA:** the Contact drawer has **Archive contact** and the Lead drawer has **Archive lead**, each confirmed in the page. Both use one recoverable protocol: `record-archive.ts`, its controller and panel, with immutable key and route capture, strict Job and ETag acknowledgement, a 23-hour dual-clock reconciliation window, ADR-042 forgetting, lifecycle guards and private-safe recovery.
+- **Departures from the reference patterns:** the binding accepts either CRM write grant and rechecks the kind-specific grant at begin and send. Any ETag above the captured version acknowledges, because archive is not stale-sensitive.
+- **Open:** focus does not move to the confirmation step automatically. That and all browser, axe, keyboard and device checks are not done.
+
+**ADR-048** (contract `1bac9b6`, producer `357ab3d`) adds the internal closed `packages/contracts/internal/native-contact-updated-event-v1.schema.json`, registered in `check-contracts`.
+- **Event:** each fresh Contact PATCH revision appends one references-only `contact.updated` event in the same transaction, timestamped with database time after all waits. Replay, stale, invalid and rejected commands emit none.
+- **Consumer:** the reference consumer leaves the event unleased.
+- **Retained test change:** the retained Contact edit test's effect-count expectation was updated deliberately to include the new event.
+
+Accessibility fix: when the Task drawer is open, its recovery panel is now the only Task recovery live region, so the global copy no longer duplicates the announcement. The reviewer's navigation-wording note was a false positive. The workspace's capture-phase handler already blocks links with command-specific messages whenever any recoverable command is pending.
+
+Verification:
+- New suites: archive API/RLS **16/16**, covering:
+  - same-key and distinct-key races
+  - an observed lock wait during Lead insert, and during Lead reassignment
+  - own, team and organization scope
+  - expired and corrupt receipts
+  - capability and grant loss
+  - event schema and privacy
+  - Job readback
+  - worker fairness
+- Contact update event **5/5**, and archive client **165**.
+- One test-fixture correction was needed: the frozen `getJob` contract returns `202`, and the first run had expected `200`.
+- Final full `node scripts/test-isolated.mjs`: **4,456/4,456 across 142 files and 40 batches**, with zero failures, skips or failed batches. This includes pure tests at 3,726, Task PATCH 37, and every retained CRM, CMS, MLS and control suite.
+- Root and web TypeScript, contracts with generated types (170/169), full Biome (460 files), and diff checks pass.
+- Production build: 131 runtime files and 17 JSON resources.
+- `verify:runtime`, `verify:runtime:local` (with a new compiled archive-boundary probe against proved-absent records) and `verify:launch:local` pass. There was no external delivery. The development web and API remained available.
+
+Next dependency-ready work, in this order:
+1. **Contact merge / duplicate review (MOD-D-005 and acceptance 5):** needs a reviewed versioned contract first. No frozen merge operation exists, so start with a contract proposal ADR.
+2. **M4 condition and segment authoring:** builds on the now-complete Contact and Lead event family.
+3. **Browser, axe, keyboard and device acceptance:** blocked on authorized browser tooling.
+4. **M1 Redis and isolated CI:** blocked because no Redis, Docker or WSL is available locally.
+
 ## ADR-046 non-browser gate completed — Claude Code takeover
 
 Claude Code took over coordination on 2026-10-11 from Codex checkpoint `3b9b7c8` (verified equal to `origin/feat/W01-foundation`, tracked tree clean). The untracked audit/evidence files (`Agent-Elite-Audit-*`, `Competitive-Real-Estate-SaaS-TDD-*`, `blueprint/reference/*.zip`, `blueprint/report-preview.png`, `collect-public-evidence.ps1`, `evidence/`, `reports/`) were left untouched and unstaged. The running development web `3000`, API `3001` and PostgreSQL `55432` were not stopped; after the work both returned HTTP 200. The API source watcher restarted itself on file edits, as before. Git, Node and pnpm are not on this machine's PATH; the pinned Node 24.19.0 (`%USERPROFILE%\.codex\tmp\trestle-scaffold-runtime\node-v24.19.0-win-x64`), pnpm 11.25.0 and Git from the Codex runtime were used explicitly.
@@ -307,7 +348,7 @@ Working local application: Next.js web/PWA on `http://localhost:3000`, Nest API 
 | Milestone | Status | Remaining acceptance |
 | --- | --- | --- |
 | M1 Foundation | In progress; core contracts/database/identity/provider gates pass locally and isolated CI steps executed | Actual Redis wakeup/recovery and fully green CI; production identity remains a later integration gate |
-| M2 SaaS/CRM | In progress; synthetic provisioning/staff/support, CRM/consent, fresh Contact events and expired local recovery pass combined regression/build | Contact update/archive event completeness, support browser acceptance, downstream bootstrap readiness/recovery, browser billing/invite/tenant-switch and capture→assignment→follow-up acceptance |
+| M2 SaaS/CRM | In progress; synthetic provisioning/staff/support, CRM/consent, Contact created/updated/archived events, recoverable Contact/Lead archive, Task update/completion and non-browser capture→assignment→follow-up acceptance pass | Task mutation and Lead-archive event-catalog gaps (INV-03), Contact merge, support browser acceptance, downstream bootstrap readiness/recovery, browser billing/invite/tenant-switch and all browser/device acceptance |
 | M3 | Native private drafts/editor/recovery and closed metadata history integrated; full CMS pending | Browser acceptance, Puck, publish/rollback, media/domain/forms and responsive public acceptance |
 | M4 | Native design library/API/history, linear wait/task/email/SMS editor, immutable workflow drafts/preview and pure calendar/quiet-hour helpers integrated | Condition authoring, segment/audience/enrollment, quiet-hour scheduling integration, anniversary policy, durable scheduler, current send eligibility, provider reconciliation and full module/browser suites |
 | M5 | Authenticated synthetic property slice integrated; full mock IDX pending | Public sites/visitor/inquiry/organizer/alerts, withdrawal across derived surfaces and browser acceptance |
