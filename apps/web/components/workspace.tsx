@@ -2794,13 +2794,20 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     } catch (error) {
       const outcome = taskEdit.current.reject(command, error);
       if (outcome === "ignored") return;
-      if (error instanceof ApiError && [401, 403].includes(error.status)) clearTaskEditAccess();
+      const draftOwned =
+        taskEditDraftSource.current?.binding === command.context &&
+        taskEditDraftSource.current.task.id.toLowerCase() === command.taskId.toLowerCase();
+      const accessDenied = error instanceof ApiError && [401, 403].includes(error.status);
+      if (accessDenied) clearTaskEditAccess();
       else if (error instanceof ApiError && error.status === 404) clearTaskEditDetail(outcome !== "unknown");
       else if (error instanceof ApiError && error.status === 412 && outcome === "cleared") {
         clearTaskEditDetail(false);
-        currentTaskEditUI.current.dirty = true;
-        setDirty(true);
-      } else if (outcome === "cleared" && taskEditDraftSource.current?.binding === command.context) {
+        // Only a drawer draft is human input worth protecting; list/agenda completion has none.
+        if (draftOwned) {
+          currentTaskEditUI.current.dirty = true;
+          setDirty(true);
+        }
+      } else if (outcome === "cleared" && draftOwned && taskEditDraftSource.current) {
         // A known initial rejection retains the human draft and its original timing baseline.
         currentTaskEditUI.current.dirty = true;
         setDirty(true);
@@ -2824,6 +2831,21 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           ? "Task update unconfirmed. Its original input, key and revision remain in this tab."
           : "The task update was rejected or access is unavailable. Review the current task before another attempt.",
       );
+      // A definitive rejection released the command; reload the lists cleared before sending.
+      if (
+        outcome === "cleared" &&
+        !draftOwned &&
+        !accessDenied &&
+        contactLifetimeActive.current &&
+        taskEdit.current.isBoundTo(command.context) &&
+        currentTaskEditUI.current.binding === command.context &&
+        currentTaskEditUI.current.online &&
+        navigator.onLine &&
+        currentTaskEditUI.current.visible &&
+        document.visibilityState === "visible" &&
+        !currentTaskEditUI.current.changingOrganization
+      )
+        await refresh(active);
     } finally {
       if (activeTaskEdit.current === command && contactLifetimeActive.current) {
         activeTaskEdit.current = null;
@@ -2891,12 +2913,19 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (
       !taskEditAllowed(binding, task.id) ||
       reloadProtected.current ||
-      ui.tasks.find((row) => row === task && row.state === "open") !== task ||
       taskEdit.current.getSnapshot().phase === "forgotten"
     )
       return;
+    // Agenda rows are detached snapshots; the command must start from the loaded current row.
+    const row = ui.tasks.find(
+      (candidate) =>
+        candidate.id.toLowerCase() === task.id.toLowerCase() &&
+        candidate.version === task.version &&
+        candidate.state === "open",
+    );
+    if (!row) return;
     try {
-      const original = requireTaskEditTask(task);
+      const original = requireTaskEditTask(row);
       const body: Schema<"TaskWrite"> = {
         title: original.title,
         assigneeMemberId: original.assigneeMemberId,

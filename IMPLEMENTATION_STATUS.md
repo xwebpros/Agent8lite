@@ -1,6 +1,33 @@
 # Implementation status — 2026-10-11
 
-## Paused checkpoint — M2 recoverable Task update and completion (ADR-046)
+## ADR-046 non-browser gate completed — Claude Code takeover
+
+Claude Code took over coordination on 2026-10-11 from Codex checkpoint `3b9b7c8` (verified equal to `origin/feat/W01-foundation`, tracked tree clean). The untracked audit/evidence files (`Agent-Elite-Audit-*`, `Competitive-Real-Estate-SaaS-TDD-*`, `blueprint/reference/*.zip`, `blueprint/report-preview.png`, `collect-public-evidence.ps1`, `evidence/`, `reports/`) were left untouched and unstaged. The running development web `3000`, API `3001` and PostgreSQL `55432` were not stopped; after the work both returned HTTP 200. The API source watcher restarted itself on file edits, as before. Git, Node and pnpm are not on this machine's PATH; the pinned Node 24.19.0 (`%USERPROFILE%\.codex\tmp\trestle-scaffold-runtime\node-v24.19.0-win-x64`), pnpm 11.25.0 and Git from the Codex runtime were used explicitly.
+
+An independent read-only review of the ADR-046 diff found no material server defect. It found two client defects in the final Workspace integration, both confirmed and fixed in `apps/web/components/workspace.tsx`:
+1. Agenda completion silently did nothing. `completeTask` required object identity with the loaded row, but the agenda passes detached `taskAgendaSnapshot` copies. It now resolves the loaded open row by case-insensitive ID and exact version, and starts the command from that row.
+2. A definitive `412` (or other cleared rejection) on list/agenda completion marked the workspace dirty with no draft and left the lists it had cleared empty. Only an owned drawer draft for the same Task is now kept dirty. Other cleared rejections, except `401`/`403`, reload lists under the existing online/visible/binding guards.
+
+The new `tests/unit/task-edit-workspace.test.ts` (8 cases) extracts and executes the actual Workspace functions from source with stubs. This is not browser evidence. Against the original `3b9b7c8` source, exactly the two defect cases fail and the six control cases pass. With the fix, all 8 pass.
+
+The full isolated run also exposed a fixture time bomb unrelated to ADR-046. Every synthetic listing fixture expires at `2026-10-11T00:01:00Z`, so `native-feature-api` failed 13/14: the API correctly hid the expired listings. `packages/db/seed-native-read-fixtures.ts` now shifts newly inserted fixture ingestion/expiry forward by the non-negative database-clock offset, the same approach as the earlier W07 test helper. Relative age and TTL are kept. `ON CONFLICT DO NOTHING` still never renews an existing row, so the interactive development database's already-expired synthetic listings remain hidden until reseeded rows are added. The suite then passed 14/14 in its own fresh database.
+
+Verification executed in this session, in order:
+- Task client group (protocol, controller, view, retained completion): **218/218** on the original checkpoint source. After the fix, the group plus the new Workspace, agenda and expired-command wiring tests passed **249/249**.
+- Full pure suite (`tests/unit` + `packages`): **3,006/3,006** across 83 files before the fix and **3,014/3,014** across 84 files after it. This supersedes the frontend owner's unrecorded 12-file group.
+- Full `node scripts/test-isolated.mjs`, with one fresh database per integration file: **4,261/4,262** across 135 files and 38 batches. The only failure was the fixture expiry above, rerun separately at 14/14. Retained results: Task PATCH **37/37**, Task create 32, Task source 21, Lead assignment 37, stage transition 29, Add lead 29, Contact edit 28, Contact event 16, Contact search 16, CRM 14, outbox 7, plus all other API/CMS/MLS/control suites.
+- Root and web TypeScript, contracts (170 operations / 169 schemas, original plus ADR-022/043 amendments), full Biome (449 files) and `git diff --check`: all pass.
+- Production build under Node 24.19.0 with `.next-build`: 128 runtime files and 16 JSON resources. `verify:runtime`, `verify:runtime:local` and `verify:launch:local` pass, with no external delivery.
+
+**ADR-046 is complete for every non-browser gate.** Browser, axe, keyboard and physical installed-mode acceptance remain open (as before, no authorized browser automation was available). The INV-03 Task outbox event-catalog gap remains documented.
+
+Lower-confidence review notes are not yet changed:
+- Task PATCH and Task create lock membership before Lead, while Lead PATCH locks Lead before membership. PostgreSQL would abort one side of a three-way wait involving a member-disable update.
+- Nav links fall through to the generic unsaved-draft confirmation for pending commands, so the wording is wrong, but the command survives.
+- The drawer and the global Task panel can both render recovery status, which duplicates `aria-live`.
+- Client timezone validation accepts a digit or sign in the first segment, which the server rejects with a 422 that is handled as a definitive rejection. No real IANA zone falls in that gap.
+
+## Paused checkpoint — M2 recoverable Task update and completion (ADR-046) — historical Codex record
 
 The owner requested a safe pause before the combined ADR-046 release gate. All three assigned agents have stopped; no disposable database, acceptance API or agent-owned validation process remains active. The pre-existing local development application was not stopped. No live provider, outbound delivery, billing action, production deployment, credential use or migration was introduced.
 

@@ -48,6 +48,21 @@ export async function seedNativeReadFixtures(client: PoolClient) {
   );
   // Older candidate-only worktrees keep their baseline. Never invent permissive legacy rights.
   if (schema.rows[0].count !== 3) return;
+  const clock = (
+    await client.query<{ seed_clock: Date }>(
+      "SELECT date_trunc('milliseconds',clock_timestamp()) AS seed_clock",
+    )
+  ).rows[0]?.seed_clock;
+  if (!(clock instanceof Date) || !Number.isFinite(clock.getTime()))
+    throw new Error("Synthetic listing seed clock is unavailable.");
+  // Newly inserted static fixtures keep their relative age and TTL under the actual database clock.
+  // ON CONFLICT DO NOTHING below means an existing row's expiry is never renewed.
+  const clockOffset = Math.max(0, clock.getTime() - MOCK_CLOCK.getTime());
+  const seededTimestamp = (value: string) => {
+    const timestamp = Date.parse(value) + clockOffset;
+    if (!Number.isFinite(timestamp)) throw new Error("Synthetic listing fixture timestamp is invalid.");
+    return new Date(timestamp).toISOString();
+  };
   for (const tenant of [fixtures.orgA, fixtures.orgB]) {
     await client.query(
       "INSERT INTO app.entitlement(tenant_id,feature,state)VALUES($1,'websites','enabled')ON CONFLICT DO NOTHING",
@@ -107,8 +122,8 @@ export async function seedNativeReadFixtures(client: PoolClient) {
           item.addressAllowed,
           item.sourceModifiedAt,
           createHash("sha256").update(JSON.stringify(item)).digest("hex"),
-          item.expiresAt,
-          item.ingestedAt,
+          seededTimestamp(item.expiresAt),
+          seededTimestamp(item.ingestedAt),
         ],
       );
     }
