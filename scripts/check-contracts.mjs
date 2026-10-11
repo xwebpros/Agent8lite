@@ -34,6 +34,11 @@ ajv.compile(
     await fs.readFile("packages/contracts/internal/native-contact-created-event-v1.schema.json", "utf8"),
   ),
 );
+ajv.compile(
+  JSON.parse(
+    await fs.readFile("packages/contracts/internal/native-contact-updated-event-v1.schema.json", "utf8"),
+  ),
+);
 const consent = JSON.parse(
   await fs.readFile("packages/contracts/internal/synthetic-consent-v1.schema.json", "utf8"),
 );
