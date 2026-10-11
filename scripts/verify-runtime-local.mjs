@@ -317,6 +317,34 @@ try {
     invalidEdit.status === 422 && (await invalidEdit.json()).code === "query_invalid",
     "runtime_local_contact_edit_query_failed",
   );
+  // ADR-047 archive boundaries: proved-absent records and undeclared queries never reach a domain write.
+  for (const resource of ["contacts", "leads"]) {
+    const absentPath = `/v1/orgs/${identity.activeOrgId}/${resource}/${randomUUID()}`;
+    const absentRead = await request(synthetic, absentPath, { headers: { cookie } });
+    check(absentRead.status === 404, "runtime_local_archive_probe_record_present");
+    const archiveHeaders = {
+      cookie,
+      origin,
+      "x-csrf-token": csrf,
+      "idempotency-key": randomUUID(),
+    };
+    const absentArchive = await request(synthetic, `${absentPath}/archive`, {
+      method: "POST",
+      headers: archiveHeaders,
+    });
+    check(
+      absentArchive.status === 404 && (await absentArchive.json()).code === "resource_unavailable",
+      "runtime_local_archive_boundary_failed",
+    );
+    const invalidArchive = await request(synthetic, `${absentPath}/archive?force=true`, {
+      method: "POST",
+      headers: { ...archiveHeaders, "idempotency-key": randomUUID() },
+    });
+    check(
+      invalidArchive.status === 422 && (await invalidArchive.json()).code === "query_invalid",
+      "runtime_local_archive_query_failed",
+    );
+  }
   // Missing idempotency keys keep these probes non-mutating even against an older generic route.
   // The dedicated compiled POST boundaries must reject undeclared queries first.
   const createHeaders = {
@@ -502,6 +530,7 @@ if (failure) {
       contactNameSearch: "contract-valid-private-filtered-page-and-query-denial",
       contactEditBoundary: "proved-absent-record-and-query-denied-without-domain-write",
       leadCaptureBoundary: "contact-and-lead-create-query-denied-without-domain-write",
+      archiveBoundary: "contact-and-lead-archive-proved-absent-and-query-denied-without-domain-write",
       forwardedRequestsDenied: 4,
       productionModesDenied: 2,
       cliListenFailure: "closed",

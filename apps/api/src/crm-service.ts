@@ -16,6 +16,14 @@ import { leadAssignedEvent, leadPatchJson, leadPatchReceipt, prepareLeadPatch } 
 import { prepareTaskCreate, taskCreateJson, taskCreateReceipt } from "./task-create-command";
 import { prepareTaskPatch, taskPatchJson, taskPatchReceipt, taskPatchRevision } from "./task-patch-command";
 import {
+  type ArchiveCommand,
+  archiveJson,
+  archiveReceipt,
+  archiveRevision,
+  contactArchivedEvent,
+  prepareArchive,
+} from "./archive-command";
+import {
   prepareStageTransition,
   stageTransitionEvent,
   stageTransitionJson,
@@ -719,6 +727,325 @@ export class CrmService {
     await current.contactCommandAuthority();
     await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
     return { body: contact, status: 200, etag };
+  }
+
+  /** ADR-047: shared receipt inspection for archive commands, before any resource is inspected. */
+  private async archiveSavedReceipt(command: ArchiveCommand) {
+    const saved = (
+      await this.client.query(
+        `SELECT request_hash,response_body,status_code,response_etag,response_ref,
+          expires_at>clock_timestamp() AS unexpired FROM app.idempotency_record
+         WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+        [this.context.userId, command.routeKey, command.key],
+      )
+    ).rows[0];
+    if (!saved) return null;
+    if (saved.request_hash !== command.requestHash)
+      throw new AccessError(409, "idempotency_conflict", "This key was used with a different request.");
+    if (!saved.unexpired)
+      throw new AccessError(
+        409,
+        "receipt_expired",
+        "The original command receipt has expired. Review the current record.",
+      );
+    const job = archiveReceipt(saved.response_body, command);
+    const etag =
+      typeof saved.response_etag === "string" ? /^"([1-9][0-9]{0,15})"$/.exec(saved.response_etag) : null;
+    if (
+      saved.status_code !== 202 ||
+      !etag ||
+      typeof saved.response_ref !== "string" ||
+      saved.response_ref.toLowerCase() !== command.id
+    )
+      throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+    const version = archiveRevision(etag[1]);
+    // The stored Job must still be this requester's succeeded archive of this exact resource.
+    const stored = await this.client.query(
+      `SELECT 1 FROM app.integration_job WHERE tenant_id=app.current_tenant() AND id=$1 AND kind=$2
+        AND state='succeeded' AND result_ref=$3 AND requesting_member_id=$4`,
+      [job.id, command.jobKind, command.id, this.context.memberId],
+    );
+    if (stored.rowCount !== 1)
+      throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+    return { job, etag: `"${version}"`, version };
+  }
+
+  private async archiveBegin(command: ArchiveCommand, permission: "crm.contacts.write" | "crm.leads.write") {
+    const traceId = this.traceId;
+    if (
+      typeof traceId !== "string" ||
+      !traceId ||
+      [...traceId].length > 80 ||
+      /[\uD800-\uDFFF]/u.test(traceId)
+    )
+      throw new AccessError(
+        503,
+        "archive_command_unavailable",
+        "Archive command references are unavailable.",
+      );
+    const subject = command.kind === "contacts" ? "contact" : "lead";
+    await this.contactCommandAuthority(true, subject);
+    await requireEntitlement(this.client, permission);
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${this.context.organizationId}:${this.context.userId}:${command.routeKey}:${command.key}`,
+    ]);
+    await this.contactCommandAuthority(false, subject);
+    await requireEntitlement(this.client, permission, { lock: false });
+  }
+
+  /** ADR-047: recheck authority, capability and receipt lifetime with database time before returning. */
+  private async archiveFinish(command: ArchiveCommand, permission: "crm.contacts.write" | "crm.leads.write") {
+    await this.contactCommandAuthority(false, command.kind === "contacts" ? "contact" : "lead");
+    const result = await this.client.query(
+      `SELECT receipt.expires_at>clock_timestamp() AS unexpired,
+        EXISTS(SELECT 1 FROM app.entitlement capability WHERE capability.tenant_id=app.current_tenant()
+          AND capability.feature='crm' AND capability.state='enabled'
+          AND(capability.effective_until IS NULL OR capability.effective_until>clock_timestamp())) AS crm_enabled
+       FROM app.idempotency_record receipt WHERE receipt.tenant_id=app.current_tenant()
+       AND receipt.actor_ref=$1 AND receipt.route_key=$2 AND receipt.key=$3`,
+      [this.context.userId, command.routeKey, command.key],
+    );
+    if (result.rowCount && !result.rows[0].crm_enabled)
+      throw new AccessError(
+        403,
+        "entitlement_disabled",
+        "This organization does not have an active capability for this operation.",
+      );
+    if (!result.rowCount || !result.rows[0].unexpired)
+      throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+    await requireEntitlement(this.client, permission, { lock: false });
+  }
+
+  private async archiveClock() {
+    const clock = (
+      await this.client.query<{ instant: Date }>(
+        "SELECT date_trunc('milliseconds',clock_timestamp()) AS instant",
+      )
+    ).rows[0]?.instant;
+    if (!(clock instanceof Date) || !Number.isFinite(clock.getTime()))
+      throw new AccessError(503, "archive_command_unavailable", "Archive time is unavailable.");
+    return clock;
+  }
+
+  /** ADR-047: one succeeded Job, audit and one-day receipt in the caller transaction. */
+  private async archiveRecord(command: ArchiveCommand, version: number, timestamp: Date) {
+    const inserted = await this.client.query(
+      `INSERT INTO app.integration_job(tenant_id,kind,state,result_ref,requesting_member_id,created_at,updated_at)
+       VALUES($1,$2,'succeeded',$3,$4,$5,$5) RETURNING id,created_at`,
+      [this.context.organizationId, command.jobKind, command.id, this.context.memberId, timestamp],
+    );
+    const row = inserted.rows[0];
+    const job = archiveReceipt(
+      {
+        id: row?.id,
+        state: "succeeded",
+        kind: command.jobKind,
+        createdAt: new Date(row?.created_at).toISOString(),
+        resultUrl: null,
+        error: null,
+      },
+      command,
+    );
+    const etag = `"${version}"`;
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
+      [
+        this.context.organizationId,
+        this.context.userId,
+        command.kind === "contacts" ? "contact.archived" : "lead.archived",
+        command.kind === "contacts" ? "contact" : "lead",
+        command.id,
+        this.traceId,
+        archiveJson({ resourceVersion: version }),
+        timestamp,
+      ],
+    );
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+       (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,response_ref,expires_at,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,202,$7,$8,clock_timestamp()+interval '1 day',$9,$9)`,
+      [
+        this.context.organizationId,
+        this.context.userId,
+        command.routeKey,
+        command.key,
+        command.requestHash,
+        archiveJson(job),
+        etag,
+        command.id,
+        timestamp,
+      ],
+    );
+    return { job, etag };
+  }
+
+  /** ADR-047 Contact archive: one synchronous succeeded Job; refused while any Lead remains active. */
+  async archiveContact(
+    id: string,
+    body: unknown,
+    key: string | undefined,
+    routeKey: string,
+  ): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "contact");
+    const command = prepareArchive("contacts", id, body, key, routeKey, context.organizationId);
+    const current = new CrmService(this.client, context, this.traceId);
+    const readScope = requirePermission(context, "crm.contacts.read");
+    const writeScope = requirePermission(context, "crm.contacts.write");
+    await current.archiveBegin(command, "crm.contacts.write");
+    const saved = await current.archiveSavedReceipt(command);
+    const scoped = `SELECT r.id,r.row_version FROM app.contact r
+      WHERE r.tenant_id=app.current_tenant() AND r.id=$1 AND $2::uuid IS NOT NULL
+        AND ${current.scopeSql("contacts", readScope, "$2")}
+        AND ${current.scopeSql("contacts", writeScope, "$2")}`;
+    const active = `${scoped} AND r.archived_at IS NULL`;
+    const archived = `${scoped} AND r.archived_at IS NOT NULL`;
+    // Replay authorizes the archived Contact under current scope, ignoring only its archive marker.
+    const source = saved ? archived : active;
+    const parameters = [command.id, context.memberId];
+    // FOR UPDATE also blocks new Lead foreign-key references until this command commits.
+    if (!(await this.client.query(`${source} FOR UPDATE OF r`, parameters)).rowCount) notFound();
+    const leads = await this.client.query(
+      `SELECT id,owner_member_id,archived_at FROM app.lead
+       WHERE tenant_id=app.current_tenant() AND contact_id=$1 ORDER BY id FOR SHARE`,
+      [command.id],
+    );
+    if (readScope === "team" || writeScope === "team") {
+      const members = new Set<string>([context.memberId]);
+      for (const lead of leads.rows) if (lead.owner_member_id) members.add(lead.owner_member_id);
+      await this.client.query(
+        `SELECT office_id,member_id FROM app.office_member WHERE tenant_id=app.current_tenant()
+         AND member_id=ANY($1::uuid[]) ORDER BY office_id,member_id FOR SHARE`,
+        [[...members].sort()],
+      );
+    }
+    // Re-evaluate after waited Contact/Lead/office locks; an earlier WHERE test is not use-time proof.
+    const authorized = (await this.client.query(source, parameters)).rows[0] ?? notFound();
+    await current.contactCommandAuthority();
+    await requireEntitlement(this.client, "crm.contacts.write", { lock: false });
+    const version = archiveRevision(authorized.row_version);
+    if (saved) {
+      if (version < saved.version) notFound();
+      await current.archiveFinish(command, "crm.contacts.write");
+      return { body: saved.job, status: 202, etag: saved.etag };
+    }
+    if (leads.rows.some((lead) => lead.archived_at === null))
+      throw new AccessError(
+        409,
+        "contact_has_active_leads",
+        "Archive this contact's active leads before archiving the contact.",
+      );
+    if (version >= Number.MAX_SAFE_INTEGER)
+      throw new AccessError(409, "revision_exhausted", "Contact revision cannot be advanced.");
+    const timestamp = await current.archiveClock();
+    const updated = await this.client.query(
+      `UPDATE app.contact SET archived_at=$1,updated_at=$1,row_version=row_version+1
+       WHERE tenant_id=app.current_tenant() AND id=$2 AND row_version=$3 AND archived_at IS NULL
+       RETURNING row_version`,
+      [timestamp, command.id, String(version)],
+    );
+    if (updated.rowCount !== 1 || archiveRevision(updated.rows[0]?.row_version) !== version + 1)
+      throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+    const event = contactArchivedEvent(
+      context.organizationId,
+      command.id,
+      version + 1,
+      this.traceId,
+      timestamp,
+    );
+    await this.client.query(
+      `INSERT INTO app.outbox(tenant_id,id,event_type,aggregate_id,payload,initiating_actor_id,created_at,updated_at)
+       VALUES($1,$2,'contact.archived',$3,$4,$5,$6,$6)`,
+      [context.organizationId, event.eventId, command.id, archiveJson(event), context.userId, timestamp],
+    );
+    const { job, etag } = await current.archiveRecord(command, version + 1, timestamp);
+    if (!(await this.client.query(archived, parameters)).rowCount) notFound();
+    await current.archiveFinish(command, "crm.contacts.write");
+    return { body: job, status: 202, etag };
+  }
+
+  /** ADR-047 Lead archive: one synchronous succeeded Job and references-only activity; no invented event. */
+  async archiveLead(id: string, body: unknown, key: string | undefined, routeKey: string): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "lead");
+    const command = prepareArchive("leads", id, body, key, routeKey, context.organizationId);
+    const current = new CrmService(this.client, context, this.traceId);
+    const scope = requirePermission(context, "crm.leads.write");
+    await current.archiveBegin(command, "crm.leads.write");
+    const saved = await current.archiveSavedReceipt(command);
+    const scoped = `SELECT r.id,r.row_version,r.contact_id,r.owner_member_id FROM app.lead r
+      WHERE r.tenant_id=app.current_tenant() AND r.id=$1 AND $2::uuid IS NOT NULL
+        AND ${current.scopeSql("leads", scope, "$2")}`;
+    const archived = `${scoped} AND r.archived_at IS NOT NULL`;
+    // Fresh archive needs an unarchived Lead and Contact; replay ignores only archive markers.
+    const source = saved
+      ? archived
+      : `${scoped} AND r.archived_at IS NULL AND EXISTS(SELECT 1 FROM app.contact c
+          WHERE(c.tenant_id,c.id)=(r.tenant_id,r.contact_id) AND c.archived_at IS NULL)`;
+    const parameters = [command.id, context.memberId];
+    const peek = (await this.client.query(source, parameters)).rows[0] ?? notFound();
+    if (typeof peek.contact_id !== "string" || !uuid.test(peek.contact_id))
+      throw new AccessError(503, "resource_unavailable", "Lead source references are unavailable.");
+    const contactId = peek.contact_id.toLowerCase();
+    // Contact before Lead matches the established Contact-edit, stage and assignment lock order.
+    if (
+      !(
+        await this.client.query(
+          `SELECT id FROM app.contact WHERE tenant_id=app.current_tenant() AND id=$1
+           ${saved ? "" : "AND archived_at IS NULL"} FOR SHARE`,
+          [contactId],
+        )
+      ).rowCount
+    )
+      notFound();
+    const bound = `${source} AND r.contact_id=$3`;
+    const boundParameters = [...parameters, contactId];
+    const locked =
+      (await this.client.query(`${bound} FOR UPDATE OF r`, boundParameters)).rows[0] ?? notFound();
+    if (scope === "team") {
+      const members = new Set<string>([context.memberId]);
+      if (locked.owner_member_id) members.add(locked.owner_member_id);
+      await this.client.query(
+        `SELECT office_id,member_id FROM app.office_member WHERE tenant_id=app.current_tenant()
+         AND member_id=ANY($1::uuid[]) ORDER BY office_id,member_id FOR SHARE`,
+        [[...members].sort()],
+      );
+    }
+    // Re-evaluate after waited Contact/Lead/office locks; an earlier WHERE test is not use-time proof.
+    const authorized = (await this.client.query(bound, boundParameters)).rows[0] ?? notFound();
+    await current.contactCommandAuthority(false, "lead");
+    await requireEntitlement(this.client, "crm.leads.write", { lock: false });
+    const version = archiveRevision(authorized.row_version);
+    if (saved) {
+      if (version < saved.version) notFound();
+      await current.archiveFinish(command, "crm.leads.write");
+      return { body: saved.job, status: 202, etag: saved.etag };
+    }
+    if (version >= Number.MAX_SAFE_INTEGER)
+      throw new AccessError(409, "revision_exhausted", "Lead revision cannot be advanced.");
+    const timestamp = await current.archiveClock();
+    const updated = await this.client.query(
+      `UPDATE app.lead SET archived_at=$1,updated_at=$1,row_version=row_version+1
+       WHERE tenant_id=app.current_tenant() AND id=$2 AND row_version=$3 AND archived_at IS NULL
+       RETURNING row_version`,
+      [timestamp, command.id, String(version)],
+    );
+    if (updated.rowCount !== 1 || archiveRevision(updated.rows[0]?.row_version) !== version + 1)
+      throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+    await this.client.query(
+      `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data)
+       VALUES($1,$2,'lead.archived',$3,$4,$5)`,
+      [
+        context.organizationId,
+        command.id,
+        randomUUID(),
+        timestamp,
+        archiveJson({ resourceId: command.id, resourceVersion: version + 1 }),
+      ],
+    );
+    const { job, etag } = await current.archiveRecord(command, version + 1, timestamp);
+    if (!(await this.client.query(`${archived} AND r.contact_id=$3`, boundParameters)).rowCount) notFound();
+    await current.archiveFinish(command, "crm.leads.write");
+    return { body: job, status: 202, etag };
   }
 
   private async beginCapturePost(command: CapturePostCommand) {

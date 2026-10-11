@@ -812,6 +812,21 @@ class ApiController {
               req.headers["idempotency-key"] as string | undefined,
               `${req.method} ${req.path}`,
             );
+          } else if (
+            ["contacts", "leads"].includes(resource) &&
+            req.method === "POST" &&
+            id &&
+            action === "archive"
+          ) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            // ADR-047: the frozen operations declare no If-Match, so a supplied revision is ignored.
+            response = await crm[resource === "contacts" ? "archiveContact" : "archiveLead"](
+              id,
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
           } else {
             response = await crm.idempotent(
               req.headers["idempotency-key"] as string,
