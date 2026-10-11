@@ -1,6 +1,8 @@
 # ADR-049 — Contact duplicate review and merge (contract proposal)
 
-Proposed by the coordinating session on 2026-10-11. **Status: proposed; the additive public operations below wait for owner review.** No code, migration, generated type or OpenAPI change may depend on this ADR until the owner accepts it; the acceptance date and any changes will be recorded here first. This slice targets MOD-D-005, MOD-D acceptance 5, MOD-D-001 (unknown values remain unknown), INV-01/02/03 and MOD-K-006/007.
+Proposed by the coordinating session on 2026-10-11. **Status: accepted by the project owner on 2026-10-11 for implementation.** The acceptance authorizes the additive implementation contract, migration, consent service port, API command boundary, integration tests, and PWA review flow described below. The frozen blueprint contract remains unchanged. This slice targets MOD-D-005, MOD-D acceptance 5, MOD-D-001 (unknown values remain unknown), INV-01/02/03 and MOD-K-006/007.
+
+The owner delegated technical decision authority to the coordinating Claude Code/Codex session, including approval of this proposal. The proposal was reviewed against `docs/tdd/technical-design.json`, the contact/consent migrations, the existing recoverable-command patterns, and the repository invariants before acceptance. Implementation must still pass the acceptance suite and does not authorize live providers, outbound delivery, billing, or production release.
 
 ## Problem
 
