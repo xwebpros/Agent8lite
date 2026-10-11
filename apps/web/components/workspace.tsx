@@ -136,8 +136,12 @@ import RecordArchivePanel from "./record-archive-panel";
 import {
   ContactMergeProtocol,
   contactMergeContext,
+  contactMergeEligible,
+  type ContactMergeCommand,
 } from "./contact-merge";
-import { ContactMergeController } from "./contact-merge-controller";
+import { ContactMergeController, type ContactMergeOutcome } from "./contact-merge-controller";
+import { ContactMergePanel } from "./contact-merge-panel";
+import { ContactDuplicateList } from "./contact-duplicate-list";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -363,6 +367,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const contactMergeController = useRef(new ContactMergeController(contactMerge.current));
   const [, updateContactMerge] = useState(0);
   const [contactMergeDenied, setContactMergeDenied] = useState(false);
+  const [selectedSourceContact, setSelectedSourceContact] = useState<{ contact: Contact; phoneOnly: boolean } | null>(null);
   const archiveBinding = archiveDenied
     ? null
     : recordArchiveContext({ session, memberId: member, csrf, accessRevision });
@@ -659,6 +664,38 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     lead: selectedLead,
     csrf,
   };
+  const currentContactMergeUI = useRef({
+    binding: contactMergeBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    busy,
+    loading,
+    detailLoading,
+    dirty,
+    noteDirty,
+    tagDirty,
+    modal,
+    kind: detailKind,
+    resourceId: detailId,
+    csrf,
+  });
+  currentContactMergeUI.current = {
+    binding: contactMergeBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    busy,
+    loading,
+    detailLoading,
+    dirty,
+    noteDirty,
+    tagDirty,
+    modal,
+    kind: detailKind,
+    resourceId: detailId,
+    csrf,
+  };
   const [invitationAcceptance, setInvitationAcceptance] = useState<{
     userId: string;
     job: Schema<"Job">;
@@ -680,7 +717,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     Boolean(stageTransition.current.getSnapshot().command) ||
     Boolean(leadAssignment.current.getSnapshot().command) ||
     Boolean(taskCreate.current.getSnapshot().command) ||
-    Boolean(recordArchive.current.getSnapshot().command);
+    Boolean(recordArchive.current.getSnapshot().command) ||
+    Boolean(contactMerge.current.getSnapshot().command);
   const protectCms = useCallback((value: boolean) => {
     cmsProtected.current = value;
     if (value) reloadProtected.current = true;
@@ -3738,6 +3776,242 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         : "/pipeline?lead=" + encodeURIComponent(expected.resourceId),
     );
   }
+  function mergeAllowed(binding: string | null, survivorId: string | null, ownCommand?: ContactMergeCommand) {
+    if (!binding || !survivorId) return false;
+    const ui = currentContactMergeUI.current;
+    const retained = contactMerge.current.getSnapshot().command;
+    return (
+      contactMerge.current.isBoundTo(binding) &&
+      contactMerge.current.getSnapshot().phase !== "forgotten" &&
+      contactMergeEligible(
+        binding,
+        {
+          binding: currentContactMergeBinding.current,
+          active: contactLifetimeActive.current,
+          online: ui.online && navigator.onLine,
+          visible: ui.visible && document.visibilityState === "visible",
+          changingOrganization: ui.changingOrganization,
+          busy: ui.busy && !(ownCommand && contactMergeController.current.isActive(ownCommand)),
+          loading: ui.loading,
+          detailLoading: ui.detailLoading,
+          dirty: ui.dirty,
+          kind: ui.kind,
+          resourceId: ui.resourceId,
+          otherProtected: Boolean(
+            ui.modal ||
+              ui.noteDirty ||
+              ui.tagDirty ||
+              cmsProtected.current ||
+              campaignProtected.current ||
+              notificationProtected.current ||
+              invitationTransfer ||
+              taskEdit.current.getSnapshot().command ||
+              contactEdit.current.getSnapshot().command ||
+              leadCapture.current.getSnapshot().sequence ||
+              stageTransition.current.getSnapshot().command ||
+              leadAssignment.current.getSnapshot().command ||
+              currentAssignmentDraft.current ||
+              taskCreate.current.getSnapshot().command ||
+              recordArchive.current.getSnapshot().command ||
+              (retained && retained !== ownCommand),
+          ),
+        },
+        survivorId,
+      )
+    );
+  }
+  function mergeRefreshAllowed(context: string) {
+    const ui = currentContactMergeUI.current;
+    return (
+      contactLifetimeActive.current &&
+      contactMerge.current.isBoundTo(context) &&
+      currentContactMergeBinding.current === context &&
+      ui.online &&
+      navigator.onLine &&
+      ui.visible &&
+      document.visibilityState === "visible" &&
+      !ui.changingOrganization
+    );
+  }
+  async function runContactMerge(command: ContactMergeCommand, mode: "send" | "reconcile") {
+    const active = retainedSession.current;
+    let dispatched = false;
+    const hooks = {
+      allowed: () =>
+        Boolean(
+          active?.activeOrgId &&
+            active.activeOrgId.toLowerCase() === command.organizationId.toLowerCase() &&
+            retainedSession.current === active,
+        ) && mergeAllowed(command.context, command.survivorId, command),
+      dispatched: () => {
+        dispatched = true;
+        reloadProtected.current = true;
+        currentContactMergeUI.current.busy = true;
+        setBusy(true);
+        setDetailError("");
+        setError("");
+        setNotice("");
+        updateContactMerge((value) => value + 1);
+      },
+    };
+    let outcome: ContactMergeOutcome;
+    try {
+      outcome =
+        mode === "send"
+          ? await contactMergeController.current.send(command, currentContactMergeUI.current.csrf, hooks)
+          : await contactMergeController.current.reconcile(command, currentContactMergeUI.current.csrf, hooks);
+    } catch {
+      if (contactLifetimeActive.current && contactMerge.current.isCurrent(command)) {
+        setDetailError("The original merge cannot be resent. Its outcome remains unconfirmed.");
+        updateContactMerge((value) => value + 1);
+      }
+      return;
+    }
+    try {
+      if (outcome.type === "ignored" || !contactLifetimeActive.current) return;
+      if (outcome.type === "denied") {
+        contactMerge.current.bind(null);
+        currentContactMergeBinding.current = null;
+        setContactMergeDenied(true);
+        updateContactMerge((value) => value + 1);
+        return;
+      }
+      if (outcome.type === "unknown") return;
+      if (outcome.type === "acknowledged") {
+        setSelectedSourceContact(null);
+        setDirty(false);
+        setDetailError("");
+        ++refreshEpoch.current;
+        setData(emptyData);
+        setRefreshed(null);
+        setNotice("Merge acknowledged. Contact lists are read separately.");
+      } else if (outcome.phase === "unavailable") {
+        setSelectedSourceContact(null);
+      }
+      if (dispatched && active && mergeRefreshAllowed(command.context)) await refresh(active);
+    } finally {
+      if (contactLifetimeActive.current) {
+        if (dispatched && !contactMergeController.current.isActive()) {
+          currentContactMergeUI.current.busy = false;
+          setBusy(false);
+        }
+        updateContactMerge((value) => value + 1);
+      }
+    }
+  }
+  async function startContactMerge(source: Contact, phoneOnly: boolean) {
+    if (
+      !selectedContact ||
+      !contactMergeBinding ||
+      !mergeAllowed(contactMergeBinding, selectedContact.id) ||
+      contactMerge.current.getSnapshot().command ||
+      contactMergeController.current.isActive() ||
+      !selectedContactBinding.current ||
+      selectedContactBinding.current !== currentContactBinding.current
+    )
+      return;
+    setSelectedSourceContact({ contact: source, phoneOnly });
+    if (phoneOnly) {
+      try {
+        contactMerge.current.showPhoneOnlyWarning({
+          survivorId: selectedContact.id,
+          sourceId: source.id,
+          survivorVersion: selectedContact.version,
+          sourceVersion: source.version,
+        });
+      } catch {
+        // ignore — panel will handle idle state
+      }
+    }
+    updateContactMerge((value) => value + 1);
+  }
+  async function confirmContactMerge(acknowledgePhoneOnly = false) {
+    if (
+      !selectedContact ||
+      !selectedSourceContact ||
+      !contactMergeBinding ||
+      contactMerge.current.getSnapshot().command ||
+      contactMergeController.current.isActive()
+    )
+      return;
+    let command: ContactMergeCommand;
+    try {
+      command = contactMergeController.current.begin(
+        {
+          survivorId: selectedContact.id,
+          sourceId: selectedSourceContact.contact.id,
+          survivorVersion: selectedContact.version,
+          sourceVersion: selectedSourceContact.contact.version,
+          acknowledgePhoneOnly,
+        },
+        crypto.randomUUID(),
+      );
+    } catch {
+      if (contactMerge.current.isBoundTo(contactMergeBinding))
+        setDetailError(
+          "Merge target or its version is unavailable. Read the current record first.",
+        );
+      return;
+    }
+    reloadProtected.current = true;
+    await runContactMerge(command, "send");
+  }
+  async function reconcileContactMerge(expected: ContactMergeCommand | null) {
+    if (
+      !expected ||
+      !contactMerge.current.isCurrent(expected) ||
+      contactMerge.current.getSnapshot().command !== expected ||
+      contactMergeController.current.isActive()
+    )
+      return;
+    await runContactMerge(expected, "reconcile");
+  }
+  function forgetContactMerge(expected: ContactMergeCommand | null) {
+    const ui = currentContactMergeUI.current;
+    if (
+      !expected ||
+      !contactLifetimeActive.current ||
+      !contactMerge.current.isBoundTo(ui.binding) ||
+      currentContactMergeBinding.current !== expected.context ||
+      !ui.visible ||
+      document.visibilityState !== "visible" ||
+      ui.changingOrganization ||
+      ui.busy ||
+      ui.loading ||
+      ui.detailLoading ||
+      !contactMergeController.current.forget(expected)
+    )
+      return;
+    setSelectedSourceContact(null);
+    ++refreshEpoch.current;
+    setData(emptyData);
+    setRefreshed(null);
+    setDirty(false);
+    setDetailError("");
+    setError("");
+    setNotice("");
+    releaseForgottenRecoveryProtection();
+    updateContactMerge((value) => value + 1);
+  }
+  function returnToMerge(expected: ContactMergeCommand | null) {
+    const ui = currentContactMergeUI.current;
+    if (
+      !expected ||
+      !contactLifetimeActive.current ||
+      !contactMerge.current.isCurrent(expected) ||
+      currentContactMergeBinding.current !== expected.context ||
+      !ui.online ||
+      !navigator.onLine ||
+      !ui.visible ||
+      document.visibilityState !== "visible" ||
+      ui.changingOrganization ||
+      ui.busy ||
+      ui.loading ||
+      ui.detailLoading
+    )
+      return;
+    router.push("/contacts?contact=" + encodeURIComponent(expected.survivorId));
+  }
   function stageAllowed(binding: string | null, ownCommand?: StageTransitionCommand) {
     const ui = currentStageUI.current;
     return (
@@ -4688,7 +4962,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             leadSnapshot.phase === "forgotten" ||
             taskCreateSnapshot.phase === "forgotten" ||
             assignmentSnapshot.phase === "forgotten" ||
-            archiveSnapshot.phase === "forgotten") && (
+            archiveSnapshot.phase === "forgotten" ||
+            contactMergeSnapshot.phase === "forgotten") && (
             <div className="connection-banner" role="status">
               <ShieldCheck size={18} aria-hidden="true" />
               <span>{localRecoveryForgottenWarning}</span>
@@ -4731,6 +5006,27 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   onClick={() => returnToAssignment(assignmentSnapshot.command)}
                 >
                   Return to assignment recovery
+                </Button>
+              </div>
+            )}
+          {contactMergePending &&
+            (detailKind !== "contact" ||
+              detailId?.toLowerCase() !== contactMergeSnapshot.command?.survivorId.toLowerCase()) && (
+              <div className="connection-banner" role="status">
+                <ShieldCheck size={18} aria-hidden="true" />
+                <span>
+                  A contact merge remains unconfirmed. Return to the survivor contact before another
+                  command or leaving this workspace.
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={
+                    !online || !contactVisible || busy || loading || detailLoading || changingOrganization
+                  }
+                  onClick={() => returnToMerge(contactMergeSnapshot.command)}
+                >
+                  Return to merge recovery
                 </Button>
               </div>
             )}
@@ -6244,6 +6540,79 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       }}
                     />
                   )}
+                {detailKind === "contact" && selectedContact && session?.activeOrgId && (
+                  <>
+                    <ContactDuplicateList
+                      key={`${session.activeOrgId}:${selectedContact.id}`}
+                      organizationId={session.activeOrgId}
+                      survivorContact={selectedContact}
+                      canMerge={
+                        Boolean(contactMergeBinding) &&
+                        !contactMergeDenied &&
+                        contactMergeSnapshot.phase !== "forgotten" &&
+                        !contactMergeSnapshot.command &&
+                        !contactMergeController.current.isActive() &&
+                        Boolean(
+                          selectedContactBinding.current &&
+                            selectedContactBinding.current === currentContactBinding.current,
+                        )
+                      }
+                      online={online && !changingOrganization}
+                      onSelectSource={(source, phoneOnly) =>
+                        void startContactMerge(source, phoneOnly)
+                      }
+                    />
+                    {(selectedSourceContact !== null ||
+                      (contactMergeSnapshot.phase !== "idle" &&
+                        contactMergeSnapshot.phase !== "forgotten")) && (
+                      <ContactMergePanel
+                        key={`${contactMergeBinding || "unavailable"}:${selectedContact.id}`}
+                        survivorId={selectedContact.id}
+                        sourceId={
+                          selectedSourceContact?.contact.id ??
+                          contactMergeSnapshot.subject?.sourceId ??
+                          ""
+                        }
+                        survivorName={selectedContact.displayName}
+                        sourceName={
+                          selectedSourceContact?.contact.displayName ?? "the source contact"
+                        }
+                        snapshot={contactMergeSnapshot}
+                        available={
+                          !detailLoading &&
+                          Boolean(
+                            selectedContact &&
+                              selectedContact.id.toLowerCase() === detailId.toLowerCase() &&
+                              selectedContactBinding.current &&
+                              selectedContactBinding.current === currentContactBinding.current &&
+                              !contactPending,
+                          )
+                        }
+                        online={online && !changingOrganization}
+                        visible={
+                          contactVisible &&
+                          (typeof document === "undefined" ||
+                            document.visibilityState === "visible")
+                        }
+                        busy={busy || loading || detailLoading}
+                        canMerge={mergeAllowed(contactMergeBinding, selectedContact.id)}
+                        canRetry={contactMerge.current.canRetry()}
+                        phoneOnlyMatch={selectedSourceContact?.phoneOnly ?? false}
+                        onRequest={() => {}}
+                        onCancel={() => {}}
+                        onConfirm={() => void confirmContactMerge(false)}
+                        onConfirmPhoneOnly={() => void confirmContactMerge(true)}
+                        onDismissPhoneOnly={() => {
+                          contactMerge.current.dismissPhoneOnlyWarning();
+                          setSelectedSourceContact(null);
+                          updateContactMerge((v) => v + 1);
+                        }}
+                        onReconcile={() => void reconcileContactMerge(contactMergeSnapshot.command)}
+                        onForget={() => forgetContactMerge(contactMergeSnapshot.command)}
+                      />
+                    )}
+                  </>
+                )}
                 {(detailKind === "contact" || detailKind === "lead") && (
                   <RecordArchivePanel
                     key={`${archiveBinding || "unavailable"}:${detailKind}:${detailId}`}
