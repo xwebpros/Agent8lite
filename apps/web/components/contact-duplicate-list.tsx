@@ -17,10 +17,7 @@ export type ContactDuplicateListProps = {
   onSelectSource(source: Contact, phoneOnly: boolean): void;
 };
 
-type CandidateState =
-  | { kind: "loading" }
-  | { kind: "error" }
-  | { kind: "loaded"; contact: Contact };
+type CandidateState = { kind: "loading" } | { kind: "error" } | { kind: "loaded"; contact: Contact };
 
 export function ContactDuplicateList({
   organizationId,
@@ -48,13 +45,10 @@ export function ContactDuplicateList({
       );
       if (epochRef.current !== epoch) return;
       const myId = survivorContact.id.toLowerCase();
-      const mine = result.data.items.filter((d) =>
-        d.contactIds.some((id) => id.toLowerCase() === myId),
-      );
+      const mine = result.data.items.filter((d) => d.contactIds.some((id) => id.toLowerCase() === myId));
       setDuplicates(mine);
       for (const dup of mine) {
-        const sourceId =
-          dup.contactIds.find((id) => id.toLowerCase() !== myId) ?? dup.contactIds[0];
+        const sourceId = dup.contactIds.find((id) => id.toLowerCase() !== myId) ?? dup.contactIds[0];
         if (!sourceId) continue;
         const loadEpoch = epoch;
         setCandidates((prev) => new Map(prev).set(sourceId, { kind: "loading" }));
@@ -84,9 +78,17 @@ export function ContactDuplicateList({
 
   if (!online) return null;
   if (listLoading && !duplicates)
-    return <p role="status" style={{ fontSize: "0.875rem" }}>Loading possible duplicates…</p>;
+    return (
+      <p role="status" style={{ fontSize: "0.875rem" }}>
+        Loading possible duplicates…
+      </p>
+    );
   if (listError)
-    return <p role="status" style={{ fontSize: "0.875rem" }}>{listError}</p>;
+    return (
+      <p role="status" style={{ fontSize: "0.875rem" }}>
+        {listError}
+      </p>
+    );
   if (!duplicates || duplicates.length === 0) return null;
 
   const myId = survivorContact.id.toLowerCase();
@@ -96,20 +98,27 @@ export function ContactDuplicateList({
       <h4 id="duplicate-list-heading" style={{ marginBottom: "0.5rem" }}>
         Possible duplicates ({duplicates.length})
       </h4>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+      <ul
+        style={{
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.5rem",
+        }}
+      >
         {duplicates.map((dup) => {
-          const sourceId =
-            dup.contactIds.find((id) => id.toLowerCase() !== myId) ?? dup.contactIds[0];
+          const sourceId = dup.contactIds.find((id) => id.toLowerCase() !== myId) ?? dup.contactIds[0];
           if (!sourceId) return null;
           const cand = candidates.get(sourceId);
           return (
-            <li key={dup.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-              {(!cand || cand.kind === "loading") && (
-                <span style={{ fontSize: "0.875rem" }}>Loading…</span>
-              )}
-              {cand?.kind === "error" && (
-                <span style={{ fontSize: "0.875rem" }}>Contact unavailable</span>
-              )}
+            <li
+              key={dup.id}
+              style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}
+            >
+              {(!cand || cand.kind === "loading") && <span style={{ fontSize: "0.875rem" }}>Loading…</span>}
+              {cand?.kind === "error" && <span style={{ fontSize: "0.875rem" }}>Contact unavailable</span>}
               {cand?.kind === "loaded" && (
                 <>
                   <span style={{ fontSize: "0.875rem" }}>

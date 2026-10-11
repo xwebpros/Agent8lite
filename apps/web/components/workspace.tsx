@@ -367,7 +367,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const contactMergeController = useRef(new ContactMergeController(contactMerge.current));
   const [, updateContactMerge] = useState(0);
   const [contactMergeDenied, setContactMergeDenied] = useState(false);
-  const [selectedSourceContact, setSelectedSourceContact] = useState<{ contact: Contact; phoneOnly: boolean } | null>(null);
+  const [selectedSourceContact, setSelectedSourceContact] = useState<{
+    contact: Contact;
+    phoneOnly: boolean;
+  } | null>(null);
   const archiveBinding = archiveDenied
     ? null
     : recordArchiveContext({ session, memberId: member, csrf, accessRevision });
@@ -1561,22 +1564,22 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           contactMerge.current.getSnapshot().command
             ? "The app update activated. Reconcile the unconfirmed merge before reloading."
             : recordArchive.current.getSnapshot().command
-            ? "The app update activated. Reconcile the unconfirmed archive before reloading."
-            : leadAssignment.current.getSnapshot().command
-              ? "The app update activated. Reconcile the unconfirmed lead assignment before reloading."
-              : contactEdit.current.getSnapshot().command
-                ? "The app update activated. Reconcile the unconfirmed contact save before reloading."
-                : taskCreate.current.getSnapshot().command
-                  ? "The app update activated. Reconcile the unconfirmed task creation before reloading."
-                  : stageTransition.current.getSnapshot().command
-                    ? "The app update activated. Reconcile the unconfirmed stage transition before reloading."
-                    : leadCapture.current.getSnapshot().sequence
-                      ? "The app update activated. Resolve the unfinished lead capture before reloading."
-                      : taskEdit.current.getSnapshot().command
-                        ? "The app update activated. Reconcile the unconfirmed task update before reloading."
-                        : notificationProtected.current
-                          ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
-                          : "The app update activated. Finish or discard your current draft before reloading.",
+              ? "The app update activated. Reconcile the unconfirmed archive before reloading."
+              : leadAssignment.current.getSnapshot().command
+                ? "The app update activated. Reconcile the unconfirmed lead assignment before reloading."
+                : contactEdit.current.getSnapshot().command
+                  ? "The app update activated. Reconcile the unconfirmed contact save before reloading."
+                  : taskCreate.current.getSnapshot().command
+                    ? "The app update activated. Reconcile the unconfirmed task creation before reloading."
+                    : stageTransition.current.getSnapshot().command
+                      ? "The app update activated. Reconcile the unconfirmed stage transition before reloading."
+                      : leadCapture.current.getSnapshot().sequence
+                        ? "The app update activated. Resolve the unfinished lead capture before reloading."
+                        : taskEdit.current.getSnapshot().command
+                          ? "The app update activated. Reconcile the unconfirmed task update before reloading."
+                          : notificationProtected.current
+                            ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
+                            : "The app update activated. Finish or discard your current draft before reloading.",
         );
         return;
       }
@@ -1654,7 +1657,12 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     return result.data;
   }
   async function loadMore(resource: "contacts" | "leads" | "tasks") {
-    if (taskCreate.current.getSnapshot().command || recordArchive.current.getSnapshot().command || contactMerge.current.getSnapshot().command) return;
+    if (
+      taskCreate.current.getSnapshot().command ||
+      recordArchive.current.getSnapshot().command ||
+      contactMerge.current.getSnapshot().command
+    )
+      return;
     if (stageTransition.current.getSnapshot().command || leadAssignment.current.getSnapshot().command) return;
     const cursor = cursors[resource];
     if (!cursor || !session?.activeOrgId) return;
@@ -3859,7 +3867,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       outcome =
         mode === "send"
           ? await contactMergeController.current.send(command, currentContactMergeUI.current.csrf, hooks)
-          : await contactMergeController.current.reconcile(command, currentContactMergeUI.current.csrf, hooks);
+          : await contactMergeController.current.reconcile(
+              command,
+              currentContactMergeUI.current.csrf,
+              hooks,
+            );
     } catch {
       if (contactLifetimeActive.current && contactMerge.current.isCurrent(command)) {
         setDetailError("The original merge cannot be resent. Its outcome remains unconfirmed.");
@@ -3948,9 +3960,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       );
     } catch {
       if (contactMerge.current.isBoundTo(contactMergeBinding))
-        setDetailError(
-          "Merge target or its version is unavailable. Read the current record first.",
-        );
+        setDetailError("Merge target or its version is unavailable. Read the current record first.");
       return;
     }
     reloadProtected.current = true;
@@ -5015,8 +5025,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <div className="connection-banner" role="status">
                 <ShieldCheck size={18} aria-hidden="true" />
                 <span>
-                  A contact merge remains unconfirmed. Return to the survivor contact before another
-                  command or leaving this workspace.
+                  A contact merge remains unconfirmed. Return to the survivor contact before another command
+                  or leaving this workspace.
                 </span>
                 <Button
                   type="button"
@@ -6558,9 +6568,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                         )
                       }
                       online={online && !changingOrganization}
-                      onSelectSource={(source, phoneOnly) =>
-                        void startContactMerge(source, phoneOnly)
-                      }
+                      onSelectSource={(source, phoneOnly) => void startContactMerge(source, phoneOnly)}
                     />
                     {(selectedSourceContact !== null ||
                       (contactMergeSnapshot.phase !== "idle" &&
@@ -6569,14 +6577,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                         key={`${contactMergeBinding || "unavailable"}:${selectedContact.id}`}
                         survivorId={selectedContact.id}
                         sourceId={
-                          selectedSourceContact?.contact.id ??
-                          contactMergeSnapshot.subject?.sourceId ??
-                          ""
+                          selectedSourceContact?.contact.id ?? contactMergeSnapshot.subject?.sourceId ?? ""
                         }
                         survivorName={selectedContact.displayName}
-                        sourceName={
-                          selectedSourceContact?.contact.displayName ?? "the source contact"
-                        }
+                        sourceName={selectedSourceContact?.contact.displayName ?? "the source contact"}
                         snapshot={contactMergeSnapshot}
                         available={
                           !detailLoading &&
@@ -6591,8 +6595,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                         online={online && !changingOrganization}
                         visible={
                           contactVisible &&
-                          (typeof document === "undefined" ||
-                            document.visibilityState === "visible")
+                          (typeof document === "undefined" || document.visibilityState === "visible")
                         }
                         busy={busy || loading || detailLoading}
                         canMerge={mergeAllowed(contactMergeBinding, selectedContact.id)}
