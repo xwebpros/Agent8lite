@@ -2,13 +2,16 @@
 
 ## ADR-052 public site service — in progress (Claude Code)
 
-ADR-052 written and committed at `af59791`. Implementation in progress on `feat/W01-foundation`.
+ADR-052 written at `af59791`. Implementation on `feat/W01-foundation`. Full isolated gate running.
 
-**API (`public-site-service.ts`):** `tryPublicSiteRoute` handles all 17 `/v1/public/**` operations via `withPublicSiteTransaction` (resolves published site → owner member TenantContext; no member session required). Phase A (form submission, property inquiry, public listings, visitor sessions, analytics, unsubscribes) and Phase B stubs (saved searches, favorites) implemented. `NativeCaptureService` runs under the owner's TenantContext for form and inquiry capture.
+**API (`a988838`, `aae5c10`, `9a4eae6`, `41a0a98`):** `tryPublicSiteRoute` handles all 17 `/v1/public/**` operations. Key fixes applied:
+- Migration `0023-public-site-resolver.sql`: SECURITY DEFINER `app.resolve_published_site(uuid)` bypasses RLS for initial site tenant_id lookup.
+- `withPublicSiteTransaction`: uses `app.resolve_published_site` before setting `app.tenant_id`; membership query uses `lower(r.name)='owner'` to match seed role name 'Owner'.
+- `listSavedSearches`/`listFavorites`: validate site existence even when no visitor cookie present.
 
-**Tests (`public-site-api.test.ts`):** Integration tests for form CRUD, form submission idempotency, inquiry, analytics, unsubscribe, visitor login lifecycle and saved-search/favorite guards. Full isolated gate running.
+**Tests (`public-site-api.test.ts`):** Integration tests for form CRUD, idempotency, inquiry, analytics (with `consentPolicyVersion`), unsubscribe, visitor login lifecycle, saved-search/favorite guards, and site-not-found guard.
 
-**Verification (in progress):** TypeScript and Biome pass. Unit tests: **2,534/2,534** across 79 files. Production build: clean. Full isolated gate: pending.
+**Verification (in progress):** TypeScript and Biome pass. Full isolated gate: running (all prior 150-file gates passed).
 
 ---
 
