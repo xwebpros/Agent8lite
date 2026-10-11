@@ -1,5 +1,14 @@
 # Implementation status — 2026-10-11
 
+## Full non-browser gate after ADR-050/051, review notes and Codex fixes (Claude Code)
+
+The owner asked to keep working; no test process was active, so the held gate ran.
+- **Full `node scripts/test-isolated.mjs` at `2fff5f9`** (covers `cc26929`, ADR-050 `c20a05e`, review notes `03f1af5`, ADR-051 `e1c536d`/`9b5f3cc` and Codex's browser fixes `2fff5f9`): **4,512/4,512 tests across 147 files**, zero failed tests or skips. One of 41 batches (`task-edit-api`) failed before running tests because its isolated API did not become ready within 30 s (cold start while the owner's dev servers were running); its immediate separate rerun passed **38/38**. Combined: **4,550/4,550 across 148 files**. Batch 1 (pure/unit) was **3,806/3,806 across 107 files**.
+- Later commits are outside that gate run: `c8044d5` (broadcast panel design paging; web and unit test only; broadcast unit tests **18/18**) and Codex's `1afd0bc` (Playwright reporter config only).
+- At `1afd0bc`: contracts with generated types (170 operations / 169 schemas) pass; the Node 24.19.0 production build into `.next-build` passes; `verify:runtime` (133 runtime files, 17 JSON resources), `verify:runtime:local` and `verify:launch:local` pass with no external delivery.
+- Self-review of ADR-051 found one defect, fixed in `c8044d5`: the broadcast panel read only the first design page, so later designs were unselectable.
+- Still open: ADR-049 owner decision; browser/axe/keyboard/physical-device acceptance; live provider, messaging, payments and production gates. The generated `apps/web/next-env.d.ts` path flips between `next dev` and `next build` and is left uncommitted.
+
 ## M4 broadcast audience (segment) preview — ADR-051 (Claude Code)
 
 Resumed at the owner's request after the paused checkpoint below. ADR-051 (`0ecad35`), API (`e1c536d`) and PWA (`9b5f3cc`) implement the frozen `previewBroadcast` operation and segment authoring. No contract amendment, migration, dependency, outbox event or provider behavior. Nothing is sent or scheduled; `confirmBroadcast` stays on its existing unavailable path (`404`).
