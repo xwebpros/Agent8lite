@@ -12,6 +12,7 @@ import { dashboardClockInstant, dashboardUtcPeriod } from "./dashboard-time";
 import { parseContactQuery } from "./contact-query";
 import { contactCommandJson, contactReceipt, contactRevision, prepareContactPatch } from "./contact-command";
 import { appendContactCreatedEvent } from "./contact-created-event";
+import { leadAssignedEvent, leadPatchJson, leadPatchReceipt, prepareLeadPatch } from "./lead-patch-command";
 import { prepareTaskCreate, taskCreateJson, taskCreateReceipt } from "./task-create-command";
 import {
   prepareStageTransition,
@@ -79,7 +80,7 @@ function timezone(value: string) {
 
 function detachedReadContext(
   value: TenantContext,
-  subject: "reporting" | "contact" | "stage" | "task",
+  subject: "reporting" | "contact" | "stage" | "task" | "lead",
 ): TenantContext {
   const invalid = (): never => {
     throw new AccessError(403, "permission_denied", `Current ${subject} authority is required.`);
@@ -557,7 +558,10 @@ export class CrmService {
     };
   }
 
-  private async contactCommandAuthority(lock = false, subject: "contact" | "stage" | "task" = "contact") {
+  private async contactCommandAuthority(
+    lock = false,
+    subject: "contact" | "stage" | "task" | "lead" = "contact",
+  ) {
     const context = this.context;
     const result = await this.client.query(
       `SELECT 1 FROM app.membership m
@@ -1076,6 +1080,280 @@ export class CrmService {
     await current.recordCapturePost(command, lead);
     await current.finishCapturePost(command);
     return { body: lead, status: 201, etag: '"1"' };
+  }
+
+  /** Complete Lead PATCH, with historical acknowledgement separated from current source authority. */
+  async patchLead(
+    id: string,
+    body: unknown,
+    expectedVersion: string | undefined,
+    key: string | undefined,
+    routeKey: string,
+  ): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "lead");
+    const command = prepareLeadPatch(id, body, expectedVersion, key, routeKey, context.organizationId);
+    const traceId = this.traceId;
+    if (
+      typeof traceId !== "string" ||
+      !traceId ||
+      [...traceId].length > 80 ||
+      /[\uD800-\uDFFF]/u.test(traceId)
+    )
+      throw new AccessError(503, "lead_command_unavailable", "Lead command references are unavailable.");
+    const current = new CrmService(this.client, context, traceId);
+    const scope = requirePermission(context, "crm.leads.write");
+    await current.contactCommandAuthority(true, "lead");
+    await requireEntitlement(this.client, "crm.leads.write");
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${context.organizationId}:${context.userId}:${command.routeKey}:${command.key}`,
+    ]);
+    await current.contactCommandAuthority(false, "lead");
+    await requireEntitlement(this.client, "crm.leads.write", { lock: false });
+    const receiptParameters = [context.userId, command.routeKey, command.key];
+    const saved = (
+      await this.client.query(
+        `SELECT request_hash,response_body,status_code,response_etag,response_ref,
+          expires_at>clock_timestamp() AS unexpired FROM app.idempotency_record
+         WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+        receiptParameters,
+      )
+    ).rows[0];
+    if (saved && saved.request_hash !== command.requestHash)
+      throw new AccessError(409, "idempotency_conflict", "This key was used with a different request.");
+    if (saved && !saved.unexpired)
+      throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+    const receipt = saved ? leadPatchReceipt(saved.response_body, command) : null;
+    const etag = `"${command.version + 1}"`;
+    if (
+      saved &&
+      (saved.status_code !== 200 ||
+        (saved.response_etag !== null && saved.response_etag !== etag) ||
+        (saved.response_ref !== null &&
+          (typeof saved.response_ref !== "string" || saved.response_ref.toLowerCase() !== command.id)))
+    )
+      throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+    const source = `SELECT r.* FROM app.lead r WHERE r.tenant_id=app.current_tenant()
+      AND r.id=$1 AND r.archived_at IS NULL AND $2::uuid IS NOT NULL
+      AND ${current.scopeSql("leads", scope, "$2")}
+      AND EXISTS(SELECT 1 FROM app.contact c WHERE(c.tenant_id,c.id)=(r.tenant_id,r.contact_id)
+        AND c.archived_at IS NULL)`;
+    const sourceParameters = [command.id, context.memberId];
+    const peek = (await this.client.query(source, sourceParameters)).rows[0] ?? notFound();
+    if (
+      typeof peek.contact_id !== "string" ||
+      !uuid.test(peek.contact_id) ||
+      typeof peek.source_id !== "string" ||
+      !uuid.test(peek.source_id)
+    )
+      throw new AccessError(503, "resource_unavailable", "Lead source references are unavailable.");
+    const contactId = peek.contact_id,
+      sourceId = peek.source_id;
+    if (
+      receipt &&
+      (receipt.contactId.toLowerCase() !== contactId || receipt.sourceId.toLowerCase() !== sourceId)
+    )
+      notFound();
+    // Contact before Lead matches the existing Contact-edit and stage command lock order.
+    if (
+      !(
+        await this.client.query(
+          "SELECT id FROM app.contact WHERE tenant_id=app.current_tenant() AND id=$1 AND archived_at IS NULL FOR SHARE",
+          [contactId],
+        )
+      ).rowCount
+    )
+      notFound();
+    const boundSource = `${source} AND r.contact_id=$3 AND r.source_id=$4`;
+    const boundParameters = [...sourceParameters, contactId, sourceId];
+    const locked =
+      (await this.client.query(`${boundSource} FOR UPDATE OF r`, boundParameters)).rows[0] ?? notFound();
+    const oldOwner = locked.owner_member_id;
+    if (oldOwner !== null && (typeof oldOwner !== "string" || !uuid.test(oldOwner)))
+      throw new AccessError(503, "resource_unavailable", "Lead owner reference is unavailable.");
+    const effectiveOwner =
+      command.body.ownerMemberId === undefined
+        ? oldOwner
+        : (command.body.ownerMemberId?.toLowerCase() ?? null);
+    const historicalOwner = receipt?.ownerMemberId?.toLowerCase() ?? null;
+    const changedOwner = effectiveOwner !== oldOwner;
+    const ownerUnavailable = (): never => {
+      if (receipt) return notFound();
+      throw new AccessError(422, "assignee_invalid", "Owner must be an active eligible organization member.");
+    };
+    const eligibleOwners = [
+      ...new Set<string>(
+        (receipt ? [oldOwner, historicalOwner] : [effectiveOwner]).filter(
+          (owner): owner is string => owner !== null,
+        ),
+      ),
+    ].sort();
+    if (
+      scope !== "organization" &&
+      (receipt ? oldOwner === null || historicalOwner === null : effectiveOwner === null)
+    ) {
+      if (receipt) notFound();
+      throw new AccessError(422, "owner_required", "Own or team scope requires an assigned owner.");
+    }
+    const allOwners = [
+      ...new Set<string>([
+        context.memberId,
+        ...eligibleOwners,
+        ...(oldOwner ? [oldOwner] : []),
+        ...(receipt && historicalOwner ? [historicalOwner] : []),
+      ]),
+    ].sort();
+    const ownerLocks = await this.client.query(
+      `SELECT id FROM app.membership WHERE tenant_id=app.current_tenant()
+       AND id=ANY($1::uuid[]) ORDER BY id FOR SHARE`,
+      [allOwners],
+    );
+    if (ownerLocks.rowCount !== allOwners.length) ownerUnavailable();
+    if (scope === "team") await current.lockCaptureOffices(allOwners);
+    const ownerStatement = `SELECT r.id FROM app.membership r WHERE r.tenant_id=app.current_tenant()
+      AND r.id=ANY($1::uuid[]) AND r.status='active' AND $2::uuid IS NOT NULL
+      AND ${current.memberScope("r.id", scope, "$2")}`;
+    const assertOwners = async () => {
+      // Explicit reassignment can repair a disabled old owner; unchanged/omitted owners stay eligible.
+      if (
+        (await this.client.query(ownerStatement, [eligibleOwners, context.memberId])).rowCount !==
+        eligibleOwners.length
+      )
+        ownerUnavailable();
+    };
+    if (
+      !(
+        await this.client.query(
+          "SELECT id FROM app.lead_source WHERE tenant_id=app.current_tenant() AND id=$1 FOR SHARE",
+          [sourceId],
+        )
+      ).rowCount
+    )
+      notFound();
+    const stages = [
+      ...new Set<string>([locked.stage_id, ...(receipt ? [receipt.stageId.toLowerCase()] : [])]),
+    ].sort();
+    if (
+      (
+        await this.client.query(
+          "SELECT id FROM app.pipeline_stage WHERE tenant_id=app.current_tenant() AND id=ANY($1::uuid[]) ORDER BY id FOR SHARE",
+          [stages],
+        )
+      ).rowCount !== stages.length
+    )
+      notFound();
+    const assertSources = async () => {
+      const authorized = (await this.client.query(boundSource, boundParameters)).rows[0] ?? notFound();
+      await assertOwners();
+      await current.contactCommandAuthority(false, "lead");
+      await requireEntitlement(this.client, "crm.leads.write", { lock: false });
+      return authorized;
+    };
+    const finish = async () => {
+      await assertSources();
+      if (
+        !(
+          await this.client.query(
+            `SELECT expires_at>clock_timestamp() AS unexpired FROM app.idempotency_record
+         WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+            receiptParameters,
+          )
+        ).rows[0]?.unexpired
+      )
+        throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+      await requireEntitlement(this.client, "crm.leads.write", { lock: false });
+    };
+    const authorized = await assertSources();
+    if (receipt) {
+      await finish();
+      return { body: receipt, status: 200, etag };
+    }
+    const version = stageTransitionRevision(authorized.row_version);
+    if (version !== command.version)
+      throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+    if (version >= Number.MAX_SAFE_INTEGER)
+      throw new AccessError(409, "revision_exhausted", "Lead revision cannot advance safely.");
+    const clock = await this.client.query("SELECT date_trunc('milliseconds',clock_timestamp()) AS instant");
+    const instant = clock.rows[0]?.instant;
+    if (!(instant instanceof Date) || !Number.isFinite(instant.getTime()))
+      throw new AccessError(503, "lead_command_unavailable", "Lead command time is unavailable.");
+    const timestamp = instant.toISOString();
+    const updated = await this.client.query(
+      `UPDATE app.lead SET owner_member_id=$1,intent=$2,timeline=$3,row_version=row_version+1,updated_at=$4
+       WHERE tenant_id=app.current_tenant() AND id=$5 AND row_version=$6 RETURNING *`,
+      [
+        effectiveOwner,
+        command.body.intent ?? authorized.intent,
+        command.body.timeline === undefined ? authorized.timeline : command.body.timeline,
+        timestamp,
+        command.id,
+        command.version,
+      ],
+    );
+    if (!updated.rowCount)
+      throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
+    const lead = leadPatchReceipt(models.lead(updated.rows[0]), command);
+    if (lead.contactId.toLowerCase() !== contactId || lead.sourceId.toLowerCase() !== sourceId) notFound();
+    await assertSources();
+    if (changedOwner) {
+      const event = leadAssignedEvent(
+        context.organizationId,
+        command.id,
+        effectiveOwner,
+        lead.version,
+        traceId,
+        instant,
+      );
+      await this.client.query(
+        `INSERT INTO app.outbox(tenant_id,id,event_type,aggregate_id,payload,initiating_actor_id)
+         VALUES($1,$2,'lead.assigned',$3,$4,$5)`,
+        [context.organizationId, event.eventId, command.id, leadPatchJson(event), context.userId],
+      );
+      await this.client.query(
+        `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data)
+         VALUES($1,$2,'lead.assigned',$3,$4,$5)`,
+        [
+          context.organizationId,
+          command.id,
+          event.eventId,
+          timestamp,
+          leadPatchJson({
+            resourceId: command.id,
+            resourceVersion: lead.version,
+            relatedResourceIds: effectiveOwner ? [effectiveOwner] : [],
+          }),
+        ],
+      );
+    }
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff,created_at,updated_at)
+       VALUES($1,$2,'lead.updated','lead',$3,$4,$5,$6,$6)`,
+      [
+        context.organizationId,
+        context.userId,
+        command.id,
+        traceId,
+        leadPatchJson({ resourceVersion: lead.version }),
+        timestamp,
+      ],
+    );
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+       (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,response_ref,expires_at,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,200,$7,$8,clock_timestamp()+interval '1 day',$9,$9)`,
+      [
+        context.organizationId,
+        context.userId,
+        command.routeKey,
+        command.key,
+        command.requestHash,
+        leadPatchJson(lead),
+        etag,
+        command.id,
+        timestamp,
+      ],
+    );
+    await finish();
+    return { body: lead, status: 200, etag };
   }
 
   /** Stage POST retains its original receipt while authorizing current, locked source state. */
@@ -1782,24 +2060,18 @@ export class CrmService {
         "contact_command_required",
         "Contact edits require the verified command boundary.",
       );
+    if (resource === "leads")
+      throw new AccessError(
+        503,
+        "lead_command_required",
+        "Lead edits require the recoverable command boundary.",
+      );
     const config = this.resource(resource);
     const scope = requirePermission(this.context, config.write);
     const current = await this.row(resource, id, true, true);
     requireVersion(current, expectedVersion);
     let row: Row;
-    if (resource === "leads") {
-      const owner = "ownerMemberId" in body ? body.ownerMemberId : current.owner_member_id;
-      if (owner) await this.activeMember(owner, scope);
-      if (!owner && scope !== "organization")
-        throw new AccessError(422, "owner_required", "Own scope requires an assigned owner.");
-      const result = await this.client.query(
-        `UPDATE app.lead SET owner_member_id=$1,intent=$2,timeline=$3,updated_at=now(),row_version=row_version+1 WHERE id=$4 RETURNING *`,
-        [owner, body.intent ?? current.intent, "timeline" in body ? body.timeline : current.timeline, id],
-      );
-      row = result.rows[0];
-      if (owner !== current.owner_member_id)
-        await this.event("lead.assigned", "lead", id, Number(row.row_version), owner ? [owner] : []);
-    } else if (resource === "tasks") {
+    if (resource === "tasks") {
       await this.activeMember(body.assigneeMemberId, scope);
       const effectiveLead = body.leadId === undefined ? current.lead_id : body.leadId;
       await this.lockTaskSources([current.lead_id, effectiveLead]);
