@@ -4901,6 +4901,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   online={online}
                   syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
                   accessRevision={accessRevision}
+                  memberId={member}
                   onDirty={protectCampaign}
                   onAccessRevoked={() => {
                     router.replace("/dashboard");

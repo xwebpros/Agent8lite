@@ -189,7 +189,8 @@ describe("accessible immutable workflow presentation", () => {
     expect(markup).not.toContain("nodes.0.taskTitle");
     disabled(markup, "Save immutable workflow draft");
   });
-  it("preserves condition branches as read-only and requires explicit reached branch choices", async () => {
+  // ADR-050 deliberately changed this retained case: a structured branch graph renders as an outline.
+  it("renders condition branches as a nested outline and requires explicit reached branch choices", async () => {
     const { controller, client } = setup();
     const graph: Schema<"CampaignVersionWrite"> = {
       timezone: "UTC",
@@ -206,12 +207,15 @@ describe("accessible immutable workflow presentation", () => {
     client.detail.mockResolvedValueOnce({ data: { ...version(), definition: graph }, etag: '"3"' });
     await controller.select(versionId);
     let markup = render(controller.getSnapshot()).markup;
-    expect(markup).toContain("Stored graph nodes");
-    expect(markup).toContain("true → yes");
-    expect(markup).toContain("false → no");
+    expect(markup).toContain("Execution outline");
+    expect(markup).toContain("When the lead matches");
+    expect(markup).toContain("Otherwise");
+    expect(markup.match(/<ol\b/g)).toHaveLength(3);
     expect(markup).toContain("&lt;private search&gt;");
-    expect(markup).toContain("This saved graph stays read-only");
-    disabled(markup, "Copy to new workflow draft");
+    expect(markup).not.toContain("This saved graph stays read-only");
+    expect(
+      buttons(markup).find((button) => button.text === "Copy to new workflow draft")!.html,
+    ).not.toContain('disabled=""');
     expect(markup).toContain("Choose a branch if this condition is reached");
     expect(markup).not.toContain("Add wait step");
     controller.preview();
@@ -454,5 +458,148 @@ describe("accessible immutable workflow presentation", () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+});
+
+describe("ADR-050 condition branch authoring presentation", () => {
+  const stageId = "c3000000-0000-4000-8000-0000000000a1",
+    savedSourceId = "c3000000-0000-4000-8000-0000000000a2",
+    tagId = "c3000000-0000-4000-8000-0000000000a3",
+    memberId = "c3000000-0000-4000-8000-0000000000a4";
+  const ready = {
+    online: true,
+    reading: false,
+    phase: "ready" as const,
+    stages: [{ id: stageId, label: "<Synthetic stage>" }],
+    sources: [],
+    tags: [{ id: tagId, label: "Synthetic tag" }],
+    tagCursor: "private-tag-cursor",
+    error: "",
+  };
+  function view(state: CampaignWorkflowState, options: { member?: string } = {}) {
+    const actions = {
+      refresh: vi.fn(),
+      next: vi.fn(),
+      select: vi.fn(),
+      begin: vi.fn(),
+      copy: vi.fn(),
+      add: vi.fn(),
+      condition: vi.fn(),
+      moreTags: vi.fn(),
+      refreshDesigns: vi.fn(),
+      nextDesigns: vi.fn(),
+      chooseDesign: vi.fn(),
+      move: vi.fn(),
+      remove: vi.fn(),
+      editNode: vi.fn(),
+      timezone: vi.fn(),
+      quiet: vi.fn(),
+      save: vi.fn(),
+      discard: vi.fn(),
+      editRejected: vi.fn(),
+      start: vi.fn(),
+      choice: vi.fn(),
+      preview: vi.fn(),
+    };
+    return renderToStaticMarkup(
+      <CampaignWorkflowView
+        state={state}
+        catalogue={unreadCatalogue()}
+        active
+        online
+        actions={actions}
+        conditions={ready}
+        memberId={options.member}
+      />,
+    );
+  }
+
+  it("renders labelled condition fields, nested branch lists and branch-specific add buttons", () => {
+    const { controller } = setup();
+    controller.beginDraft();
+    controller.add("condition");
+    controller.add("task", { parent: "step_1", branch: "true" });
+    controller.add("wait");
+    controller.editNode("step_2", "Synthetic follow-up");
+    controller.editCondition("step_1", "stageId", stageId);
+    controller.editCondition("step_1", "sourceId", savedSourceId);
+    controller.editCondition("step_1", "tagIds", [tagId]);
+    const markup = view(controller.getSnapshot(), { member: memberId });
+    expect(markup.match(/<ol\b/g)).toHaveLength(2);
+    expect(markup).toContain("Lead intent for condition step 1");
+    expect(markup).toContain("Pipeline stage for condition step 1");
+    expect(markup).toContain("Lead source for condition step 1");
+    expect(markup).toContain("Tags for condition step 1");
+    expect(markup).toContain("Lead name contains (condition step 1)");
+    expect(markup).toContain("Only leads assigned to me");
+    expect(markup).toContain("&lt;Synthetic stage&gt;");
+    expect(markup).toContain("Saved reference (not in the current list)");
+    expect(markup).toContain("Read more tag choices");
+    expect(markup).not.toContain("private-tag-cursor");
+    expect(markup).toContain("Task title for step 2");
+    expect(markup).toContain("Wait delay in seconds for step 3");
+    expect(markup).toContain('aria-label="Add task step to the matching branch of step 1"');
+    expect(markup).toContain('aria-label="Add condition to the otherwise branch of step 1"');
+    expect(markup).toContain("No steps in this branch");
+    expect(markup).toContain("Add condition");
+    const labels = Array.from(markup.matchAll(/<label for="([^"]+)">/g), (match) => match[1]);
+    expect(new Set(labels).size).toBe(labels.length);
+    for (const label of labels) expect(markup).toContain(`id="${label}"`);
+    expect(controller.getSnapshot().issues).toEqual([]);
+  });
+
+  it("offers no owner predicate without a verified member and labels a foreign saved owner", () => {
+    const { controller } = setup();
+    controller.beginDraft();
+    controller.add("condition");
+    controller.add("task", { parent: "step_1", branch: "true" });
+    controller.add("task", { parent: "step_1", branch: "false" });
+    controller.editCondition("step_1", "intent", "buyer");
+    expect(view(controller.getSnapshot())).not.toContain("assigned to me");
+    controller.editCondition("step_1", "ownerMemberId", "c3000000-0000-4000-8000-0000000000ff");
+    const markup = view(controller.getSnapshot(), { member: memberId });
+    expect(markup).toContain("Saved owner reference (clear to remove)");
+  });
+
+  it("names the condition in readable structural errors", () => {
+    const { controller } = setup();
+    controller.beginDraft();
+    controller.add("condition");
+    const markup = view(controller.getSnapshot());
+    expect(markup).toContain("Step 1 definition");
+    expect(markup).toContain("Add a step to at least one branch of this condition.");
+    expect(markup).toContain("Step 1 condition");
+    disabled(markup, "Save immutable workflow draft");
+  });
+
+  it("keeps an unstructured saved graph read-only with its stored edges", async () => {
+    const { controller, client } = setup();
+    const graph: Schema<"CampaignVersionWrite"> = {
+      timezone: "UTC",
+      nodes: [
+        { key: "c", kind: "condition", condition: { intent: "buyer" } },
+        { key: "a", kind: "wait", delaySeconds: 1 },
+        { key: "d", kind: "condition", condition: { intent: "seller" } },
+        { key: "b", kind: "task", taskTitle: "Synthetic b" },
+        { key: "e", kind: "task", taskTitle: "Synthetic e" },
+        { key: "f", kind: "task", taskTitle: "Synthetic f" },
+      ],
+      edges: [
+        { from: "c", to: "a", branch: "true" },
+        { from: "c", to: "b", branch: "false" },
+        { from: "a", to: "d", branch: "always" },
+        { from: "d", to: "b", branch: "true" },
+        { from: "d", to: "e", branch: "false" },
+        { from: "b", to: "f", branch: "always" },
+        { from: "e", to: "f", branch: "always" },
+      ],
+    };
+    client.detail.mockResolvedValueOnce({ data: { ...version(), definition: graph }, etag: '"3"' });
+    await controller.select(versionId);
+    const markup = render(controller.getSnapshot()).markup;
+    expect(markup).toContain("Stored graph nodes");
+    expect(markup).toContain("true → a");
+    expect(markup).toContain("This saved graph stays read-only");
+    disabled(markup, "Copy to new workflow draft");
   });
 });

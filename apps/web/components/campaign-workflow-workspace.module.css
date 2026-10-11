@@ -275,3 +275,16 @@
     transition: none;
   }
 }
+
+.branch {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 0 0 16px;
+  border-left: 3px solid var(--color-border);
+}
+
+.branch h5 {
+  margin: 0;
+  font-size: 15px;
+}

@@ -6,6 +6,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CampaignDraftService, CampaignWorkflowService } from "../../apps/api/src/marketing";
 import { appendCampaignWorkflowEvent } from "../../apps/api/src/marketing/workflow-events";
 import { dispatchOutbox } from "../../apps/worker/src/outbox";
+import {
+  definitionOutline,
+  outlineDefinition,
+  type Outline,
+} from "../../apps/web/components/campaign-workflow-outline";
 import workflowEventSchema from "../../packages/contracts/internal/native-campaign-workflow-event-v1.schema.json";
 import { fixtures, stageId } from "../../packages/db/fixtures";
 import { assertRuntimeRole } from "../../packages/db/runtime-role";
@@ -1302,6 +1307,36 @@ describe("actual0017–0019 immutable native workflow draft service", () => {
     await expect(
       use(member, (service) => service.create(campaign.body.id, body, { key: fixture.key })),
     ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("accepts and returns the nested reconverging graph the ADR-050 outline editor serializes", async () => {
+    const campaign = await parent(),
+      member = await actor([...campaignGrants, ...referenceGrants]);
+    const outline: Outline = [
+      { type: "step", node: { key: "step_1", kind: "wait", delaySeconds: 60 } },
+      {
+        type: "condition",
+        node: { key: "step_2", kind: "condition", condition: { intent: "buyer", stageId: stageId(1, 1) } },
+        whenTrue: [
+          {
+            type: "condition",
+            node: { key: "step_3", kind: "condition", condition: { sourceId: fixtures.sourceA } },
+            whenTrue: [{ type: "step", node: { key: "step_4", kind: "task", taskTitle: "Synthetic inner" } }],
+            whenFalse: [],
+          },
+          { type: "step", node: { key: "step_5", kind: "wait", delaySeconds: 0 } },
+        ],
+        whenFalse: [
+          { type: "step", node: { key: "step_6", kind: "task", taskTitle: "Synthetic otherwise" } },
+        ],
+      },
+      { type: "step", node: { key: "step_7", kind: "task", taskTitle: "Synthetic after" } },
+    ];
+    const body = outlineDefinition(outline, { nodes: [], edges: [], timezone: "UTC" });
+    const fixture = await create(campaign.body.id, body, randomUUID(), member);
+    expect(fixture.response.body.definition).toEqual(body);
+    const read = await use(member, (service) => service.get(fixture.response.body.id));
+    expect(definitionOutline(read.definition)).toEqual(outline);
   });
 
   it("checks matching organization source grants and current CRM capability on condition read and replay", async () => {

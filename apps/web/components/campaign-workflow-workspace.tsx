@@ -12,7 +12,7 @@ import {
   Trash2,
   WifiOff,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useSyncExternalStore } from "react";
 import { previewWorkflow, validateWorkflowDefinition } from "../../../packages/marketing";
 import { Badge, Button, Empty } from "../../../packages/ui/components";
 import type { Schema } from "../lib/api";
@@ -20,11 +20,23 @@ import {
   CampaignWorkflowController,
   type CampaignWorkflowClient,
   type CampaignWorkflowState,
+  type ConditionField,
 } from "./campaign-workflow-controller";
+import {
+  WorkflowConditionCatalogue,
+  type ConditionChoice,
+  type WorkflowConditionCatalogueState,
+} from "./campaign-workflow-condition-catalogue";
+import {
+  definitionOutline,
+  outlineNodes,
+  type Outline,
+  type OutlineItem,
+  type OutlineTarget,
+} from "./campaign-workflow-outline";
 import {
   workflowContextBinding,
   workflowDefinitionJson,
-  workflowLinearOrder,
   type WorkflowDefinition,
 } from "./campaign-workflow-protocol";
 import { requestWorkflowJson } from "./campaign-workflow-request";
@@ -44,6 +56,8 @@ export type CampaignWorkflowWorkspaceProps = {
   syntheticFeaturesEnabled: boolean;
   accessRevision: number;
   campaignId: string;
+  /** Verified current member, when known; enables the "assigned to me" predicate only. */
+  memberId?: string;
   onProtectedChange(value: boolean): void;
   onAccessRevoked?(): void;
 };
@@ -53,7 +67,9 @@ type WorkflowActions = {
   select(id: string): void;
   begin(): void;
   copy(): void;
-  add(kind: "wait" | "task" | "email" | "sms"): void;
+  add(kind: "wait" | "task" | "email" | "sms" | "condition", target?: OutlineTarget): void;
+  condition?(key: string, field: ConditionField, value: string | readonly string[] | null): void;
+  moreTags?(): void;
   refreshDesigns(): void;
   nextDesigns(cursor: string): void;
   chooseDesign(key: string, id: string, channel: WorkflowDesignChannel): void;
@@ -69,6 +85,16 @@ type WorkflowActions = {
   choice(key: string, value: boolean): void;
   preview(): void;
 };
+const emptyConditionCatalogue: WorkflowConditionCatalogueState = Object.freeze({
+  online: false,
+  reading: false,
+  phase: "unread",
+  stages: null,
+  sources: null,
+  tags: null,
+  tagCursor: null,
+  error: "",
+});
 const prerequisiteLabels: Readonly<Record<string, string>> = {
   current_member_scope: "Current member scope",
   marketing_entitlement: "Marketing capability",
@@ -126,12 +152,16 @@ export function CampaignWorkflowView({
   active,
   online,
   actions,
+  conditions = emptyConditionCatalogue,
+  memberId,
 }: {
   state: CampaignWorkflowState;
   catalogue: WorkflowDesignCatalogueState;
   active: boolean;
   online: boolean;
   actions: WorkflowActions;
+  conditions?: WorkflowConditionCatalogueState;
+  memberId?: string;
 }) {
   const prefix = useId(),
     timezoneInput = useRef<HTMLInputElement>(null);
@@ -150,19 +180,22 @@ export function CampaignWorkflowView({
   const protectedDraft = state.dirty || Boolean(state.pending) || state.phase === "sending";
   const locked = !online || state.reading || Boolean(state.pending) || state.phase === "sending";
   const definition = state.draft ?? (online ? state.selected?.data.definition : null);
-  const linearOrder = definition ? workflowLinearOrder(definition) : null;
-  const rows = definition
-    ? linearOrder
-      ? linearOrder.map((key) => definition.nodes.find((node) => node.key === key)!)
-      : definition.nodes
-    : [];
+  const outline: Outline | null = state.draft
+    ? state.outline
+    : definition
+      ? definitionOutline(definition)
+      : null;
+  const rows = definition ? (outline ? outlineNodes(outline) : definition.nodes) : [];
   const canEdit = hasDraft && state.canWrite && !locked && !catalogue.reading;
   const definitionError = state.issues.length ? `${prefix}-issues` : undefined;
   const nodeInvalid = (key: string, field: string) => {
     const index = definition?.nodes.findIndex((node) => node.key === key);
     return (
       state.issues.some(
-        (issue) => issue.field === `nodes.${index}.${field}` || issue.field === `nodes.${index}`,
+        (issue) =>
+          issue.field === `nodes.${index}.${field}` ||
+          issue.field.startsWith(`nodes.${index}.${field}.`) ||
+          issue.field === `nodes.${index}`,
       ) || undefined
     );
   };
@@ -178,7 +211,9 @@ export function CampaignWorkflowView({
             ? "wait delay"
             : node[2] === "messageDesignId"
               ? "message design"
-              : "definition";
+              : node[2] === "condition"
+                ? "condition"
+                : "definition";
       return `Step ${index + 1} ${label}`;
     }
     if (field === "timezone") return "Workflow timezone";
@@ -188,6 +223,411 @@ export function CampaignWorkflowView({
     if (field === "startInstant") return "Virtual start instant";
     return "Workflow definition";
   };
+  const renderMessage = (node: Schema<"WorkflowNode">, step: number) => (
+    <>
+      <p>
+        {hasDraft ? "Draft design reference" : "Stored design reference"}:{" "}
+        {node.messageDesignId ?? "No design chosen"}
+      </p>
+      {hasDraft && (
+        <div>
+          <label htmlFor={`${prefix}-${node.key}-design`}>
+            {node.kind === "email" ? "Email" : "SMS"} design for step {step}
+          </label>
+          <select
+            id={`${prefix}-${node.key}-design`}
+            disabled={!canEdit || catalogue.reading || !catalogue.page}
+            value={
+              (node.kind === "email" ? emailChoices : smsChoices).some(
+                (choice) => choice.id === node.messageDesignId,
+              )
+                ? node.messageDesignId
+                : ""
+            }
+            aria-invalid={
+              nodeInvalid(node.key, "messageDesignId") ||
+              catalogue.nodeError?.nodeKey === node.key ||
+              undefined
+            }
+            aria-describedby={
+              [
+                definitionError,
+                catalogue.nodeError?.nodeKey === node.key ? `${prefix}-${node.key}-source-error` : null,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
+            onChange={(event) => {
+              if (event.target.value)
+                actions.chooseDesign(node.key, event.target.value, node.kind as WorkflowDesignChannel);
+            }}
+          >
+            <option value="">
+              {node.messageDesignId
+                ? "Choose explicitly to replace or verify the reference"
+                : "Choose a current native design"}
+            </option>
+            {(node.kind === "email" ? emailChoices : smsChoices).map((choice) => (
+              <option value={choice.id} key={choice.id}>
+                {choice.name} · observed version {choice.version}
+              </option>
+            ))}
+          </select>
+          {(node.kind === "email" ? emailChoices : smsChoices).some(
+            (choice) => choice.id === node.messageDesignId,
+          ) && (
+            <WorkflowDesignCheckButton
+              node={node}
+              step={step}
+              disabled={!canEdit || catalogue.reading}
+              onCheck={actions.chooseDesign}
+            />
+          )}
+          {catalogue.nodeError?.nodeKey === node.key && (
+            <p id={`${prefix}-${node.key}-source-error`} role="alert" className={styles.error}>
+              {catalogue.nodeError.message}
+            </p>
+          )}
+          {!catalogue.reading &&
+            catalogue.page &&
+            !(node.kind === "email" ? emailChoices : smsChoices).length && (
+              <p className={styles.help}>
+                No compatible design on this page. Read another page or author a native design in the message
+                design library.
+              </p>
+            )}
+        </div>
+      )}
+      {hasDraft &&
+        online &&
+        catalogue.preview &&
+        catalogue.previewNodeKey === node.key &&
+        catalogue.preview.data.id === node.messageDesignId && (
+          <section className={styles.designPreview} aria-label={`Current observed design for step ${step}`}>
+            <h4>{catalogue.preview.data.name}</h4>
+            <p>
+              Current design version {catalogue.preview.data.version}. Saving verifies it again; sending
+              eligibility is not checked.
+            </p>
+            {catalogue.preview.data.subject != null && <p>Subject: {catalogue.preview.data.subject}</p>}
+            <pre>{catalogue.preview.data.content}</pre>
+          </section>
+        )}
+      <p className={styles.notice}>
+        Current design access, sender, consent, suppression, channel entitlement and provider checks remain
+        required before any future execution. No message is sent.
+      </p>
+    </>
+  );
+  const stepNumber = (key: string) => rows.findIndex((item) => item.key === key) + 1;
+  const kindLabel = (kind: Schema<"WorkflowNode">["kind"]) =>
+    kind === "wait"
+      ? "Wait"
+      : kind === "task"
+        ? "Task"
+        : kind === "condition"
+          ? "Condition"
+          : kind === "email"
+            ? "Email reference"
+            : "SMS reference";
+  const branchAdd = (parent: string, branch: "true" | "false", step: number) => {
+    const where = branch === "true" ? "matching" : "otherwise";
+    return (
+      <div className={styles.actions}>
+        {(["wait", "task", "email", "sms", "condition"] as const).map((kind) => (
+          <Button
+            key={kind}
+            type="button"
+            variant="secondary"
+            disabled={!canEdit || rows.length >= 100}
+            aria-label={`Add ${kind === "sms" ? "SMS" : kind} ${kind === "condition" ? "" : "step "}to the ${where} branch of step ${step}`}
+            onClick={() => actions.add(kind, { parent, branch })}
+          >
+            <Plus size={16} aria-hidden="true" />{" "}
+            {kind === "sms" ? "SMS" : kind[0].toUpperCase() + kind.slice(1)}
+          </Button>
+        ))}
+      </div>
+    );
+  };
+  const renderCondition = (node: Schema<"WorkflowNode">, step: number) => {
+    const condition = node.condition ?? {};
+    const unknown = "Saved reference (not in the current list)";
+    const selectFor = (
+      field: "stageId" | "sourceId",
+      label: string,
+      choices: readonly ConditionChoice[] | null,
+    ) => {
+      const value = condition[field] ?? "";
+      const known = !value || Boolean(choices?.some((choice) => choice.id === value));
+      return (
+        <div>
+          <label htmlFor={`${prefix}-${node.key}-${field}`}>
+            {label} for condition step {step}
+          </label>
+          <select
+            id={`${prefix}-${node.key}-${field}`}
+            value={value}
+            disabled={!canEdit || (!choices && !value)}
+            aria-invalid={nodeInvalid(node.key, `condition.${field}`)}
+            aria-describedby={definitionError}
+            onChange={(event) => actions.condition?.(node.key, field, event.target.value || null)}
+          >
+            <option value="">Any</option>
+            {!known && <option value={value}>{unknown}</option>}
+            {(choices ?? []).map((choice) => (
+              <option key={choice.id} value={choice.id}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    };
+    if (!hasDraft)
+      return (
+        <>
+          <p>Allowlisted lead-filter predicates:</p>
+          <dl className={styles.references}>
+            {Object.entries(condition).map(([field, value]) => (
+              <div key={field}>
+                <dt>{field}</dt>
+                <dd>{Array.isArray(value) ? value.join(", ") : String(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      );
+    const tags = condition.tagIds ?? [];
+    const savedTags = tags.filter((id) => !conditions.tags?.some((choice) => choice.id === id));
+    const toggleTag = (id: string, checked: boolean) =>
+      actions.condition?.(node.key, "tagIds", checked ? [...tags, id] : tags.filter((tag) => tag !== id));
+    return (
+      <fieldset disabled={!canEdit} className={styles.policy}>
+        <legend>Lead must match every chosen field (condition step {step})</legend>
+        <div>
+          <label htmlFor={`${prefix}-${node.key}-intent`}>Lead intent for condition step {step}</label>
+          <select
+            id={`${prefix}-${node.key}-intent`}
+            value={condition.intent ?? ""}
+            aria-invalid={nodeInvalid(node.key, "condition.intent")}
+            aria-describedby={definitionError}
+            onChange={(event) => actions.condition?.(node.key, "intent", event.target.value || null)}
+          >
+            <option value="">Any</option>
+            <option value="buyer">Buyer</option>
+            <option value="seller">Seller</option>
+            <option value="both">Buyer and seller</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </div>
+        {selectFor("stageId", "Pipeline stage", conditions.stages)}
+        {selectFor("sourceId", "Lead source", conditions.sources)}
+        <fieldset className={styles.policy}>
+          <legend>Tags for condition step {step} (all chosen tags must be present)</legend>
+          {savedTags.map((id) => (
+            <label key={id} className={styles.checkbox}>
+              <input type="checkbox" checked onChange={() => toggleTag(id, false)} /> {unknown}
+            </label>
+          ))}
+          {(conditions.tags ?? []).map((choice) => (
+            <label key={choice.id} className={styles.checkbox}>
+              <input
+                type="checkbox"
+                checked={tags.includes(choice.id)}
+                disabled={!tags.includes(choice.id) && tags.length >= 20}
+                onChange={(event) => toggleTag(choice.id, event.target.checked)}
+              />{" "}
+              {choice.label}
+            </label>
+          ))}
+          {conditions.tagCursor && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={conditions.reading}
+              onClick={() => actions.moreTags?.()}
+            >
+              Read more tag choices
+            </Button>
+          )}
+          {!conditions.tags && !savedTags.length && (
+            <p className={styles.help}>Tag choices are not verified.</p>
+          )}
+        </fieldset>
+        {(memberId || condition.ownerMemberId) && (
+          <label className={styles.checkbox}>
+            <input
+              type="checkbox"
+              checked={Boolean(condition.ownerMemberId)}
+              onChange={(event) =>
+                actions.condition?.(
+                  node.key,
+                  "ownerMemberId",
+                  event.target.checked && memberId ? memberId : null,
+                )
+              }
+            />{" "}
+            {condition.ownerMemberId && condition.ownerMemberId !== memberId
+              ? "Saved owner reference (clear to remove)"
+              : "Only leads assigned to me"}
+          </label>
+        )}
+        <div>
+          <label htmlFor={`${prefix}-${node.key}-q`}>Lead name contains (condition step {step})</label>
+          <input
+            id={`${prefix}-${node.key}-q`}
+            value={condition.q ?? ""}
+            maxLength={400}
+            autoComplete="off"
+            aria-invalid={nodeInvalid(node.key, "condition.q")}
+            aria-describedby={definitionError}
+            onChange={(event) => actions.condition?.(node.key, "q", event.target.value || null)}
+          />
+        </div>
+        {conditions.reading && <p role="status">Reading current condition choices…</p>}
+        {conditions.error && (
+          <p role="alert" className={styles.error}>
+            {conditions.error}
+          </p>
+        )}
+      </fieldset>
+    );
+  };
+  const renderStep = (
+    node: Schema<"WorkflowNode">,
+    position: Readonly<{ index: number; length: number }> | null,
+    item?: OutlineItem,
+  ) => {
+    const step = stepNumber(node.key);
+    return (
+      <>
+        <div className={styles.heading}>
+          <h4>
+            {step}. {kindLabel(node.kind)}
+          </h4>
+          <Badge>{node.key}</Badge>
+        </div>
+        {hasDraft && node.kind === "wait" ? (
+          <div>
+            <label htmlFor={`${prefix}-${node.key}`}>Wait delay in seconds for step {step}</label>
+            <input
+              id={`${prefix}-${node.key}`}
+              type="number"
+              min={0}
+              max={31536000}
+              step={1}
+              required
+              disabled={!canEdit}
+              value={node.delaySeconds ?? ""}
+              aria-invalid={nodeInvalid(node.key, "delaySeconds")}
+              aria-describedby={definitionError}
+              onChange={(event) => actions.editNode(node.key, event.target.value)}
+            />
+          </div>
+        ) : (
+          node.kind === "wait" && <p>Elapsed wait: {node.delaySeconds} seconds.</p>
+        )}
+        {hasDraft && node.kind === "task" ? (
+          <div>
+            <label htmlFor={`${prefix}-${node.key}`}>Task title for step {step}</label>
+            <input
+              id={`${prefix}-${node.key}`}
+              required
+              disabled={!canEdit}
+              value={node.taskTitle ?? ""}
+              aria-invalid={nodeInvalid(node.key, "taskTitle")}
+              aria-describedby={definitionError}
+              maxLength={400}
+              autoComplete="off"
+              onChange={(event) => actions.editNode(node.key, event.target.value)}
+            />
+            <p className={styles.caption}>
+              Up to 200 characters. Saving this definition does not create a CRM task.
+            </p>
+          </div>
+        ) : (
+          node.kind === "task" && <p>{node.taskTitle}</p>
+        )}
+        {node.kind === "condition" && renderCondition(node, step)}
+        {(node.kind === "email" || node.kind === "sms") && renderMessage(node, step)}
+        {!hasDraft && !outline && (
+          <ul className={styles.links}>
+            {definition!.edges
+              .filter((edge) => edge.from === node.key)
+              .map((edge) => (
+                <li key={`${edge.to}-${edge.branch}`}>
+                  {edge.branch} → {edge.to}
+                </li>
+              ))}
+          </ul>
+        )}
+        {item?.type === "condition" &&
+          (["true", "false"] as const).map((branch) => {
+            const list = branch === "true" ? item.whenTrue : item.whenFalse;
+            return (
+              <section
+                key={branch}
+                className={styles.branch}
+                aria-label={`${branch === "true" ? "When the lead matches" : "Otherwise"}, step ${step}`}
+              >
+                <h5>{branch === "true" ? "When the lead matches" : "Otherwise"}</h5>
+                {list.length ? (
+                  renderList(list)
+                ) : (
+                  <p className={styles.help}>
+                    No steps in this branch. It continues with the step after this condition.
+                  </p>
+                )}
+                {hasDraft && branchAdd(node.key, branch, step)}
+              </section>
+            );
+          })}
+        {hasDraft && position && (
+          <div className={styles.actions}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!canEdit || position.index === 0}
+              aria-label={`Move step ${step} up`}
+              onClick={() => actions.move(node.key, -1)}
+            >
+              <ArrowUp size={16} aria-hidden="true" /> Move up
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!canEdit || position.index === position.length - 1}
+              aria-label={`Move step ${step} down`}
+              onClick={() => actions.move(node.key, 1)}
+            >
+              <ArrowDown size={16} aria-hidden="true" /> Move down
+            </Button>
+            <Button
+              type="button"
+              variant="quiet"
+              disabled={!canEdit}
+              aria-label={`Remove step ${step}`}
+              onClick={() => actions.remove(node.key)}
+            >
+              <Trash2 size={16} aria-hidden="true" /> Remove
+            </Button>
+          </div>
+        )}
+      </>
+    );
+  };
+  function renderList(list: Outline): ReactNode {
+    return (
+      <ol className={styles.steps}>
+        {list.map((item, index) => (
+          <li key={item.node.key} className={styles.step}>
+            {renderStep(item.node, { index, length: list.length }, item)}
+          </li>
+        ))}
+      </ol>
+    );
+  }
   if (!active)
     return (
       <Empty icon={<GitBranch size={30} />} title="Synthetic workflow drafts unavailable">
@@ -343,14 +783,14 @@ export function CampaignWorkflowView({
                 )}
               </dl>
               {state.canWrite && (
-                <Button variant="secondary" disabled={locked || !linearOrder} onClick={actions.copy}>
+                <Button variant="secondary" disabled={locked || !outline} onClick={actions.copy}>
                   <Copy size={17} aria-hidden="true" /> Copy to new workflow draft
                 </Button>
               )}
-              {!linearOrder && (
+              {!outline && (
                 <p className={styles.notice}>
-                  This saved graph stays read-only. Condition branches, joins and unsupported nodes require a
-                  future editor. Its nodes and edges are preserved intact.
+                  This saved graph stays read-only. Its branches or joins cannot be represented in the
+                  structured editor without changing it. Its nodes and edges are preserved intact.
                 </p>
               )}
             </>
@@ -468,240 +908,24 @@ export function CampaignWorkflowView({
           )}
           {definition ? (
             <>
-              <h4>{linearOrder || hasDraft ? "Execution order" : "Stored graph nodes"}</h4>
+              <h4>{outline ? "Execution outline" : "Stored graph nodes"}</h4>
               {rows.length ? (
-                <ol className={styles.steps}>
-                  {rows.map((node, index) => (
-                    <li key={node.key} className={styles.step}>
-                      <div className={styles.heading}>
-                        <h4>
-                          {index + 1}.{" "}
-                          {node.kind === "wait"
-                            ? "Wait"
-                            : node.kind === "task"
-                              ? "Task"
-                              : node.kind === "condition"
-                                ? "Condition"
-                                : node.kind === "email"
-                                  ? "Email reference"
-                                  : "SMS reference"}
-                        </h4>
-                        <Badge>{node.key}</Badge>
-                      </div>
-                      {hasDraft && node.kind === "wait" ? (
-                        <div>
-                          <label htmlFor={`${prefix}-${node.key}`}>
-                            Wait delay in seconds for step {index + 1}
-                          </label>
-                          <input
-                            id={`${prefix}-${node.key}`}
-                            type="number"
-                            min={0}
-                            max={31536000}
-                            step={1}
-                            required
-                            disabled={!canEdit}
-                            value={node.delaySeconds ?? ""}
-                            aria-invalid={nodeInvalid(node.key, "delaySeconds")}
-                            aria-describedby={definitionError}
-                            onChange={(event) => actions.editNode(node.key, event.target.value)}
-                          />
-                        </div>
-                      ) : (
-                        node.kind === "wait" && <p>Elapsed wait: {node.delaySeconds} seconds.</p>
-                      )}
-                      {hasDraft && node.kind === "task" ? (
-                        <div>
-                          <label htmlFor={`${prefix}-${node.key}`}>Task title for step {index + 1}</label>
-                          <input
-                            id={`${prefix}-${node.key}`}
-                            required
-                            disabled={!canEdit}
-                            value={node.taskTitle ?? ""}
-                            aria-invalid={nodeInvalid(node.key, "taskTitle")}
-                            aria-describedby={definitionError}
-                            maxLength={400}
-                            autoComplete="off"
-                            onChange={(event) => actions.editNode(node.key, event.target.value)}
-                          />
-                          <p className={styles.caption}>
-                            Up to 200 characters. Saving this definition does not create a CRM task.
-                          </p>
-                        </div>
-                      ) : (
-                        node.kind === "task" && <p>{node.taskTitle}</p>
-                      )}
-                      {node.kind === "condition" && (
-                        <>
-                          <p>Allowlisted lead-filter predicates:</p>
-                          <dl className={styles.references}>
-                            {Object.entries(node.condition!).map(([field, value]) => (
-                              <div key={field}>
-                                <dt>{field}</dt>
-                                <dd>{Array.isArray(value) ? value.join(", ") : String(value)}</dd>
-                              </div>
-                            ))}
-                          </dl>
-                        </>
-                      )}
-                      {(node.kind === "email" || node.kind === "sms") && (
-                        <>
-                          <p>
-                            {hasDraft ? "Draft design reference" : "Stored design reference"}:{" "}
-                            {node.messageDesignId ?? "No design chosen"}
-                          </p>
-                          {hasDraft && (
-                            <div>
-                              <label htmlFor={`${prefix}-${node.key}-design`}>
-                                {node.kind === "email" ? "Email" : "SMS"} design for step {index + 1}
-                              </label>
-                              <select
-                                id={`${prefix}-${node.key}-design`}
-                                disabled={!canEdit || catalogue.reading || !catalogue.page}
-                                value={
-                                  (node.kind === "email" ? emailChoices : smsChoices).some(
-                                    (choice) => choice.id === node.messageDesignId,
-                                  )
-                                    ? node.messageDesignId
-                                    : ""
-                                }
-                                aria-invalid={
-                                  nodeInvalid(node.key, "messageDesignId") ||
-                                  catalogue.nodeError?.nodeKey === node.key ||
-                                  undefined
-                                }
-                                aria-describedby={
-                                  [
-                                    definitionError,
-                                    catalogue.nodeError?.nodeKey === node.key
-                                      ? `${prefix}-${node.key}-source-error`
-                                      : null,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" ") || undefined
-                                }
-                                onChange={(event) => {
-                                  if (event.target.value)
-                                    actions.chooseDesign(
-                                      node.key,
-                                      event.target.value,
-                                      node.kind as WorkflowDesignChannel,
-                                    );
-                                }}
-                              >
-                                <option value="">
-                                  {node.messageDesignId
-                                    ? "Choose explicitly to replace or verify the reference"
-                                    : "Choose a current native design"}
-                                </option>
-                                {(node.kind === "email" ? emailChoices : smsChoices).map((choice) => (
-                                  <option value={choice.id} key={choice.id}>
-                                    {choice.name} · observed version {choice.version}
-                                  </option>
-                                ))}
-                              </select>
-                              {(node.kind === "email" ? emailChoices : smsChoices).some(
-                                (choice) => choice.id === node.messageDesignId,
-                              ) && (
-                                <WorkflowDesignCheckButton
-                                  node={node}
-                                  step={index + 1}
-                                  disabled={!canEdit || catalogue.reading}
-                                  onCheck={actions.chooseDesign}
-                                />
-                              )}
-                              {catalogue.nodeError?.nodeKey === node.key && (
-                                <p
-                                  id={`${prefix}-${node.key}-source-error`}
-                                  role="alert"
-                                  className={styles.error}
-                                >
-                                  {catalogue.nodeError.message}
-                                </p>
-                              )}
-                              {!catalogue.reading &&
-                                catalogue.page &&
-                                !(node.kind === "email" ? emailChoices : smsChoices).length && (
-                                  <p className={styles.help}>
-                                    No compatible design on this page. Read another page or author a native
-                                    design in the message design library.
-                                  </p>
-                                )}
-                            </div>
-                          )}
-                          {hasDraft &&
-                            online &&
-                            catalogue.preview &&
-                            catalogue.previewNodeKey === node.key &&
-                            catalogue.preview.data.id === node.messageDesignId && (
-                              <section
-                                className={styles.designPreview}
-                                aria-label={`Current observed design for step ${index + 1}`}
-                              >
-                                <h4>{catalogue.preview.data.name}</h4>
-                                <p>
-                                  Current design version {catalogue.preview.data.version}. Saving verifies it
-                                  again; sending eligibility is not checked.
-                                </p>
-                                {catalogue.preview.data.subject != null && (
-                                  <p>Subject: {catalogue.preview.data.subject}</p>
-                                )}
-                                <pre>{catalogue.preview.data.content}</pre>
-                              </section>
-                            )}
-                          <p className={styles.notice}>
-                            Current design access, sender, consent, suppression, channel entitlement and
-                            provider checks remain required before any future execution. No message is sent.
-                          </p>
-                        </>
-                      )}
-                      {!hasDraft && (
-                        <ul className={styles.links}>
-                          {definition.edges
-                            .filter((edge) => edge.from === node.key)
-                            .map((edge) => (
-                              <li key={`${edge.to}-${edge.branch}`}>
-                                {edge.branch} → {edge.to}
-                              </li>
-                            ))}
-                        </ul>
-                      )}
-                      {hasDraft && (
-                        <div className={styles.actions}>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            disabled={!canEdit || index === 0}
-                            aria-label={`Move step ${index + 1} up`}
-                            onClick={() => actions.move(node.key, -1)}
-                          >
-                            <ArrowUp size={16} aria-hidden="true" /> Move up
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            disabled={!canEdit || index === rows.length - 1}
-                            aria-label={`Move step ${index + 1} down`}
-                            onClick={() => actions.move(node.key, 1)}
-                          >
-                            <ArrowDown size={16} aria-hidden="true" /> Move down
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="quiet"
-                            disabled={!canEdit}
-                            aria-label={`Remove step ${index + 1}`}
-                            onClick={() => actions.remove(node.key)}
-                          >
-                            <Trash2 size={16} aria-hidden="true" /> Remove
-                          </Button>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ol>
+                outline ? (
+                  renderList(outline)
+                ) : (
+                  <ol className={styles.steps}>
+                    {rows.map((node) => (
+                      <li key={node.key} className={styles.step}>
+                        {renderStep(node, null)}
+                      </li>
+                    ))}
+                  </ol>
+                )
               ) : (
-                <p>Add at least one wait, task, email or SMS step. An empty definition cannot be saved.</p>
+                <p>
+                  Add at least one wait, task, condition, email or SMS step. An empty definition cannot be
+                  saved.
+                </p>
               )}
             </>
           ) : (
@@ -738,10 +962,17 @@ export function CampaignWorkflowView({
                 >
                   <Plus size={17} aria-hidden="true" /> Add SMS step
                 </Button>
+                <Button
+                  variant="secondary"
+                  disabled={!canEdit || rows.length >= 100}
+                  onClick={() => actions.add("condition")}
+                >
+                  <GitBranch size={17} aria-hidden="true" /> Add condition
+                </Button>
               </div>
               <p className={styles.help}>
-                Condition authoring requires two distinct branches and remains unavailable here. Message
-                references do not verify sending eligibility or activate a channel.
+                A condition checks allowlisted lead fields and has two branches that rejoin at the next step.
+                Message references do not verify sending eligibility or activate a channel.
               </p>
               {state.issues.length > 0 && (
                 <div id={`${prefix}-issues`} className={styles.error} role="alert">
@@ -1015,6 +1246,55 @@ export default function CampaignWorkflowWorkspace(props: CampaignWorkflowWorkspa
     catalogueController.getSnapshot,
     catalogueController.getSnapshot,
   );
+  const permitted = {
+    stages: session.permissions.includes("crm.pipeline.read"),
+    sources: session.permissions.includes("crm.sources.read"),
+    tags: session.permissions.includes("crm.tags.read"),
+  };
+  const conditionController = useMemo(() => {
+    const base = `/api/v1/orgs/${session.activeOrgId}`;
+    const current = () =>
+      live.current.binding === binding &&
+      live.current.online &&
+      live.current.active &&
+      !["unavailable", "denied"].includes(controller.getSnapshot().phase);
+    const read = async (path: string) => {
+      if (!current()) throw new Error("The current condition context is unavailable.");
+      return (await requestWorkflowJson(path, 200)).data;
+    };
+    return new WorkflowConditionCatalogue({
+      online: live.current.online,
+      permitted: { stages: permitted.stages, sources: permitted.sources, tags: permitted.tags },
+      client: {
+        stages: () => read(`${base}/pipeline-stages?limit=100`),
+        sources: () => read(`${base}/lead-sources?limit=100`),
+        tags: (cursor) =>
+          read(`${base}/tags?${new URLSearchParams({ limit: "25", ...(cursor ? { cursor } : {}) })}`),
+      },
+      isCurrent: current,
+      onAuthorityLost: (error) => controller.sourceAccessLost(error),
+    });
+    // The binding already includes the permission set through the controller identity.
+  }, [binding, controller, session.activeOrgId, permitted.stages, permitted.sources, permitted.tags]);
+  const conditions = useSyncExternalStore(
+    conditionController.subscribe,
+    conditionController.getSnapshot,
+    conditionController.getSnapshot,
+  );
+  const hasCondition = Boolean(
+    state.outline && outlineNodes(state.outline).some((node) => node.kind === "condition"),
+  );
+  useEffect(() => {
+    conditionController.attach();
+    return () => conditionController.detach();
+  }, [conditionController]);
+  useEffect(() => {
+    conditionController.setOnline(online);
+  }, [conditionController, online]);
+  useEffect(() => {
+    if (["unavailable", "denied"].includes(state.phase) || !state.draft) conditionController.invalidate();
+    else if (hasCondition && online) void conditionController.load();
+  }, [conditionController, hasCondition, online, state.phase, Boolean(state.draft)]);
   useEffect(() => {
     controller.attach();
     live.current.props.onProtectedChange(controller.isProtected());
@@ -1072,8 +1352,14 @@ export default function CampaignWorkflowWorkspace(props: CampaignWorkflowWorkspa
     copy: () => {
       if (live.current.online) controller.copySelected();
     },
-    add: (kind) => {
-      if (live.current.online) controller.add(kind);
+    add: (kind, target) => {
+      if (live.current.online) controller.add(kind, target);
+    },
+    condition: (key, field, value) => {
+      if (live.current.online) controller.editCondition(key, field, value);
+    },
+    moreTags: () => {
+      if (live.current.online) void conditionController.loadMoreTags();
     },
     refreshDesigns: () => {
       if (live.current.online) void catalogueController.refresh();
@@ -1129,6 +1415,8 @@ export default function CampaignWorkflowWorkspace(props: CampaignWorkflowWorkspa
       active={active}
       online={online}
       actions={actions}
+      conditions={conditions}
+      memberId={props.memberId}
     />
   );
 }

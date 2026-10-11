@@ -142,8 +142,44 @@ describe("version selection and lossless draft authoring", () => {
     expect(saved).toEqual(definition);
     expect(Object.isFrozen(saved.nodes)).toBe(true);
   });
-  it("keeps non-linear definitions untouched and explicitly read-only", async () => {
-    for (const definition of [branches()]) {
+  // ADR-050 deliberately changed this retained case: structured branched graphs are now copyable.
+  it("copies a structured branched definition losslessly into a draft", async () => {
+    const { controller, client } = setup();
+    client.detail.mockResolvedValueOnce({ data: { ...version(), definition: branches() }, etag: '"1"' });
+    await controller.select(versionId);
+    expect(controller.copySelected()).toBe(true);
+    const draft = controller.getSnapshot().draft!;
+    expect(new Set(draft.nodes.map((node) => JSON.stringify(node)))).toEqual(
+      new Set(branches().nodes.map((node) => JSON.stringify(node))),
+    );
+    expect(new Set(draft.edges.map((edge) => JSON.stringify(edge)))).toEqual(
+      new Set(branches().edges.map((edge) => JSON.stringify(edge))),
+    );
+    expect(controller.getSnapshot().issues).toEqual([]);
+    expect(controller.getSnapshot().selected!.data.definition).toEqual(branches());
+  });
+  it("keeps unstructured definitions untouched and explicitly read-only", async () => {
+    const unstructured: Schema<"CampaignVersionWrite"> = {
+      timezone: "UTC",
+      nodes: [
+        { key: "c", kind: "condition", condition: { intent: "buyer" } },
+        { key: "a", kind: "wait", delaySeconds: 1 },
+        { key: "d", kind: "condition", condition: { intent: "seller" } },
+        { key: "b", kind: "task", taskTitle: "Synthetic b" },
+        { key: "e", kind: "task", taskTitle: "Synthetic e" },
+        { key: "f", kind: "task", taskTitle: "Synthetic f" },
+      ],
+      edges: [
+        { from: "c", to: "a", branch: "true" },
+        { from: "c", to: "b", branch: "false" },
+        { from: "a", to: "d", branch: "always" },
+        { from: "d", to: "b", branch: "true" },
+        { from: "d", to: "e", branch: "false" },
+        { from: "b", to: "f", branch: "always" },
+        { from: "e", to: "f", branch: "always" },
+      ],
+    };
+    for (const definition of [unstructured]) {
       const { controller, client } = setup();
       client.detail.mockResolvedValueOnce({ data: { ...version(), definition }, etag: '"1"' });
       await controller.select(versionId);

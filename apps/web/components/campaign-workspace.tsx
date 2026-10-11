@@ -77,6 +77,8 @@ export type CampaignWorkspaceProps = {
   online: boolean;
   syntheticFeaturesEnabled: boolean;
   accessRevision: number;
+  /** Verified current member, when known. */
+  memberId?: string;
   onDirty(value: boolean): void;
   onAccessRevoked?(): void;
 };
@@ -475,6 +477,7 @@ export default function CampaignWorkspace({
   online,
   syntheticFeaturesEnabled,
   accessRevision,
+  memberId,
   onDirty,
   onAccessRevoked,
 }: CampaignWorkspaceProps) {
@@ -648,6 +651,7 @@ export default function CampaignWorkspace({
           syntheticFeaturesEnabled={syntheticFeaturesEnabled}
           accessRevision={accessRevision}
           campaignId={workflowCampaignId}
+          memberId={memberId}
           onProtectedChange={(value) => {
             if (live.current.binding !== binding || live.current.subview !== "workflow") return;
             workflowProtected.current = value;
