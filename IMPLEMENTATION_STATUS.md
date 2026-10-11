@@ -10,12 +10,14 @@ The project owner delegated technical decision authority to the coordinating ses
 
 **Unit test fixes (`d15de54`):** Two unit tests needed updating: `archive-workspace.test.ts` asserts the updated `reloadProtected.current` line (now includes contactMerge guard); `listing-attribution-contract.test.ts` now strips the ADR-049 amendment paths and schemas before comparing implementation to frozen original.
 
-Verification at `d15de54`:
+Verification at `8f6cc8f` (includes formatting fix):
 - Root and web TypeScript: pass.
 - `tests/unit` + `packages`: **3,271/3,271 across 94 files**.
-- `contact-merge-api`: **20/20**; `data-transfer-api`: **21/21** (isolated databases).
+- Full `node scripts/test-isolated.mjs`: **4,582/4,582 across 150 files, zero failures**.
+- Scoped Biome (4 modified files): pass after formatting.
+- `node scripts/check-contracts.mjs --generated`: pass — 173 operations, 174 schemas.
 
-Not run since `07a099a`: full `node scripts/test-isolated.mjs` gate, production build, runtime/launch probes. Browser/axe/keyboard/device acceptance remains open.
+Production build: 133 runtime files, 17 JSON resources. `verify:runtime` passes. Browser/axe/keyboard/device acceptance remains open.
 
 Verification at this checkpoint: `node scripts/check-contracts.mjs --generated` passes with 170 operations and 169 schemas; `node node_modules/vitest/vitest.mjs run tests/unit packages` passes **3,260/3,260** across 93 files. No production provider, outbound delivery, payment, or release action was performed.
 
