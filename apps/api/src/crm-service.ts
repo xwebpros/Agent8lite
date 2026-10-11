@@ -12,6 +12,7 @@ import { dashboardClockInstant, dashboardUtcPeriod } from "./dashboard-time";
 import { parseContactQuery } from "./contact-query";
 import { contactCommandJson, contactReceipt, contactRevision, prepareContactPatch } from "./contact-command";
 import { appendContactCreatedEvent } from "./contact-created-event";
+import { prepareTaskCreate, taskCreateJson, taskCreateReceipt } from "./task-create-command";
 import {
   prepareStageTransition,
   stageTransitionEvent,
@@ -78,7 +79,7 @@ function timezone(value: string) {
 
 function detachedReadContext(
   value: TenantContext,
-  subject: "reporting" | "contact" | "stage",
+  subject: "reporting" | "contact" | "stage" | "task",
 ): TenantContext {
   const invalid = (): never => {
     throw new AccessError(403, "permission_denied", `Current ${subject} authority is required.`);
@@ -556,7 +557,7 @@ export class CrmService {
     };
   }
 
-  private async contactCommandAuthority(lock = false, subject: "contact" | "stage" = "contact") {
+  private async contactCommandAuthority(lock = false, subject: "contact" | "stage" | "task" = "contact") {
     const context = this.context;
     const result = await this.client.query(
       `SELECT 1 FROM app.membership m
@@ -1300,6 +1301,243 @@ export class CrmService {
     return { body: lead, status: 201, etag: historicalEtag };
   }
 
+  /** Task creation uses Task-write scope for both assignee and optional Lead sources. */
+  async postTask(body: unknown, key: string | undefined, routeKey: string): Promise<Mutation> {
+    const context = detachedReadContext(this.context, "task");
+    const command = prepareTaskCreate(body, key, routeKey, context.organizationId);
+    const traceId = this.traceId;
+    if (
+      typeof traceId !== "string" ||
+      !traceId ||
+      [...traceId].length > 80 ||
+      /[\uD800-\uDFFF]/u.test(traceId)
+    )
+      throw new AccessError(503, "task_command_unavailable", "Task command references are unavailable.");
+    const current = new CrmService(this.client, context, traceId);
+    const scope = requirePermission(context, "crm.tasks.write");
+    await current.contactCommandAuthority(true, "task");
+    await requireEntitlement(this.client, "crm.tasks.write");
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${context.organizationId}:${context.userId}:${command.routeKey}:${command.key}`,
+    ]);
+    await current.contactCommandAuthority(false, "task");
+    await requireEntitlement(this.client, "crm.tasks.write", { lock: false });
+    const receiptParameters = [context.userId, command.routeKey, command.key];
+    const saved = (
+      await this.client.query(
+        `SELECT request_hash,response_body,status_code,response_etag,response_ref,
+          expires_at>clock_timestamp() AS unexpired FROM app.idempotency_record
+         WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+        receiptParameters,
+      )
+    ).rows[0];
+    if (saved && saved.request_hash !== command.requestHash)
+      throw new AccessError(409, "idempotency_conflict", "This key was used with a different request.");
+    if (saved && !saved.unexpired)
+      throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+    if (
+      saved &&
+      (saved.status_code !== 201 || (saved.response_etag !== null && saved.response_etag !== '"1"'))
+    )
+      throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+    const receipt = saved ? taskCreateReceipt(saved.response_body, command) : null;
+    if (
+      saved &&
+      saved.response_ref !== null &&
+      (typeof saved.response_ref !== "string" ||
+        saved.response_ref.toLowerCase() !== receipt!.id.toLowerCase())
+    )
+      throw new AccessError(503, "receipt_unavailable", "The saved command receipt is unavailable.");
+    const taskStatement = `SELECT r.* FROM app.task r WHERE r.tenant_id=app.current_tenant()
+      AND r.id=$1 AND $2::uuid IS NOT NULL AND ${current.scopeSql("tasks", scope, "$2")}`;
+    const existing = receipt
+      ? ((await this.client.query(`${taskStatement} FOR UPDATE OF r`, [receipt.id, context.memberId]))
+          .rows[0] ?? notFound())
+      : null;
+    if (
+      existing &&
+      (typeof existing.assignee_member_id !== "string" ||
+        !uuid.test(existing.assignee_member_id) ||
+        (existing.lead_id !== null && (typeof existing.lead_id !== "string" || !uuid.test(existing.lead_id))))
+    )
+      throw new AccessError(503, "resource_unavailable", "Task source references are unavailable.");
+    // A historical acknowledgement discloses its original references as well as the current Task.
+    const assignees = [
+      ...new Set<string>([
+        command.normalized.assigneeMemberId,
+        ...(existing ? [existing.assignee_member_id] : []),
+      ]),
+    ].sort();
+    const assigneeStatement = `SELECT r.id FROM app.membership r WHERE r.tenant_id=app.current_tenant()
+      AND r.id=ANY($1::uuid[]) AND r.status='active' AND $2::uuid IS NOT NULL
+      AND ${current.memberScope("r.id", scope, "$2")}`;
+    const assigneeParameters = [assignees, context.memberId];
+    const assertAssignees = async (lock = false) => {
+      const result = await this.client.query(
+        `${assigneeStatement} ${lock ? "ORDER BY r.id FOR SHARE OF r" : ""}`,
+        assigneeParameters,
+      );
+      if (result.rowCount !== assignees.length) {
+        if (receipt) notFound();
+        throw new AccessError(
+          422,
+          "assignee_invalid",
+          "Assignee must be an active eligible organization member.",
+        );
+      }
+    };
+    await assertAssignees(true);
+    const leadIds = [
+      ...new Set<string>([
+        ...(command.normalized.leadId ? [command.normalized.leadId] : []),
+        ...(existing?.lead_id ? [existing.lead_id] : []),
+      ]),
+    ].sort();
+    const leadStatement = `SELECT l.id,l.contact_id,l.owner_member_id FROM app.lead l
+      JOIN app.contact c ON(c.tenant_id,c.id)=(l.tenant_id,l.contact_id)
+      WHERE l.tenant_id=app.current_tenant() AND l.id=$1 AND $2::uuid IS NOT NULL
+        AND l.archived_at IS NULL AND c.archived_at IS NULL
+        AND ${current.memberScope("l.owner_member_id", scope, "$2")}`;
+    const leadSources: { id: string; contactId: string; ownerId: string | null }[] = [];
+    for (const id of leadIds) {
+      const source = (await this.client.query(leadStatement, [id, context.memberId])).rows[0] ?? notFound();
+      if (typeof source.contact_id !== "string" || !uuid.test(source.contact_id))
+        throw new AccessError(503, "resource_unavailable", "Task source references are unavailable.");
+      leadSources.push({ id, contactId: source.contact_id, ownerId: source.owner_member_id });
+    }
+    // Lock all Contacts first, then sorted Leads, consistent with Contact edits and stage transitions.
+    for (const contactId of [...new Set(leadSources.map((source) => source.contactId))].sort())
+      if (
+        !(
+          await this.client.query(
+            "SELECT id FROM app.contact WHERE tenant_id=app.current_tenant() AND id=$1 AND archived_at IS NULL FOR SHARE",
+            [contactId],
+          )
+        ).rowCount
+      )
+        notFound();
+    for (const source of leadSources) {
+      const locked =
+        (
+          await this.client.query(`${leadStatement} AND l.contact_id=$3 FOR SHARE OF l`, [
+            source.id,
+            context.memberId,
+            source.contactId,
+          ])
+        ).rows[0] ?? notFound();
+      source.ownerId = locked.owner_member_id;
+    }
+    if (scope === "team")
+      await current.lockCaptureOffices([
+        ...new Set([
+          context.memberId,
+          ...assignees,
+          ...leadSources.flatMap((source) => (source.ownerId ? [source.ownerId] : [])),
+        ]),
+      ]);
+    let taskId = receipt?.id ?? null;
+    const assertSources = async () => {
+      await assertAssignees();
+      for (const source of leadSources)
+        if (
+          !(
+            await this.client.query(`${leadStatement} AND l.contact_id=$3`, [
+              source.id,
+              context.memberId,
+              source.contactId,
+            ])
+          ).rowCount
+        )
+          notFound();
+      if (taskId) {
+        const task =
+          (await this.client.query(taskStatement, [taskId, context.memberId])).rows[0] ?? notFound();
+        const expectedLead = existing ? existing.lead_id : command.normalized.leadId;
+        const expectedAssignee = existing ? existing.assignee_member_id : command.normalized.assigneeMemberId;
+        if (task.lead_id !== expectedLead || task.assignee_member_id !== expectedAssignee) notFound();
+      }
+      await current.contactCommandAuthority(false, "task");
+      await requireEntitlement(this.client, "crm.tasks.write", { lock: false });
+    };
+    const finish = async () => {
+      await assertSources();
+      const result = await this.client.query(
+        `SELECT expires_at>clock_timestamp() AS unexpired FROM app.idempotency_record
+         WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+        receiptParameters,
+      );
+      if (!result.rows[0]?.unexpired)
+        throw new AccessError(409, "receipt_expired", "The original command receipt has expired.");
+      await requireEntitlement(this.client, "crm.tasks.write", { lock: false });
+    };
+    await assertSources();
+    if (receipt) {
+      await finish();
+      return { body: receipt, status: 201, etag: '"1"' };
+    }
+    const clock = await this.client.query("SELECT date_trunc('milliseconds',clock_timestamp()) AS instant");
+    const instant = clock.rows[0]?.instant;
+    if (!(instant instanceof Date) || !Number.isFinite(instant.getTime()))
+      throw new AccessError(503, "task_command_unavailable", "Task command time is unavailable.");
+    const timestamp = instant.toISOString();
+    const input = command.normalized;
+    const inserted = await this.client.query(
+      `INSERT INTO app.task(tenant_id,lead_id,assignee_member_id,title,description,due_at,due_timezone,priority,state,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING *`,
+      [
+        context.organizationId,
+        input.leadId,
+        input.assigneeMemberId,
+        input.title,
+        input.description,
+        input.dueAt,
+        input.timezone,
+        input.priority,
+        input.state,
+        timestamp,
+      ],
+    );
+    if (!inserted.rowCount)
+      throw new AccessError(503, "task_command_unavailable", "Task creation is unavailable.");
+    const task = taskCreateReceipt(models.task(inserted.rows[0]), command);
+    taskId = task.id;
+    await assertSources();
+    if (input.leadId)
+      await this.client.query(
+        `INSERT INTO app.activity_event(tenant_id,lead_id,event_type,source_event_id,occurred_at,safe_data)
+         VALUES($1,$2,'task.created',$3,$4,$5)`,
+        [
+          context.organizationId,
+          input.leadId,
+          randomUUID(),
+          timestamp,
+          taskCreateJson({ resourceId: task.id, resourceVersion: 1, relatedResourceIds: [input.leadId] }),
+        ],
+      );
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff,created_at,updated_at)
+       VALUES($1,$2,'task.created','task',$3,$4,'{"resourceVersion":1}',$5,$5)`,
+      [context.organizationId, context.userId, task.id, traceId, timestamp],
+    );
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+       (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,response_ref,expires_at,created_at,updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,201,'"1"',$8,clock_timestamp()+interval '1 day',$7,$7)`,
+      [
+        context.organizationId,
+        context.userId,
+        command.routeKey,
+        command.key,
+        command.requestHash,
+        taskCreateJson(task),
+        timestamp,
+        task.id,
+      ],
+    );
+    await finish();
+    return { body: task, status: 201, etag: '"1"' };
+  }
+
   async idempotent(
     key: string | undefined,
     routeKey: string,
@@ -1468,6 +1706,12 @@ export class CrmService {
     body: Body,
     captureEvidence?: { attribution: Record<string, unknown>; score: number; scoreVersion: string },
   ): Promise<Mutation> {
+    if (resource === "tasks")
+      throw new AccessError(
+        503,
+        "task_command_required",
+        "Task creation requires the recoverable command boundary.",
+      );
     const config = this.resource(resource);
     const scope = requirePermission(this.context, config.write);
     let row: Row;
@@ -1519,25 +1763,6 @@ export class CrmService {
           JSON.stringify({ resourceId: row.id, resourceVersion: 1 }),
         ],
       );
-    } else if (resource === "tasks") {
-      await this.taskAuthority(true);
-      await this.activeMember(body.assigneeMemberId, scope);
-      await this.lockTaskSources([body.leadId]);
-      const result = await this.client.query(
-        `INSERT INTO app.task(tenant_id,lead_id,assignee_member_id,title,description,due_at,due_timezone,priority,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [
-          this.context.organizationId,
-          body.leadId ?? null,
-          body.assigneeMemberId,
-          text(body.title),
-          body.description ?? null,
-          body.dueAt,
-          timezone(body.timezone),
-          body.priority ?? "normal",
-          body.state ?? "open",
-        ],
-      );
-      row = result.rows[0];
     } else notFound();
     await this.audit(`${config.table}.created`, config.table, row.id, Number(row.row_version));
     if (resource === "contacts")

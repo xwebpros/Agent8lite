@@ -1,0 +1,103 @@
+.root {
+  padding: 20px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: grid;
+  gap: 16px;
+  color: var(--color-ink);
+  font-size: 16px;
+  line-height: 1.55;
+}
+.root p {
+  margin: 0;
+}
+.fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 16px;
+}
+.fields label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.fields input,
+.fields select,
+.fields textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 16px;
+}
+.fields textarea {
+  resize: vertical;
+}
+.hint {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+.status {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.error {
+  color: var(--color-danger);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.primary,
+.secondary {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.primary {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border-color: var(--color-primary);
+}
+.secondary {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+.root :focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+.root :disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+@media (max-width: 480px) {
+  .root {
+    padding: 16px;
+  }
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
