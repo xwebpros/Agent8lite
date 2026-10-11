@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// context.setOffline() does not stop a service worker's own fetches. Route events for worker
+// requests let the offline-shell test genuinely disconnect the worker as well as the page.
+process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS ??= "1";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,

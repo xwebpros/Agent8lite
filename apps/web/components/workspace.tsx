@@ -4913,7 +4913,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 <>
                   {permission("dashboard.read") && session.activeOrgId && (
                     <VerifiedMetrics
-                      key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                      key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}:metrics`}
                       session={session}
                       memberId={member}
                       accessRevision={accessRevision}
@@ -5048,7 +5048,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                     </section>
                   </div>
                   <AppointmentAgenda
-                    key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                    key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}:appointments`}
                     session={session}
                     memberId={member}
                     online={online && !changingOrganization}

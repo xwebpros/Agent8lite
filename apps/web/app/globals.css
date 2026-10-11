@@ -237,6 +237,9 @@ input:read-only {
   background: var(--color-nav);
   padding-bottom: env(safe-area-inset-bottom);
   z-index: 30;
+  /* Short viewports (e.g. 1280x720) must still reach the profile and Sign out. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .organization-label {
   font-size: 12px;
@@ -941,7 +944,7 @@ main#main {
 }
 .column-empty {
   text-align: center;
-  color: #60708a;
+  color: #566680; /* 5.1:1 on the #edf1f7 column; #60708a was 4.42:1 */
   font-size: 12px;
   margin-top: 52px;
 }

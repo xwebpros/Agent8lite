@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
+const LEAD_ACKNOWLEDGED = "Lead creation acknowledged. Current lists are read separately.";
+
 async function signIn(page: Page, identity: "owner" | "agent" = "agent") {
   await page.goto("/dashboard");
   await page.getByRole("button", { name: `Sign in as ${identity} (synthetic)`, exact: true }).click();
@@ -10,7 +12,8 @@ async function signIn(page: Page, identity: "owner" | "agent" = "agent") {
 }
 
 async function navigate(page: Page, name: "Contacts" | "Pipeline" | "Tasks" | "Settings") {
-  const link = page.getByRole("link", { name, exact: true }).filter({ visible: true });
+  // Nav links can carry a count badge (e.g. "Tasks 1") in their accessible name.
+  const link = page.getByRole("link", { name: new RegExp(`^${name}(?: \\d+)?$`) }).filter({ visible: true });
   await link.click();
   await expect(page.getByRole("heading", { name, exact: true, level: 1 })).toBeVisible();
 }
@@ -52,37 +55,46 @@ test("browser and 360px: interrupted capture reconciles, then task and keyboard 
   const editor = page.getByRole("dialog", { name: "Add a lead" });
   await editor.getByLabel("Full name", { exact: true }).fill(name);
   await editor.getByLabel("Email", { exact: true }).fill(`${randomUUID()}@example.invalid`);
-  await editor.getByLabel("Intent", { exact: true }).selectOption("buyer");
+  // A label wrapping a <select> includes its option text, so address the field by name.
+  await editor.locator('select[name="intent"]').selectOption("buyer");
+  await editor.locator('select[name="sourceId"]').selectOption({ label: "Synthetic website inquiry" });
   await editor.getByLabel("Timeline (optional)", { exact: true }).fill("Within 3 months");
   await checkResponsiveWidth(page);
   await checkAccessibility(page);
   await editor.getByRole("button", { name: "Save lead", exact: true }).click();
-  await expect(editor.getByRole("alert")).toContainText("Contact saved. Retry this lead");
-  await expect(page.getByText("Lead saved and assigned to you.", { exact: true })).not.toBeVisible();
-  await editor.getByRole("button", { name: "Save lead", exact: true }).click();
-  await expect(page.getByText("Lead saved and assigned to you.", { exact: true })).toBeVisible();
+  // ADR-040: an interrupted step is unconfirmed; only the original step can be reconciled.
+  await expect(editor.getByRole("alert")).toContainText("Creation is unconfirmed");
+  await expect(page.getByText(LEAD_ACKNOWLEDGED, { exact: true })).not.toBeVisible();
+  await editor.getByRole("button", { name: "Reconcile original step", exact: true }).click();
+  await expect(page.getByText(LEAD_ACKNOWLEDGED, { exact: true })).toBeVisible();
   expect(idempotencyKeys).toHaveLength(2);
   expect(idempotencyKeys[0]).toBeTruthy();
   expect(idempotencyKeys[0]).toBe(idempotencyKeys[1]);
   await navigate(page, "Contacts");
-  await page.getByLabel("Search loaded contacts").fill(name);
+  // ADR-038: name search is a server query submitted explicitly.
+  await page.getByLabel("Contact name", { exact: true }).fill(name);
+  await page.getByRole("button", { name: "Search names", exact: true }).click();
   await expect(page.getByRole("heading", { name, exact: true })).toHaveCount(1);
   await navigate(page, "Tasks");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
   const taskEditor = page.getByRole("dialog", { name: "Add a task" });
   await taskEditor.getByLabel("Title", { exact: true }).fill(taskTitle);
   await taskEditor.getByLabel("Due date and time", { exact: false }).fill("2026-11-01T09:00");
-  await taskEditor.getByLabel("Lead (optional)", { exact: true }).selectOption({ label: name });
+  await taskEditor.locator('select[name="leadId"]').selectOption({ label: name });
   await taskEditor.getByRole("button", { name: "Save task", exact: true }).click();
-  await expect(page.getByText("Task saved. Your follow-up is scheduled.", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/^Task creation acknowledged\. Current tasks are read separately/),
+  ).toBeVisible();
   await page.getByRole("button", { name: `Complete task: ${taskTitle}`, exact: true }).click();
-  await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Task update acknowledged\./)).toBeVisible();
   await page.getByRole("button", { name: "Completed", exact: true }).click();
   await expect(page.getByRole("button", { name: `Complete task: ${taskTitle}`, exact: true })).toBeDisabled();
   await navigate(page, "Pipeline");
   const stage = page.getByLabel(`Stage for ${name}`, { exact: true });
   await stage.selectOption({ label: "Attempted Contact" });
-  await expect(page.getByText("Pipeline stage updated.", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Stage transition acknowledged. Current records are read separately.", { exact: true }),
+  ).toBeVisible();
   await expect(
     page
       .getByRole("heading", { name: "Attempted Contact", exact: true })
@@ -105,9 +117,13 @@ test("organization switch removes earlier records on mobile and desktop", async 
   const name = firstContacts.items[0].displayName;
   await navigate(page, "Contacts");
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
-  await page.getByLabel("Organization", { exact: true }).filter({ visible: true }).selectOption(secondOrg);
+  // The sidebar switcher is "Organization"; the mobile layout shows "Mobile organization".
+  await page
+    .getByRole("combobox", { name: /^(?:Mobile )?organization$/i })
+    .filter({ visible: true })
+    .selectOption(secondOrg);
   await expect(
-    page.getByText("Organization switched. Access and records refreshed.", { exact: true }),
+    page.getByText("Organization switched. Session and access verified.", { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name, exact: true })).not.toBeVisible();
   const denied = await page.request.get(`/api/v1/orgs/${firstOrg}/leads`);
@@ -124,15 +140,21 @@ test("offline draft stays in memory, saving is disabled, and reconnect permits e
   await page.getByRole("button", { name: "Add lead", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Add a lead" });
   await editor.getByLabel("Full name", { exact: true }).fill(draftName);
+  await editor.locator('select[name="sourceId"]').selectOption({ label: "Synthetic website inquiry" });
   await context.setOffline(true);
-  await expect(editor.getByText("Offline — your draft has not been saved.", { exact: true })).toBeVisible();
-  await expect(editor.getByRole("button", { name: "Save lead", exact: true })).toBeDisabled();
-  await expect(editor.getByLabel("Full name", { exact: true })).toHaveValue(draftName);
+  // Private fields are withheld while offline and no request can be sent.
+  await expect(
+    editor.getByText("Lead capture fields are hidden while offline or this view is inactive.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(editor.getByLabel("Full name", { exact: true })).toHaveCount(0);
+  await expect(editor.getByRole("button", { name: "Save lead", exact: true })).toHaveCount(0);
   await context.setOffline(false);
   await expect(editor.getByRole("button", { name: "Save lead", exact: true })).toBeEnabled();
   await expect(editor.getByLabel("Full name", { exact: true })).toHaveValue(draftName);
   await editor.getByRole("button", { name: "Save lead", exact: true }).click();
-  await expect(page.getByText("Lead saved and assigned to you.", { exact: true })).toBeVisible();
+  await expect(page.getByText(LEAD_ACKNOWLEDGED, { exact: true })).toBeVisible();
 });
 
 test("manifest/icons and safe caches support a generic offline shell after logout", async ({
@@ -189,9 +211,12 @@ test("manifest/icons and safe caches support a generic offline shell after logou
     for (const name of privateNames) expect(entry.body).not.toContain(name);
   }
   expect(storage.databases).toEqual([]);
-  await page.getByRole("button", { name: "Sign out", exact: true }).filter({ visible: true }).click();
+  // The sidebar has an icon button and the settings panel a text button; both sign out.
+  await page.getByRole("button", { name: "Sign out", exact: true }).filter({ visible: true }).first().click();
   await expect(page.getByRole("button", { name: "Sign in as agent (synthetic)", exact: true })).toBeVisible();
   await context.setOffline(true);
+  // setOffline alone leaves the service worker's own fetches connected.
+  await context.route("**/*", (route) => route.abort("internetdisconnected"));
   await page.goto("/contacts");
   await expect(page.getByRole("heading", { name: "You’re offline", exact: true })).toBeVisible();
   for (const name of privateNames) await expect(page.getByText(name, { exact: true })).not.toBeVisible();

@@ -42,6 +42,19 @@ Next, in order:
 3. M4 segment authoring: `previewBroadcast` (frozen `BroadcastRequest` → `BroadcastPreview` counts with consent/suppression eligibility, no sending) needs its own ADR.
 4. Still blocked: browser/axe/keyboard/device acceptance; Redis/Docker/WSL-dependent gates beyond what Codex is doing; live Trestle, real messaging, payments and production.
 
+## Real-browser acceptance (Playwright, desktop Chrome + 360px Pixel 5 emulation)
+
+First real-browser run of `tests/e2e/workspace.spec.ts` against the development app (`scripts/dev.mjs`): baseline **3/12**, now **12/12** (6 tests × `desktop-chromium` and `mobile-360`), including axe WCAG 2.0/2.1/2.2 A/AA scans, keyboard focus, dirty-draft protection across a waiting service worker, and the generic offline shell. This is emulation in the `next dev` build, **not** physical iPhone/Android or installed-mode evidence, and it was not run against a production build.
+
+Product defects found and fixed:
+1. **Duplicate React key** on the dashboard (`VerifiedMetrics` and `AppointmentAgenda` shared one key). In dev it raised the Next error overlay, which intercepted every click.
+2. **Unreachable sidebar footer on short viewports.** At 1280×720 the fixed sidebar was 860px tall with `overflow: visible`, so the profile and Sign out sat off-screen with no way to scroll. The sidebar now scrolls (`overflow-y: auto`). This also cleared the axe contrast report on the profile text.
+3. **WCAG AA contrast** on the pipeline empty state (`.column-empty` #60708a on #edf1f7 = 4.42:1) → #566680 (5.1:1).
+
+Stale specs updated to current, deliberate behavior (not product regressions): wrapped-label selects addressed by `name`; explicit Source choice; ADR-038 explicit "Contact name" + "Search names"; ADR-040 "Reconcile original step" for the interrupted lead; offline hides lead fields (draft is retained and returns on reconnect); current acknowledgement notices; nav links with count badges ("Tasks 1"); "Mobile organization" switcher. The harness now enables `PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS` and routes-aborts all requests so the service worker is genuinely offline (`context.setOffline` alone leaves its fetches connected, which had produced a false failure).
+
+Still open: physical iPhone/Android and installed-mode validation, a production-build run of this suite, and manual keyboard/screen-reader review.
+
 ## M1 Redis local acceptance and CI isolation
 
 - **Local Redis:** Memurai Developer 4.1.2 (Redis 7.2.5-compatible, not the genuine Redis binary) was installed by the owner from an elevated shell and runs as a Windows service on `127.0.0.1:6379`. It is not the CI-pinned 7.4.6. Winget install without elevation failed with MSI 1603. Local runs use `REDIS_URL` / `REQUIRED_REDIS` = `redis://127.0.0.1:6379`; CI and `compose.yaml` keep 56379.
