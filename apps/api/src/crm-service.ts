@@ -12,6 +12,7 @@ import { dashboardClockInstant, dashboardUtcPeriod } from "./dashboard-time";
 import { parseContactQuery } from "./contact-query";
 import { contactCommandJson, contactReceipt, contactRevision, prepareContactPatch } from "./contact-command";
 import { appendContactCreatedEvent } from "./contact-created-event";
+import { contactUpdatedEvent } from "./contact-updated-event";
 import { leadAssignedEvent, leadPatchJson, leadPatchReceipt, prepareLeadPatch } from "./lead-patch-command";
 import { prepareTaskCreate, taskCreateJson, taskCreateReceipt } from "./task-create-command";
 import { prepareTaskPatch, taskPatchJson, taskPatchReceipt, taskPatchRevision } from "./task-patch-command";
@@ -699,6 +700,26 @@ export class CrmService {
       ).rows[0] ?? notFound();
     const contact = contactReceipt(models.contact(projection), command);
     const etag = `"${contact.version}"`;
+    // ADR-048: one references-only event per fresh revision, using database time after every wait.
+    const event = contactUpdatedEvent(
+      context.organizationId,
+      command.id.toLowerCase(),
+      contact.version,
+      current.traceId,
+      await current.commandClock(),
+    );
+    await this.client.query(
+      `INSERT INTO app.outbox(tenant_id,id,event_type,aggregate_id,payload,initiating_actor_id,created_at,updated_at)
+       VALUES($1,$2,'contact.updated',$3,$4,$5,$6,$6)`,
+      [
+        context.organizationId,
+        event.eventId,
+        event.aggregateId,
+        contactCommandJson(event),
+        context.userId,
+        event.occurredAt,
+      ],
+    );
     await this.client.query(
       `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff)
        VALUES($1,$2,'contact.updated','contact',$3,$4,$5)`,
@@ -816,7 +837,7 @@ export class CrmService {
     await requireEntitlement(this.client, permission, { lock: false });
   }
 
-  private async archiveClock() {
+  private async commandClock() {
     const clock = (
       await this.client.query<{ instant: Date }>(
         "SELECT date_trunc('milliseconds',clock_timestamp()) AS instant",
@@ -937,7 +958,7 @@ export class CrmService {
       );
     if (version >= Number.MAX_SAFE_INTEGER)
       throw new AccessError(409, "revision_exhausted", "Contact revision cannot be advanced.");
-    const timestamp = await current.archiveClock();
+    const timestamp = await current.commandClock();
     const updated = await this.client.query(
       `UPDATE app.contact SET archived_at=$1,updated_at=$1,row_version=row_version+1
        WHERE tenant_id=app.current_tenant() AND id=$2 AND row_version=$3 AND archived_at IS NULL
@@ -1022,7 +1043,7 @@ export class CrmService {
     }
     if (version >= Number.MAX_SAFE_INTEGER)
       throw new AccessError(409, "revision_exhausted", "Lead revision cannot be advanced.");
-    const timestamp = await current.archiveClock();
+    const timestamp = await current.commandClock();
     const updated = await this.client.query(
       `UPDATE app.lead SET archived_at=$1,updated_at=$1,row_version=row_version+1
        WHERE tenant_id=app.current_tenant() AND id=$2 AND row_version=$3 AND archived_at IS NULL

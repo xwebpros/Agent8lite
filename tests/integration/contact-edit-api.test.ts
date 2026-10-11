@@ -247,7 +247,8 @@ describe("ADR039 registered contact PATCH receipts and atomic channels", () => {
       birthday: null,
       version: 2,
     });
-    expect(await counts(id)).toEqual({ ...before, audits: 1, receipts: 1 });
+    // ADR-048 adds exactly one contact.updated reference event per fresh revision.
+    expect(await counts(id)).toEqual({ ...before, audits: 1, receipts: 1, outbox: before.outbox + 1 });
     const audit = (
       await admin.query(
         "SELECT action,safe_diff FROM app.audit_event WHERE tenant_id=$1 AND resource_id=$2",
