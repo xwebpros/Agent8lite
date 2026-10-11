@@ -1,5 +1,21 @@
 # Implementation status — 2026-10-12
 
+## ADR-054 CMS site management panel (domains, media, forms) — complete (Claude Code)
+
+ADR-054 written and committed on `feat/W01-foundation`. Builds on ADR-053 API backend.
+
+**PWA (`apps/web/features/cms/site-management.tsx`):**
+- `CmsSiteManagement` component renders when a site is selected and at least one of `domains.manage`, `media.write`, or `forms.write` permissions is present.
+- **Domains tab**: lists active domains with verification/TLS state badges; shows required DNS TXT records for pending verification; Add domain form (hostname + environment) with idempotency key; Verify and Archive buttons per domain.
+- **Media tab**: lists organization media assets (first 20) with scan state, MIME type, byte size and alt text; Finalize form for pending assets (asset ID + SHA-256 checksum + rights attestation checkbox + optional alt text).
+- **Forms tab**: lists current form schemas (latest version per name) with state badge and field count; read-only for this slice.
+- All mutations carry `X-CSRF-Token` and `Idempotency-Key`; uncertain outcomes retain the key for safe retry.
+- Integrated into `cms-workspace.tsx` after the site/document selection card.
+
+**Verification:** Web TypeScript clean (`tsc --noEmit`). Unit tests **3,271/3,271** across 94 files.
+
+---
+
 ## ADR-053 CMS domain, media and form management — complete (Claude Code)
 
 ADR-053 written and implemented on `feat/W01-foundation`.
