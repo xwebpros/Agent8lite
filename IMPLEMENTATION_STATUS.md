@@ -1,8 +1,21 @@
 # Implementation status — 2026-10-11
 
-## ADR-049 accepted — contact duplicate review and merge
+## ADR-049 contact duplicate review and merge — complete (Claude Code)
 
-The project owner delegated technical decision authority to the coordinating session and authorized continued implementation. ADR-049 was reviewed against `docs/tdd/technical-design.json`, the contact/consent schema and service boundaries, and the recoverable-command invariants, then accepted for implementation at commit `6fd0160`. The decision preserves immutable consent provenance, withdrawal-wins semantics unless a later verified grant exists, RLS and current scope checks, the established Contact → Lead lock order, and the frozen blueprint contracts. The additive implementation OpenAPI amendment, migration 0022, consent port, API command boundary, integration acceptance, and PWA review flow remain to be implemented.
+The project owner delegated technical decision authority to the coordinating session and authorized continued implementation. ADR-049 was reviewed and accepted at commit `6fd0160`. Implementation is complete at checkpoint `d15de54` (feat/W01-foundation).
+
+**API (`99a5500`, `518550a`):** Three additive implementation-OpenAPI operations — `listContactDuplicates` (`GET /v1/orgs/{orgId}/contact-duplicates`), `mergeContact` (`POST /v1/orgs/{orgId}/contacts/{contactId}/merges`), `getContactMerge` (`GET /v1/orgs/{orgId}/contact-merges/{mergeId}`) — plus migration 0022 and an internal `contact.merged` event. Consent merge follows withdrawal-wins semantics unless a later verified grant exists. All Contact → Lead lock order invariants are preserved. Integration tests: **20/20** (`contact-merge-api.test.ts`) and **21/21** (`data-transfer-api.test.ts`).
+
+**PWA (`07a099a`):** `ContactDuplicateList` component fetches `GET /v1/orgs/{orgId}/contact-duplicates`, filters to pairs containing the current contact, loads each candidate via `getContact`, and renders "Merge into this contact" buttons. `ContactMergeProtocol`/`ContactMergeController`/`ContactMergePanel` (pre-existing) are wired into `workspace.tsx` via `currentContactMergeUI` ref, `mergeAllowed`, `runContactMerge`, `startContactMerge`, `confirmContactMerge`, and `reconcileContactMerge`. Phone-only pre-flight warning via `showPhoneOnlyWarning()`; server-side `409 merge_phone_only_unacknowledged` handled via `reject()` → `phone_only_warning` phase. `reloadProtected.current` includes `Boolean(contactMerge.current.getSnapshot().command)`.
+
+**Unit test fixes (`d15de54`):** Two unit tests needed updating: `archive-workspace.test.ts` asserts the updated `reloadProtected.current` line (now includes contactMerge guard); `listing-attribution-contract.test.ts` now strips the ADR-049 amendment paths and schemas before comparing implementation to frozen original.
+
+Verification at `d15de54`:
+- Root and web TypeScript: pass.
+- `tests/unit` + `packages`: **3,271/3,271 across 94 files**.
+- `contact-merge-api`: **20/20**; `data-transfer-api`: **21/21** (isolated databases).
+
+Not run since `07a099a`: full `node scripts/test-isolated.mjs` gate, production build, runtime/launch probes. Browser/axe/keyboard/device acceptance remains open.
 
 Verification at this checkpoint: `node scripts/check-contracts.mjs --generated` passes with 170 operations and 169 schemas; `node node_modules/vitest/vitest.mjs run tests/unit packages` passes **3,260/3,260** across 93 files. No production provider, outbound delivery, payment, or release action was performed.
 
