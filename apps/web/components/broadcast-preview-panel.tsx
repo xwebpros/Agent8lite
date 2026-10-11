@@ -29,6 +29,7 @@ export type BroadcastPreviewActions = {
   preview(): void;
   discardUnknown(): void;
   refreshChoices(): void;
+  nextDesigns?(cursor: string): void;
   moreTags(): void;
 };
 
@@ -135,16 +136,16 @@ export function BroadcastPreviewView({
           <label htmlFor={`${prefix}-design`}>Message design</label>
           <select
             id={`${prefix}-design`}
-            value={
-              choices.some((choice) => choice.id === state.draft.messageDesignId)
-                ? state.draft.messageDesignId
-                : ""
-            }
+            value={state.draft.messageDesignId ?? ""}
             aria-invalid={invalid("messageDesignId")}
             aria-describedby={issuesId}
             onChange={(event) => actions.design(event.target.value)}
           >
             <option value="">Choose a current native design</option>
+            {state.draft.messageDesignId &&
+              !choices.some((choice) => choice.id === state.draft.messageDesignId) && (
+                <option value={state.draft.messageDesignId}>Chosen design (not on this page)</option>
+              )}
             {choices.map((choice) => (
               <option key={choice.id} value={choice.id}>
                 {choice.name} · {choice.channel === "email" ? "Email" : "SMS"}
@@ -161,6 +162,16 @@ export function BroadcastPreviewView({
           <Button type="button" variant="secondary" onClick={actions.refreshChoices}>
             <RefreshCw size={16} aria-hidden="true" /> Refresh choices
           </Button>
+          {state.online && designs.page?.hasMore && designs.page.nextCursor && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={designs.reading}
+              onClick={() => actions.nextDesigns?.(designs.page!.nextCursor!)}
+            >
+              Read next design page
+            </Button>
+          )}
         </fieldset>
         <fieldset disabled={locked} className={styles.policy}>
           <legend>Segment (leads must match every chosen field)</legend>
@@ -481,6 +492,9 @@ export default function BroadcastPreviewPanel(props: BroadcastPreviewPanelProps)
       if (live.current.online) void controller.preview();
     },
     discardUnknown: () => controller.discardUnknown(),
+    nextDesigns: (cursor) => {
+      if (live.current.online) void designs.loadPage(cursor);
+    },
     refreshChoices: () => {
       if (!live.current.online) return;
       void designs.refresh();

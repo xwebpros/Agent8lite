@@ -324,4 +324,39 @@ describe("broadcast panel", () => {
     });
     expect(render(controller.getSnapshot())).toContain("Organization-wide broadcast permission is required");
   });
+
+  it("offers the next design page and keeps a chosen design that is not on the current page", () => {
+    const { controller } = setup();
+    controller.chooseDesign(designId);
+    const markup = renderToStaticMarkup(
+      <BroadcastPreviewView
+        state={controller.getSnapshot()}
+        designs={{
+          ...designs,
+          page: {
+            items: [
+              {
+                id: "b6000000-0000-4000-8000-000000000020",
+                name: "Other synthetic email",
+                channel: "email",
+                editor: "native",
+                version: 1,
+                design: { schemaVersion: 1, blocks: [{ type: "text", text: "Synthetic text" }] },
+                content: "Synthetic text",
+                subject: "Synthetic subject",
+              },
+            ],
+            hasMore: true,
+            nextCursor: "private-design-cursor",
+          },
+        }}
+        conditions={conditions}
+        actions={actions()}
+      />,
+    );
+    expect(markup).toContain("Read next design page");
+    expect(markup).not.toContain("private-design-cursor");
+    expect(markup).toContain("Chosen design (not on this page)");
+    expect(markup).toMatch(new RegExp(`<option value="${designId}" selected="">`));
+  });
 });
