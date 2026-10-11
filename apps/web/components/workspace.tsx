@@ -123,6 +123,16 @@ import {
   type TaskCreateCommand,
 } from "./task-create";
 import TaskCreatePanel, { emptyTaskCreateDraft, type TaskCreateDraft } from "./task-create-panel";
+import {
+  RecordArchiveProtocol,
+  recordArchiveContext,
+  recordArchiveContextAllows,
+  recordArchiveEligible,
+  type RecordArchiveCommand,
+  type RecordArchiveKind,
+} from "./record-archive";
+import { RecordArchiveController, type RecordArchiveOutcome } from "./record-archive-controller";
+import RecordArchivePanel from "./record-archive-panel";
 
 type Session = Schema<"Session">;
 type Contact = Schema<"Contact">;
@@ -340,6 +350,18 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     activeTaskCreate.current = null;
   const taskCreateSnapshot = taskCreate.current.getSnapshot();
   const taskCreatePending = Boolean(taskCreateSnapshot.command);
+  const recordArchive = useRef(new RecordArchiveProtocol());
+  const archiveController = useRef(new RecordArchiveController(recordArchive.current));
+  const [, updateArchive] = useState(0);
+  const [archiveDenied, setArchiveDenied] = useState(false);
+  const archiveBinding = archiveDenied
+    ? null
+    : recordArchiveContext({ session, memberId: member, csrf, accessRevision });
+  const currentArchiveBinding = useRef(archiveBinding);
+  currentArchiveBinding.current = archiveBinding;
+  recordArchive.current.bind(archiveBinding);
+  const archiveSnapshot = recordArchive.current.getSnapshot();
+  const archivePending = Boolean(archiveSnapshot.command);
   const unsaved =
     dirty ||
     noteDirty ||
@@ -354,6 +376,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     assignmentPending ||
     assignmentDirty ||
     taskCreatePending ||
+    archivePending ||
     Boolean(invitationTransfer);
   const [taskFilter, setTaskFilter] = useState("open");
   const [scope, setScope] = useState<"own" | "authorized">("own");
@@ -380,7 +403,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       online &&
       contactVisible &&
       !changingOrganization &&
-      !assignmentPending,
+      !assignmentPending &&
+      !archivePending,
   );
   const assignmentCurrentLead =
     leadDetailVisible && selectedLeadETag.current === `"${selectedLead?.version}"` ? selectedLead : null;
@@ -579,6 +603,44 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     tasks: data.tasks,
     csrf,
   };
+  const currentArchiveUI = useRef({
+    binding: archiveBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    busy,
+    loading,
+    detailLoading,
+    dirty,
+    noteDirty,
+    tagDirty,
+    modal,
+    view,
+    detailKind,
+    detailId,
+    contact: selectedContact,
+    lead: selectedLead,
+    csrf,
+  });
+  currentArchiveUI.current = {
+    binding: archiveBinding,
+    online,
+    visible: contactVisible,
+    changingOrganization,
+    busy,
+    loading,
+    detailLoading,
+    dirty,
+    noteDirty,
+    tagDirty,
+    modal,
+    view,
+    detailKind,
+    detailId,
+    contact: selectedContact,
+    lead: selectedLead,
+    csrf,
+  };
   const [invitationAcceptance, setInvitationAcceptance] = useState<{
     userId: string;
     job: Schema<"Job">;
@@ -599,7 +661,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     Boolean(leadCapture.current.getSnapshot().sequence) ||
     Boolean(stageTransition.current.getSnapshot().command) ||
     Boolean(leadAssignment.current.getSnapshot().command) ||
-    Boolean(taskCreate.current.getSnapshot().command);
+    Boolean(taskCreate.current.getSnapshot().command) ||
+    Boolean(recordArchive.current.getSnapshot().command);
   const protectCms = useCallback((value: boolean) => {
     cmsProtected.current = value;
     if (value) reloadProtected.current = true;
@@ -703,7 +766,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         leadCapture.current.getSnapshot().sequence ||
         stageTransition.current.getSnapshot().command ||
         leadAssignment.current.getSnapshot().command ||
-        taskCreate.current.getSnapshot().command
+        taskCreate.current.getSnapshot().command ||
+        recordArchive.current.getSnapshot().command
       ) {
         setLoading(false);
         return;
@@ -771,6 +835,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         if (err instanceof ApiError && [401, 403].includes(err.status) && !unrelatedCrmDenial) {
           clearTaskCreateAccess();
           clearLeadAssignmentAccess();
+          clearRecordArchiveAccess();
           clearTaskEditAccess();
           stageTransition.current.bind(null);
           currentStageBinding.current = null;
@@ -950,6 +1015,17 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         currentTaskCreateBinding.current = nextTaskCreateBinding;
         setTaskCreateDenied(false);
         updateTaskCreate((value) => value + 1);
+        const nextArchiveBinding = recordArchiveContext({
+          session: result.data,
+          memberId: result.headers.get("X-Member-Id") || "",
+          csrf: result.headers.get("X-CSRF-Token") || "",
+          accessRevision: currentAccessRevision.current,
+        });
+        if (currentArchiveBinding.current !== nextArchiveBinding) setBusy(false);
+        recordArchive.current.bind(nextArchiveBinding);
+        currentArchiveBinding.current = nextArchiveBinding;
+        setArchiveDenied(false);
+        updateArchive((value) => value + 1);
         currentLeadCaptureBinding.current = nextLeadBinding;
         setLeadCaptureDenied(false);
         updateLeadCapture((value) => value + 1);
@@ -982,6 +1058,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         activeStageTransition.current = null;
         clearTaskCreateAccess();
         clearLeadAssignmentAccess();
+        clearRecordArchiveAccess();
         clearTaskEditAccess();
         contactEdit.current.bind(null);
         leadCapture.current.bind(null);
@@ -1041,6 +1118,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       activeTaskCreate.current = null;
       taskDraftBinding.current = null;
       currentTaskCreateDraft.current = null;
+      recordArchive.current.bind(null);
+      currentArchiveBinding.current = null;
       stageTransition.current.bind(null);
       currentStageBinding.current = null;
       activeStageTransition.current = null;
@@ -1089,6 +1168,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       updateTaskCreate((value) => value + 1);
       updateLeadAssignment((value) => value + 1);
       updateTaskEdit((value) => value + 1);
+      updateArchive((value) => value + 1);
     };
     visibility();
     const clock = window.setInterval(() => {
@@ -1099,6 +1179,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         updateTaskCreate((value) => value + 1);
         updateLeadAssignment((value) => value + 1);
         updateTaskEdit((value) => value + 1);
+        updateArchive((value) => value + 1);
       }
     }, 30000);
     document.addEventListener("visibilitychange", visibility);
@@ -1174,6 +1255,19 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   }, [assignmentBinding, leadReadBinding, detailKind, detailId]);
   useEffect(() => {
     if (stageTransition.current.getSnapshot().command || taskCreate.current.getSnapshot().command) {
+      setDetailLoading(false);
+      return;
+    }
+    const pendingArchive = recordArchive.current.getSnapshot().command;
+    if (pendingArchive) {
+      // The retained archive keeps its drawer; no detail read replaces its generic recovery view.
+      if (
+        detailKind === pendingArchive.kind &&
+        detailId?.toLowerCase() === pendingArchive.resourceId.toLowerCase() &&
+        detailDialog.current &&
+        !detailDialog.current.open
+      )
+        detailDialog.current.showModal();
       setDetailLoading(false);
       return;
     }
@@ -1396,21 +1490,23 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       if (reloadProtected.current) {
         setActivatedUpdate(true);
         setNotice(
-          leadAssignment.current.getSnapshot().command
-            ? "The app update activated. Reconcile the unconfirmed lead assignment before reloading."
-            : contactEdit.current.getSnapshot().command
-              ? "The app update activated. Reconcile the unconfirmed contact save before reloading."
-              : taskCreate.current.getSnapshot().command
-                ? "The app update activated. Reconcile the unconfirmed task creation before reloading."
-                : stageTransition.current.getSnapshot().command
-                  ? "The app update activated. Reconcile the unconfirmed stage transition before reloading."
-                  : leadCapture.current.getSnapshot().sequence
-                    ? "The app update activated. Resolve the unfinished lead capture before reloading."
-                    : taskEdit.current.getSnapshot().command
-                      ? "The app update activated. Reconcile the unconfirmed task update before reloading."
-                      : notificationProtected.current
-                        ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
-                        : "The app update activated. Finish or discard your current draft before reloading.",
+          recordArchive.current.getSnapshot().command
+            ? "The app update activated. Reconcile the unconfirmed archive before reloading."
+            : leadAssignment.current.getSnapshot().command
+              ? "The app update activated. Reconcile the unconfirmed lead assignment before reloading."
+              : contactEdit.current.getSnapshot().command
+                ? "The app update activated. Reconcile the unconfirmed contact save before reloading."
+                : taskCreate.current.getSnapshot().command
+                  ? "The app update activated. Reconcile the unconfirmed task creation before reloading."
+                  : stageTransition.current.getSnapshot().command
+                    ? "The app update activated. Reconcile the unconfirmed stage transition before reloading."
+                    : leadCapture.current.getSnapshot().sequence
+                      ? "The app update activated. Resolve the unfinished lead capture before reloading."
+                      : taskEdit.current.getSnapshot().command
+                        ? "The app update activated. Reconcile the unconfirmed task update before reloading."
+                        : notificationProtected.current
+                          ? "The app update activated. Reconcile the unconfirmed read command in Notifications before reloading."
+                          : "The app update activated. Finish or discard your current draft before reloading.",
         );
         return;
       }
@@ -1448,6 +1544,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   ) {
     if (taskCreate.current.getSnapshot().command)
       throw new Error("Reconcile the unconfirmed task creation before another command.");
+    if (recordArchive.current.getSnapshot().command)
+      throw new Error("Reconcile the unconfirmed archive before another command.");
     if (leadAssignment.current.getSnapshot().command)
       throw new Error("Reconcile the unconfirmed lead assignment before another command.");
     if (stageTransition.current.getSnapshot().command)
@@ -1484,7 +1582,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     return result.data;
   }
   async function loadMore(resource: "contacts" | "leads" | "tasks") {
-    if (taskCreate.current.getSnapshot().command) return;
+    if (taskCreate.current.getSnapshot().command || recordArchive.current.getSnapshot().command) return;
     if (stageTransition.current.getSnapshot().command || leadAssignment.current.getSnapshot().command) return;
     const cursor = cursors[resource];
     if (!cursor || !session?.activeOrgId) return;
@@ -1533,6 +1631,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (busy || !online) return;
     if (taskCreate.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed task creation before changing identity.");
+      return;
+    }
+    if (recordArchive.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed archive before changing identity.");
       return;
     }
     if (leadAssignment.current.getSnapshot().command) {
@@ -1588,6 +1690,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       setError("Reconcile the unconfirmed task creation before closing this editor.");
       return;
     }
+    if (recordArchive.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed archive before closing this editor.");
+      return;
+    }
     if (leadAssignment.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed lead assignment before leaving this view or changing context.");
       return;
@@ -1613,6 +1719,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   function closeDetail() {
     if (taskCreate.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed task creation before leaving this view.");
+      return;
+    }
+    if (recordArchive.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed archive before closing this record.");
       return;
     }
     if (leadAssignment.current.getSnapshot().command) {
@@ -1700,6 +1810,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       stageTransition.current.getSnapshot().command ||
       leadAssignment.current.getSnapshot().command ||
       taskCreate.current.getSnapshot().command ||
+      recordArchive.current.getSnapshot().command ||
       (acknowledged
         ? !acknowledgedCommand ||
           activeContactEdit.current !== acknowledgedCommand ||
@@ -1802,6 +1913,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       campaignProtected.current ||
       notificationProtected.current ||
       taskEdit.current.getSnapshot().command ||
+      recordArchive.current.getSnapshot().command ||
       ui.detailKind !== "contact" ||
       ui.detailId?.toLowerCase() !== snapshot.contactId.toLowerCase() ||
       document.visibilityState !== "visible" ||
@@ -1882,6 +1994,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       campaignProtected.current ||
       notificationProtected.current ||
       taskEdit.current.getSnapshot().command ||
+      recordArchive.current.getSnapshot().command ||
       !currentContactUI.current.online ||
       !navigator.onLine ||
       changingOrganization ||
@@ -1920,7 +2033,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         leadCapture.current.getSnapshot().sequence ||
         stageTransition.current.getSnapshot().command ||
         leadAssignment.current.getSnapshot().command ||
-        taskCreate.current.getSnapshot().command,
+        taskCreate.current.getSnapshot().command ||
+        recordArchive.current.getSnapshot().command,
     );
   }
   function forgetContactRecovery(expectedCommand = contactSnapshot.command) {
@@ -1966,7 +2080,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       noteDirty ||
       tagDirty ||
       assignmentPending ||
-      assignmentDirty
+      assignmentDirty ||
+      recordArchive.current.getSnapshot().command
     )
       return;
     if (detailKind === "task") {
@@ -2070,6 +2185,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       setError("Return to the unconfirmed task creation before another edit.");
       return;
     }
+    if (recordArchive.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed archive before starting another edit.");
+      return;
+    }
     if (leadAssignment.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed lead assignment before leaving this view or changing context.");
       return;
@@ -2134,6 +2253,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           Boolean(contactEdit.current.getSnapshot().command) ||
           Boolean(stageTransition.current.getSnapshot().command) ||
           Boolean(taskCreate.current.getSnapshot().command) ||
+          Boolean(recordArchive.current.getSnapshot().command) ||
           currentContactUI.current.noteDirty ||
           currentContactUI.current.tagDirty,
       })
@@ -2360,7 +2480,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             contactEdit.current.getSnapshot().command ||
             leadCapture.current.getSnapshot().sequence ||
             stageTransition.current.getSnapshot().command ||
-            leadAssignment.current.getSnapshot().command,
+            leadAssignment.current.getSnapshot().command ||
+            recordArchive.current.getSnapshot().command,
         ),
       })
     );
@@ -2618,6 +2739,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               leadAssignment.current.getSnapshot().command ||
               currentAssignmentDraft.current ||
               taskCreate.current.getSnapshot().command ||
+              recordArchive.current.getSnapshot().command ||
               (!ownCommand && taskEdit.current.getSnapshot().command),
           ),
           taskId,
@@ -3046,7 +3168,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               contactEdit.current.getSnapshot().command ||
               leadCapture.current.getSnapshot().sequence ||
               stageTransition.current.getSnapshot().command ||
-              taskCreate.current.getSnapshot().command,
+              taskCreate.current.getSnapshot().command ||
+              recordArchive.current.getSnapshot().command,
           ),
         },
         leadId,
@@ -3317,6 +3440,261 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       return;
     await refreshAssignmentLead(binding, expectedId);
   }
+  function clearArchiveTargetDetail(kind: RecordArchiveKind) {
+    if (kind === "lead") {
+      currentAssignmentDraft.current = null;
+      setAssignmentDraft(null);
+      clearLeadAssignmentDetail();
+    } else clearContactSourceDetail();
+  }
+  function clearRecordArchiveAccess() {
+    recordArchive.current.bind(null);
+    currentArchiveBinding.current = null;
+    currentArchiveUI.current.binding = null;
+    setArchiveDenied(true);
+    ++detailEpoch.current;
+    selectedContactBinding.current = null;
+    setSelectedContact(null);
+    setContactDraft(null);
+    currentAssignmentDraft.current = null;
+    setAssignmentDraft(null);
+    clearLeadAssignmentDetail();
+    ++refreshEpoch.current;
+    setData(emptyData);
+    setRefreshed(null);
+    setDirty(false);
+    setBusy(false);
+    updateArchive((value) => value + 1);
+  }
+  function archiveAllowed(
+    binding: string | null,
+    kind: RecordArchiveKind,
+    resourceId: string,
+    ownCommand?: RecordArchiveCommand,
+  ) {
+    const ui = currentArchiveUI.current,
+      retained = recordArchive.current.getSnapshot().command;
+    return (
+      recordArchive.current.isBoundTo(binding) &&
+      recordArchive.current.getSnapshot().phase !== "forgotten" &&
+      recordArchiveEligible(
+        binding,
+        {
+          binding: currentArchiveBinding.current,
+          active: contactLifetimeActive.current,
+          online: ui.online && navigator.onLine,
+          visible: ui.visible && document.visibilityState === "visible",
+          changingOrganization: ui.changingOrganization,
+          busy: ui.busy && !(ownCommand && archiveController.current.isActive(ownCommand)),
+          loading: ui.loading,
+          detailLoading: ui.detailLoading,
+          dirty: ui.dirty,
+          kind: ui.detailKind,
+          resourceId: ui.detailId,
+          otherProtected: Boolean(
+            ui.modal ||
+              ui.noteDirty ||
+              ui.tagDirty ||
+              cmsProtected.current ||
+              campaignProtected.current ||
+              notificationProtected.current ||
+              invitationTransfer ||
+              taskEdit.current.getSnapshot().command ||
+              contactEdit.current.getSnapshot().command ||
+              leadCapture.current.getSnapshot().sequence ||
+              stageTransition.current.getSnapshot().command ||
+              leadAssignment.current.getSnapshot().command ||
+              currentAssignmentDraft.current ||
+              taskCreate.current.getSnapshot().command ||
+              (retained && retained !== ownCommand),
+          ),
+        },
+        kind,
+        resourceId,
+      )
+    );
+  }
+  function archiveRefreshAllowed(context: string) {
+    const ui = currentArchiveUI.current;
+    return (
+      contactLifetimeActive.current &&
+      recordArchive.current.isBoundTo(context) &&
+      currentArchiveBinding.current === context &&
+      ui.online &&
+      navigator.onLine &&
+      ui.visible &&
+      document.visibilityState === "visible" &&
+      !ui.changingOrganization
+    );
+  }
+  async function runRecordArchive(command: RecordArchiveCommand, mode: "send" | "reconcile") {
+    const active = retainedSession.current;
+    let dispatched = false;
+    const hooks = {
+      allowed: () =>
+        Boolean(
+          active?.activeOrgId &&
+            active.activeOrgId.toLowerCase() === command.organizationId.toLowerCase() &&
+            retainedSession.current === active,
+        ) && archiveAllowed(command.context, command.kind, command.resourceId, command),
+      dispatched: () => {
+        dispatched = true;
+        reloadProtected.current = true;
+        ++refreshEpoch.current;
+        setData(emptyData);
+        setRefreshed(null);
+        currentArchiveUI.current.busy = true;
+        setBusy(true);
+        setDetailError("");
+        setError("");
+        setNotice("");
+        updateArchive((value) => value + 1);
+      },
+    };
+    let outcome: RecordArchiveOutcome;
+    try {
+      outcome =
+        mode === "send"
+          ? await archiveController.current.send(command, currentArchiveUI.current.csrf, hooks)
+          : await archiveController.current.reconcile(command, currentArchiveUI.current.csrf, hooks);
+    } catch {
+      if (contactLifetimeActive.current && recordArchive.current.isCurrent(command)) {
+        setDetailError("The original archive cannot be resent. Its outcome remains unconfirmed.");
+        updateArchive((value) => value + 1);
+      }
+      return;
+    }
+    try {
+      if (outcome.type === "ignored" || !contactLifetimeActive.current) return;
+      if (outcome.type === "denied") {
+        clearRecordArchiveAccess();
+        return;
+      }
+      if (outcome.type === "unknown") return;
+      if (outcome.type === "acknowledged") {
+        const ui = currentArchiveUI.current;
+        clearArchiveTargetDetail(command.kind);
+        setDirty(false);
+        setDetailError("");
+        setNotice(
+          command.kind === "contact"
+            ? "Contact archive acknowledged. Current lists are read separately."
+            : "Lead archive acknowledged. Current lists are read separately.",
+        );
+        if (ui.detailKind === command.kind && ui.detailId?.toLowerCase() === command.resourceId.toLowerCase())
+          router.push(`/${ui.view}`);
+      } else if (outcome.phase === "unavailable") clearArchiveTargetDetail(command.kind);
+      // Lists were cleared before sending; reread them only through the current authorized path.
+      if (dispatched && active && archiveRefreshAllowed(command.context)) await refresh(active);
+    } finally {
+      if (contactLifetimeActive.current) {
+        if (dispatched && !archiveController.current.isActive()) {
+          currentArchiveUI.current.busy = false;
+          setBusy(false);
+        }
+        updateArchive((value) => value + 1);
+      }
+    }
+  }
+  async function startRecordArchive(
+    kind: RecordArchiveKind,
+    expected: Contact | Lead | null,
+    binding: string | null,
+  ) {
+    const ui = currentArchiveUI.current;
+    if (
+      !expected ||
+      !binding ||
+      currentArchiveBinding.current !== binding ||
+      !archiveAllowed(binding, kind, expected.id) ||
+      recordArchive.current.getSnapshot().command ||
+      archiveController.current.isActive() ||
+      (kind === "contact"
+        ? ui.contact !== expected ||
+          !selectedContactBinding.current ||
+          selectedContactBinding.current !== currentContactBinding.current
+        : ui.lead !== expected ||
+          !selectedLeadBinding.current ||
+          selectedLeadBinding.current !== currentLeadReadBinding.current ||
+          selectedLeadETag.current !== `"${expected.version}"`)
+    )
+      return;
+    let command: RecordArchiveCommand;
+    try {
+      command = archiveController.current.begin(
+        { kind, resourceId: expected.id, version: expected.version },
+        crypto.randomUUID(),
+      );
+    } catch {
+      if (recordArchive.current.isBoundTo(binding))
+        setDetailError(
+          "The archive target or its current version is unavailable. Read the current record first.",
+        );
+      return;
+    }
+    reloadProtected.current = true;
+    await runRecordArchive(command, "send");
+  }
+  async function reconcileRecordArchive(expected: RecordArchiveCommand | null) {
+    if (
+      !expected ||
+      !recordArchive.current.isCurrent(expected) ||
+      recordArchive.current.getSnapshot().command !== expected ||
+      archiveController.current.isActive()
+    )
+      return;
+    await runRecordArchive(expected, "reconcile");
+  }
+  function forgetRecordArchive(expected: RecordArchiveCommand | null) {
+    const ui = currentArchiveUI.current;
+    if (
+      !expected ||
+      !contactLifetimeActive.current ||
+      !recordArchive.current.isBoundTo(ui.binding) ||
+      currentArchiveBinding.current !== expected.context ||
+      !ui.visible ||
+      document.visibilityState !== "visible" ||
+      ui.changingOrganization ||
+      ui.busy ||
+      ui.loading ||
+      ui.detailLoading ||
+      !archiveController.current.forget(expected)
+    )
+      return;
+    clearArchiveTargetDetail(expected.kind);
+    ++refreshEpoch.current;
+    setData(emptyData);
+    setRefreshed(null);
+    setDirty(false);
+    setDetailError("");
+    setError("");
+    setNotice("");
+    releaseForgottenRecoveryProtection();
+    updateArchive((value) => value + 1);
+  }
+  function returnToArchive(expected: RecordArchiveCommand | null) {
+    const ui = currentArchiveUI.current;
+    if (
+      !expected ||
+      !contactLifetimeActive.current ||
+      !recordArchive.current.isCurrent(expected) ||
+      currentArchiveBinding.current !== expected.context ||
+      !ui.online ||
+      !navigator.onLine ||
+      !ui.visible ||
+      document.visibilityState !== "visible" ||
+      ui.changingOrganization ||
+      ui.busy ||
+      ui.loading ||
+      ui.detailLoading
+    )
+      return;
+    router.push(
+      expected.kind === "contact"
+        ? "/contacts?contact=" + encodeURIComponent(expected.resourceId)
+        : "/pipeline?lead=" + encodeURIComponent(expected.resourceId),
+    );
+  }
   function stageAllowed(binding: string | null, ownCommand?: StageTransitionCommand) {
     const ui = currentStageUI.current;
     return (
@@ -3343,7 +3721,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             taskEdit.current.getSnapshot().command ||
             contactEdit.current.getSnapshot().command ||
             leadCapture.current.getSnapshot().sequence ||
-            taskCreate.current.getSnapshot().command,
+            taskCreate.current.getSnapshot().command ||
+            recordArchive.current.getSnapshot().command,
         ),
       })
     );
@@ -3515,6 +3894,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
       setError("Reconcile the unconfirmed task creation before switching organizations.");
       return;
     }
+    if (recordArchive.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed archive before switching organizations.");
+      return;
+    }
     if (leadAssignment.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed lead assignment before leaving this view or changing context.");
       return;
@@ -3597,6 +3980,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   async function logout() {
     if (taskCreate.current.getSnapshot().command) {
       setError("Reconcile the unconfirmed task creation before signing out.");
+      return;
+    }
+    if (recordArchive.current.getSnapshot().command) {
+      setError("Reconcile the unconfirmed archive before signing out.");
       return;
     }
     if (leadAssignment.current.getSnapshot().command) {
@@ -3897,7 +4284,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             !leadCapture.current.getSnapshot().sequence &&
             !stageTransition.current.getSnapshot().command &&
             !leadAssignment.current.getSnapshot().command &&
-            !taskCreate.current.getSnapshot().command) ||
+            !taskCreate.current.getSnapshot().command &&
+            !recordArchive.current.getSnapshot().command) ||
           !(event.target instanceof Element)
         )
           return;
@@ -3914,17 +4302,19 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
         event.preventDefault();
         event.stopPropagation();
         setError(
-          leadAssignment.current.getSnapshot().command
-            ? "Reconcile the unconfirmed lead assignment before navigating away."
-            : taskCreate.current.getSnapshot().command
-              ? "Reconcile the unconfirmed task creation before navigating away."
-              : stageTransition.current.getSnapshot().command
-                ? "Reconcile the unconfirmed stage transition before navigating away."
-                : contactEdit.current.getSnapshot().command
-                  ? "Reconcile the unconfirmed contact save before navigating away. Current-record review does not confirm its outcome."
-                  : leadCapture.current.getSnapshot().sequence
-                    ? "Resolve the unfinished lead capture before navigating away. An unconfirmed step cannot be discarded."
-                    : "Reconcile the unconfirmed task update before navigating away.",
+          recordArchive.current.getSnapshot().command
+            ? "Reconcile the unconfirmed archive before navigating away."
+            : leadAssignment.current.getSnapshot().command
+              ? "Reconcile the unconfirmed lead assignment before navigating away."
+              : taskCreate.current.getSnapshot().command
+                ? "Reconcile the unconfirmed task creation before navigating away."
+                : stageTransition.current.getSnapshot().command
+                  ? "Reconcile the unconfirmed stage transition before navigating away."
+                  : contactEdit.current.getSnapshot().command
+                    ? "Reconcile the unconfirmed contact save before navigating away. Current-record review does not confirm its outcome."
+                    : leadCapture.current.getSnapshot().sequence
+                      ? "Resolve the unfinished lead capture before navigating away. An unconfirmed step cannot be discarded."
+                      : "Reconcile the unconfirmed task update before navigating away.",
         );
       }}
     >
@@ -4120,19 +4510,21 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <Download size={19} />
               <span>
                 An app update is ready.
-                {assignmentPending
-                  ? " Reconcile the unconfirmed lead assignment before updating or reloading."
-                  : taskCreatePending
-                    ? " Reconcile the unconfirmed task creation before updating or reloading."
-                    : stagePending
-                      ? " Reconcile the unconfirmed stage transition before updating or reloading."
-                      : taskPending
-                        ? " Reconcile the unconfirmed task update before updating or reloading."
-                        : notificationPending
-                          ? " Reconcile the unconfirmed read command in Notifications before updating or reloading."
-                          : unsaved || busy
-                            ? " Finish or discard your draft before updating."
-                            : " Reload when you’re ready."}
+                {archivePending
+                  ? " Reconcile the unconfirmed archive before updating or reloading."
+                  : assignmentPending
+                    ? " Reconcile the unconfirmed lead assignment before updating or reloading."
+                    : taskCreatePending
+                      ? " Reconcile the unconfirmed task creation before updating or reloading."
+                      : stagePending
+                        ? " Reconcile the unconfirmed stage transition before updating or reloading."
+                        : taskPending
+                          ? " Reconcile the unconfirmed task update before updating or reloading."
+                          : notificationPending
+                            ? " Reconcile the unconfirmed read command in Notifications before updating or reloading."
+                            : unsaved || busy
+                              ? " Finish or discard your draft before updating."
+                              : " Reload when you’re ready."}
               </span>
               <Button
                 variant="secondary"
@@ -4237,12 +4629,33 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           {(contactSnapshot.phase === "forgotten" ||
             leadSnapshot.phase === "forgotten" ||
             taskCreateSnapshot.phase === "forgotten" ||
-            assignmentSnapshot.phase === "forgotten") && (
+            assignmentSnapshot.phase === "forgotten" ||
+            archiveSnapshot.phase === "forgotten") && (
             <div className="connection-banner" role="status">
               <ShieldCheck size={18} aria-hidden="true" />
               <span>{localRecoveryForgottenWarning}</span>
             </div>
           )}
+          {archivePending &&
+            (detailKind !== archiveSnapshot.command?.kind ||
+              detailId?.toLowerCase() !== archiveSnapshot.command?.resourceId.toLowerCase()) && (
+              <div className="connection-banner" role="status">
+                <span>
+                  An archive remains unconfirmed. Return to its recovery view before another command or
+                  leaving this workspace.
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={
+                    !online || !contactVisible || busy || loading || detailLoading || changingOrganization
+                  }
+                  onClick={() => returnToArchive(archiveSnapshot.command)}
+                >
+                  Return to archive recovery
+                </Button>
+              </div>
+            )}
           {assignmentPending &&
             (detailKind !== "lead" ||
               detailId?.toLowerCase() !== assignmentSnapshot.command?.leadId.toLowerCase()) && (
@@ -4414,7 +4827,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               </Button>
             </div>
           )}
-          {!stagePending && !taskCreatePending && !assignmentPending && !taskPending && (
+          {!stagePending && !taskCreatePending && !assignmentPending && !taskPending && !archivePending && (
             <>
               {(view === "notifications" || notificationPending) && (
                 <div hidden={view !== "notifications"}>
@@ -5405,7 +5818,10 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
             detailId.toLowerCase() === assignmentSnapshot.command.leadId.toLowerCase())) &&
         (!contactSnapshot.command ||
           (detailKind === "contact" &&
-            detailId.toLowerCase() === contactSnapshot.command.contactId.toLowerCase())) && (
+            detailId.toLowerCase() === contactSnapshot.command.contactId.toLowerCase())) &&
+        (!archiveSnapshot.command ||
+          (detailKind === archiveSnapshot.command.kind &&
+            detailId.toLowerCase() === archiveSnapshot.command.resourceId.toLowerCase())) && (
           <dialog
             ref={detailDialog}
             className="editor-dialog detail-dialog"
@@ -5434,301 +5850,391 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
               <button
                 className="icon-button"
                 aria-label="Close record details"
-                disabled={busy || contactPending || assignmentPending || taskPending}
+                disabled={busy || contactPending || assignmentPending || taskPending || archivePending}
                 onClick={closeDetail}
               >
                 <X size={21} />
               </button>
             </div>
-            {detailLoading ? (
-              <div className="empty">Loading authorized record…</div>
-            ) : (
-              <form
-                onSubmit={(event) => {
-                  if (detailKind === "task") {
-                    event.preventDefault();
-                    void saveTaskEdit(selectedTask, taskEditBinding);
-                  } else void saveDetail(event);
-                }}
-                onChange={() => {
-                  if (detailKind !== "task") setDirty(true);
-                }}
-              >
-                <div className="editor-body">
-                  {detailError && (detailKind !== "contact" || (online && contactVisible)) && (
-                    <div className="error" role="alert">
-                      {detailError}
-                    </div>
-                  )}
-                  {detailKind === "contact" && (
-                    <ContactEditPanel
-                      contact={
-                        selectedContactBinding.current === currentContactBinding.current
-                          ? selectedContact
-                          : null
-                      }
-                      draft={
-                        selectedContactBinding.current === currentContactBinding.current ? contactDraft : null
-                      }
-                      snapshot={contactSnapshot}
-                      online={online && !changingOrganization}
-                      visible={contactVisible}
-                      busy={busy}
-                      reading={detailLoading}
-                      canEdit={
-                        Boolean(contactEditBinding) && !contactDenied && contactSnapshot.phase !== "forgotten"
-                      }
-                      canRead={Boolean(contactReadBinding) && !contactDenied}
-                      canRetry={contactEdit.current.canRetry()}
-                      currentReviewed={contactReviewed}
-                      onDraftChange={(value) => {
-                        if (
-                          !contactEdit.current.isBoundTo(contactEditBinding) ||
-                          contactEdit.current.getSnapshot().phase === "forgotten" ||
-                          contactEdit.current.getSnapshot().command ||
-                          selectedContactBinding.current !== currentContactBinding.current ||
-                          !currentContactUI.current.online ||
-                          document.visibilityState !== "visible"
-                        )
-                          return;
-                        setContactDraft(value);
-                        setDirty(true);
-                        reloadProtected.current = true;
-                      }}
-                      onReconcile={() => void reconcileContactEdit()}
-                      onReview={() => void reviewContact()}
-                      onForget={() => forgetContactRecovery(contactSnapshot.command)}
-                    />
-                  )}
-                  {detailKind === "lead" && selectedLead && leadDetailVisible && (
-                    <>
-                      <div className="detail-summary">
-                        <span className="avatar light">
-                          {initials(selectedContact?.displayName || "Lead")}
-                        </span>
-                        <div>
-                          <strong>{selectedContact?.displayName || "Contact unavailable"}</strong>
-                          <span>{selectedContact?.emails[0] || "Email unknown"}</span>
-                        </div>
-                      </div>
-                      <label>
-                        Intent
-                        <select name="intent" defaultValue={selectedLead.intent} disabled={assignmentDirty}>
-                          <option value="unknown">Unknown</option>
-                          <option value="buyer">Buyer</option>
-                          <option value="seller">Seller</option>
-                          <option value="both">Buyer & seller</option>
-                        </select>
-                      </label>
-                      <label>
-                        Timeline (optional)
-                        <input
-                          name="timeline"
-                          defaultValue={selectedLead.timeline || ""}
-                          maxLength={80}
-                          disabled={assignmentDirty}
-                        />
-                      </label>
-                      <dl className="detail-facts">
-                        <div>
-                          <dt>Stage</dt>
-                          <dd>
-                            {data.stages.find((stage) => stage.id === selectedLead.stageId)?.name ||
-                              "Unavailable"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Source</dt>
-                          <dd>
-                            {data.sources.find((source) => source.id === selectedLead.sourceId)?.label ||
-                              "Unavailable"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Owner</dt>
-                          <dd>
-                            {selectedLead.ownerMemberId === member
-                              ? "Assigned to you"
-                              : selectedLead.ownerMemberId
-                                ? "Assigned member"
-                                : "Unassigned queue"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Engagement score</dt>
-                          <dd>
-                            {selectedLead.score == null
-                              ? "Unknown"
-                              : `${selectedLead.score} · ${selectedLead.scoreVersion || "Version unavailable"}`}
-                          </dd>
-                        </div>
-                      </dl>
-                    </>
-                  )}
-                  {detailKind === "task" && (
-                    <TaskEditPanel
-                      snapshot={taskEditSnapshot}
-                      task={taskPrivateVisible ? selectedTask : null}
-                      draft={taskPrivateVisible ? taskEditDraft : null}
-                      online={online && !changingOrganization}
-                      visible={contactVisible}
-                      busy={busy}
-                      reading={detailLoading}
-                      canEdit={Boolean(taskEditBinding)}
-                      canRead={Boolean(taskReadBinding)}
-                      canRetry={taskEdit.current.canRetry()}
-                      deviceTimezone={Intl.DateTimeFormat().resolvedOptions().timeZone || null}
-                      onDraftChange={(value) => changeTaskEditDraft(value, selectedTask, taskEditBinding)}
-                      onReconcile={() => void reconcileTaskEdit(taskEditSnapshot.command)}
-                      onReview={() => void reviewTaskEdit(detailId, taskReadBinding, renderedDetailEpoch)}
-                      onForget={() => forgetTaskEdit(taskEditSnapshot.command)}
-                    />
-                  )}
-                  {(selectedContact || selectedLead || selectedTask) &&
-                    (detailKind !== "lead" || leadDetailVisible) &&
-                    (detailKind !== "task" || taskPrivateVisible) &&
-                    (detailKind !== "contact" ||
-                      (online &&
-                        contactVisible &&
-                        selectedContactBinding.current === currentContactBinding.current)) && (
-                      <p className="form-note">
-                        <ShieldCheck size={15} />
-                        Version{" "}
-                        {detailKind === "lead"
-                          ? selectedLead?.version
-                          : detailKind === "task"
-                            ? selectedTask?.version
-                            : selectedContact?.version}{" "}
-                        ·{" "}
-                        {detailKind === "contact" && contactPending
-                          ? "Reconciliation retains the original save version."
-                          : "Changes require this exact record version."}
-                      </p>
-                    )}
-                </div>
-                <div className="editor-footer">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={busy || contactPending || assignmentPending || taskPending}
-                    onClick={closeDetail}
-                  >
-                    Close
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={
-                      !dirty ||
-                      noteDirty ||
-                      tagDirty ||
-                      busy ||
-                      contactPending ||
-                      taskPending ||
-                      (detailKind === "task" &&
-                        (!taskPrivateVisible || taskEditSnapshot.phase === "forgotten")) ||
-                      assignmentPending ||
-                      assignmentDirty ||
-                      !online ||
-                      (detailKind === "contact" &&
-                        (!contactVisible ||
-                          changingOrganization ||
-                          !contactEditBinding ||
-                          selectedContactBinding.current !== currentContactBinding.current ||
-                          ["conflict", "forgotten"].includes(contactSnapshot.phase))) ||
-                      !(detailKind === "contact"
-                        ? permission("crm.contacts.write") && selectedContact
-                        : detailKind === "lead"
-                          ? permission("crm.leads.write") && selectedLead
-                          : canTask && selectedTask)
-                    }
-                  >
-                    {busy ? "Saving…" : "Save changes"}
-                  </Button>
-                </div>
-              </form>
-            )}
-            {detailKind === "lead" && (
-              <LeadAssignmentPanel
-                key={`${leadReadBinding || assignmentBinding || "unavailable"}:${detailId}`}
-                session={session}
-                binding={assignmentBinding}
-                snapshot={assignmentSnapshot}
-                currentLead={assignmentCurrentLead}
-                memberId={member}
-                targetMemberId={
-                  assignmentDraft?.binding === assignmentBinding &&
-                  assignmentDraft.leadId.toLowerCase() === detailId.toLowerCase()
-                    ? assignmentDraft.target
-                    : (selectedLead?.ownerMemberId ?? null)
-                }
-                draftChanged={assignmentDirty}
-                canUnassign={false}
-                online={online && !changingOrganization}
-                visible={
-                  contactVisible &&
-                  (typeof document === "undefined" || document.visibilityState === "visible")
-                }
-                busy={busy || loading || detailLoading || dirty || noteDirty || tagDirty}
-                canAssign={Boolean(assignmentBinding) && !assignmentDenied}
-                canRetry={leadAssignment.current.canRetry()}
-                onTargetChange={(value) => changeAssignmentTarget(value, selectedLead, assignmentBinding)}
-                onSave={() => void saveLeadAssignment(selectedLead, assignmentBinding)}
-                onReconcile={() => void reconcileLeadAssignment(assignmentSnapshot.command)}
-                onForget={() => forgetLeadAssignment(assignmentSnapshot.command)}
-                onIdentityLost={() => {
-                  if (contactLifetimeActive.current && currentAssignmentBinding.current === assignmentBinding)
-                    clearLeadAssignmentAccess();
-                }}
-                onReview={
-                  leadReadBinding
-                    ? () => void reviewLeadAssignment(detailId, assignmentBinding, renderedDetailEpoch)
-                    : undefined
-                }
-              />
-            )}
-            {selectedLead && session.activeOrgId && leadDetailVisible && (
-              <LeadTimeline
-                key={`${session.activeOrgId}:${selectedLead.id}`}
-                lead={selectedLead}
-                organizationId={session.activeOrgId}
-                timezone={timezone}
-                online={online}
-                working={busy}
-                editInProgress={dirty || tagDirty || assignmentDirty}
-                canWrite={permission("crm.leads.write")}
-                onDirty={setNoteDirty}
-                setWorking={setBusy}
-                runCommand={command}
-                onSaved={async () => {
-                  const generation = detailEpoch.current;
-                  const result = await api<Lead>(`/v1/orgs/${session.activeOrgId}/leads/${selectedLead.id}`);
-                  if (generation !== detailEpoch.current) return;
-                  setSelectedLead(result.data);
-                  await refresh(session);
-                }}
-              />
-            )}
-            {selectedLead &&
-              leadDetailVisible &&
-              session.activeOrgId &&
-              permission("crm.tags.read") &&
-              permission("crm.leads.write") && (
-                <LeadTags
-                  key={`${session.activeOrgId}:${selectedLead.id}`}
-                  lead={selectedLead}
-                  organizationId={session.activeOrgId}
-                  online={online}
-                  working={busy}
-                  editInProgress={dirty || noteDirty || assignmentDirty}
-                  runCommand={command}
-                  onDirty={setTagDirty}
-                  setWorking={setBusy}
-                  onSaved={async (lead) => {
-                    setSelectedLead(lead);
-                    await refresh(session);
-                  }}
+            {archiveSnapshot.command ? (
+              <div className="editor-body">
+                {detailError && online && contactVisible && (
+                  <div className="error" role="alert">
+                    {detailError}
+                  </div>
+                )}
+                <RecordArchivePanel
+                  kind={archiveSnapshot.command.kind}
+                  resourceId={archiveSnapshot.command.resourceId}
+                  snapshot={archiveSnapshot}
+                  available={false}
+                  online={online && !changingOrganization}
+                  visible={
+                    contactVisible &&
+                    (typeof document === "undefined" || document.visibilityState === "visible")
+                  }
+                  busy={busy || loading || detailLoading}
+                  canArchive={Boolean(archiveBinding) && !archiveDenied}
+                  canRetry={recordArchive.current.canRetry()}
+                  onArchive={() => {}}
+                  onReconcile={() => void reconcileRecordArchive(archiveSnapshot.command)}
+                  onForget={() => forgetRecordArchive(archiveSnapshot.command)}
                 />
-              )}
+              </div>
+            ) : (
+              <>
+                {detailLoading ? (
+                  <div className="empty">Loading authorized record…</div>
+                ) : (
+                  <form
+                    onSubmit={(event) => {
+                      if (detailKind === "task") {
+                        event.preventDefault();
+                        void saveTaskEdit(selectedTask, taskEditBinding);
+                      } else void saveDetail(event);
+                    }}
+                    onChange={() => {
+                      if (detailKind !== "task") setDirty(true);
+                    }}
+                  >
+                    <div className="editor-body">
+                      {detailError && (detailKind !== "contact" || (online && contactVisible)) && (
+                        <div className="error" role="alert">
+                          {detailError}
+                        </div>
+                      )}
+                      {detailKind === "contact" && (
+                        <ContactEditPanel
+                          contact={
+                            selectedContactBinding.current === currentContactBinding.current
+                              ? selectedContact
+                              : null
+                          }
+                          draft={
+                            selectedContactBinding.current === currentContactBinding.current
+                              ? contactDraft
+                              : null
+                          }
+                          snapshot={contactSnapshot}
+                          online={online && !changingOrganization}
+                          visible={contactVisible}
+                          busy={busy}
+                          reading={detailLoading}
+                          canEdit={
+                            Boolean(contactEditBinding) &&
+                            !contactDenied &&
+                            contactSnapshot.phase !== "forgotten"
+                          }
+                          canRead={Boolean(contactReadBinding) && !contactDenied}
+                          canRetry={contactEdit.current.canRetry()}
+                          currentReviewed={contactReviewed}
+                          onDraftChange={(value) => {
+                            if (
+                              !contactEdit.current.isBoundTo(contactEditBinding) ||
+                              contactEdit.current.getSnapshot().phase === "forgotten" ||
+                              contactEdit.current.getSnapshot().command ||
+                              selectedContactBinding.current !== currentContactBinding.current ||
+                              !currentContactUI.current.online ||
+                              document.visibilityState !== "visible"
+                            )
+                              return;
+                            setContactDraft(value);
+                            setDirty(true);
+                            reloadProtected.current = true;
+                          }}
+                          onReconcile={() => void reconcileContactEdit()}
+                          onReview={() => void reviewContact()}
+                          onForget={() => forgetContactRecovery(contactSnapshot.command)}
+                        />
+                      )}
+                      {detailKind === "lead" && selectedLead && leadDetailVisible && (
+                        <>
+                          <div className="detail-summary">
+                            <span className="avatar light">
+                              {initials(selectedContact?.displayName || "Lead")}
+                            </span>
+                            <div>
+                              <strong>{selectedContact?.displayName || "Contact unavailable"}</strong>
+                              <span>{selectedContact?.emails[0] || "Email unknown"}</span>
+                            </div>
+                          </div>
+                          <label>
+                            Intent
+                            <select
+                              name="intent"
+                              defaultValue={selectedLead.intent}
+                              disabled={assignmentDirty}
+                            >
+                              <option value="unknown">Unknown</option>
+                              <option value="buyer">Buyer</option>
+                              <option value="seller">Seller</option>
+                              <option value="both">Buyer & seller</option>
+                            </select>
+                          </label>
+                          <label>
+                            Timeline (optional)
+                            <input
+                              name="timeline"
+                              defaultValue={selectedLead.timeline || ""}
+                              maxLength={80}
+                              disabled={assignmentDirty}
+                            />
+                          </label>
+                          <dl className="detail-facts">
+                            <div>
+                              <dt>Stage</dt>
+                              <dd>
+                                {data.stages.find((stage) => stage.id === selectedLead.stageId)?.name ||
+                                  "Unavailable"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Source</dt>
+                              <dd>
+                                {data.sources.find((source) => source.id === selectedLead.sourceId)?.label ||
+                                  "Unavailable"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Owner</dt>
+                              <dd>
+                                {selectedLead.ownerMemberId === member
+                                  ? "Assigned to you"
+                                  : selectedLead.ownerMemberId
+                                    ? "Assigned member"
+                                    : "Unassigned queue"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Engagement score</dt>
+                              <dd>
+                                {selectedLead.score == null
+                                  ? "Unknown"
+                                  : `${selectedLead.score} · ${selectedLead.scoreVersion || "Version unavailable"}`}
+                              </dd>
+                            </div>
+                          </dl>
+                        </>
+                      )}
+                      {detailKind === "task" && (
+                        <TaskEditPanel
+                          snapshot={taskEditSnapshot}
+                          task={taskPrivateVisible ? selectedTask : null}
+                          draft={taskPrivateVisible ? taskEditDraft : null}
+                          online={online && !changingOrganization}
+                          visible={contactVisible}
+                          busy={busy}
+                          reading={detailLoading}
+                          canEdit={Boolean(taskEditBinding)}
+                          canRead={Boolean(taskReadBinding)}
+                          canRetry={taskEdit.current.canRetry()}
+                          deviceTimezone={Intl.DateTimeFormat().resolvedOptions().timeZone || null}
+                          onDraftChange={(value) => changeTaskEditDraft(value, selectedTask, taskEditBinding)}
+                          onReconcile={() => void reconcileTaskEdit(taskEditSnapshot.command)}
+                          onReview={() => void reviewTaskEdit(detailId, taskReadBinding, renderedDetailEpoch)}
+                          onForget={() => forgetTaskEdit(taskEditSnapshot.command)}
+                        />
+                      )}
+                      {(selectedContact || selectedLead || selectedTask) &&
+                        (detailKind !== "lead" || leadDetailVisible) &&
+                        (detailKind !== "task" || taskPrivateVisible) &&
+                        (detailKind !== "contact" ||
+                          (online &&
+                            contactVisible &&
+                            selectedContactBinding.current === currentContactBinding.current)) && (
+                          <p className="form-note">
+                            <ShieldCheck size={15} />
+                            Version{" "}
+                            {detailKind === "lead"
+                              ? selectedLead?.version
+                              : detailKind === "task"
+                                ? selectedTask?.version
+                                : selectedContact?.version}{" "}
+                            ·{" "}
+                            {detailKind === "contact" && contactPending
+                              ? "Reconciliation retains the original save version."
+                              : "Changes require this exact record version."}
+                          </p>
+                        )}
+                    </div>
+                    <div className="editor-footer">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={busy || contactPending || assignmentPending || taskPending}
+                        onClick={closeDetail}
+                      >
+                        Close
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={
+                          !dirty ||
+                          noteDirty ||
+                          tagDirty ||
+                          busy ||
+                          contactPending ||
+                          taskPending ||
+                          (detailKind === "task" &&
+                            (!taskPrivateVisible || taskEditSnapshot.phase === "forgotten")) ||
+                          assignmentPending ||
+                          assignmentDirty ||
+                          !online ||
+                          (detailKind === "contact" &&
+                            (!contactVisible ||
+                              changingOrganization ||
+                              !contactEditBinding ||
+                              selectedContactBinding.current !== currentContactBinding.current ||
+                              ["conflict", "forgotten"].includes(contactSnapshot.phase))) ||
+                          !(detailKind === "contact"
+                            ? permission("crm.contacts.write") && selectedContact
+                            : detailKind === "lead"
+                              ? permission("crm.leads.write") && selectedLead
+                              : canTask && selectedTask)
+                        }
+                      >
+                        {busy ? "Saving…" : "Save changes"}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+                {detailKind === "lead" && (
+                  <LeadAssignmentPanel
+                    key={`${leadReadBinding || assignmentBinding || "unavailable"}:${detailId}`}
+                    session={session}
+                    binding={assignmentBinding}
+                    snapshot={assignmentSnapshot}
+                    currentLead={assignmentCurrentLead}
+                    memberId={member}
+                    targetMemberId={
+                      assignmentDraft?.binding === assignmentBinding &&
+                      assignmentDraft.leadId.toLowerCase() === detailId.toLowerCase()
+                        ? assignmentDraft.target
+                        : (selectedLead?.ownerMemberId ?? null)
+                    }
+                    draftChanged={assignmentDirty}
+                    canUnassign={false}
+                    online={online && !changingOrganization}
+                    visible={
+                      contactVisible &&
+                      (typeof document === "undefined" || document.visibilityState === "visible")
+                    }
+                    busy={busy || loading || detailLoading || dirty || noteDirty || tagDirty}
+                    canAssign={Boolean(assignmentBinding) && !assignmentDenied}
+                    canRetry={leadAssignment.current.canRetry()}
+                    onTargetChange={(value) => changeAssignmentTarget(value, selectedLead, assignmentBinding)}
+                    onSave={() => void saveLeadAssignment(selectedLead, assignmentBinding)}
+                    onReconcile={() => void reconcileLeadAssignment(assignmentSnapshot.command)}
+                    onForget={() => forgetLeadAssignment(assignmentSnapshot.command)}
+                    onIdentityLost={() => {
+                      if (
+                        contactLifetimeActive.current &&
+                        currentAssignmentBinding.current === assignmentBinding
+                      )
+                        clearLeadAssignmentAccess();
+                    }}
+                    onReview={
+                      leadReadBinding
+                        ? () => void reviewLeadAssignment(detailId, assignmentBinding, renderedDetailEpoch)
+                        : undefined
+                    }
+                  />
+                )}
+                {selectedLead && session.activeOrgId && leadDetailVisible && (
+                  <LeadTimeline
+                    key={`${session.activeOrgId}:${selectedLead.id}`}
+                    lead={selectedLead}
+                    organizationId={session.activeOrgId}
+                    timezone={timezone}
+                    online={online}
+                    working={busy}
+                    editInProgress={dirty || tagDirty || assignmentDirty}
+                    canWrite={permission("crm.leads.write")}
+                    onDirty={setNoteDirty}
+                    setWorking={setBusy}
+                    runCommand={command}
+                    onSaved={async () => {
+                      const generation = detailEpoch.current;
+                      const result = await api<Lead>(
+                        `/v1/orgs/${session.activeOrgId}/leads/${selectedLead.id}`,
+                      );
+                      if (generation !== detailEpoch.current) return;
+                      setSelectedLead(result.data);
+                      await refresh(session);
+                    }}
+                  />
+                )}
+                {selectedLead &&
+                  leadDetailVisible &&
+                  session.activeOrgId &&
+                  permission("crm.tags.read") &&
+                  permission("crm.leads.write") && (
+                    <LeadTags
+                      key={`${session.activeOrgId}:${selectedLead.id}`}
+                      lead={selectedLead}
+                      organizationId={session.activeOrgId}
+                      online={online}
+                      working={busy}
+                      editInProgress={dirty || noteDirty || assignmentDirty}
+                      runCommand={command}
+                      onDirty={setTagDirty}
+                      setWorking={setBusy}
+                      onSaved={async (lead) => {
+                        setSelectedLead(lead);
+                        await refresh(session);
+                      }}
+                    />
+                  )}
+                {(detailKind === "contact" || detailKind === "lead") && (
+                  <RecordArchivePanel
+                    key={`${archiveBinding || "unavailable"}:${detailKind}:${detailId}`}
+                    kind={detailKind}
+                    resourceId={detailId}
+                    snapshot={archiveSnapshot}
+                    available={
+                      !detailLoading &&
+                      (detailKind === "contact"
+                        ? Boolean(
+                            selectedContact &&
+                              selectedContact.id.toLowerCase() === detailId.toLowerCase() &&
+                              selectedContactBinding.current &&
+                              selectedContactBinding.current === currentContactBinding.current &&
+                              !contactPending,
+                          )
+                        : Boolean(
+                            assignmentCurrentLead &&
+                              assignmentCurrentLead.id.toLowerCase() === detailId.toLowerCase() &&
+                              !assignmentDirty,
+                          ))
+                    }
+                    online={online && !changingOrganization}
+                    visible={
+                      contactVisible &&
+                      (typeof document === "undefined" || document.visibilityState === "visible")
+                    }
+                    busy={
+                      busy || loading || detailLoading || dirty || noteDirty || tagDirty || assignmentDirty
+                    }
+                    canArchive={
+                      Boolean(archiveBinding) &&
+                      !archiveDenied &&
+                      archiveSnapshot.phase !== "forgotten" &&
+                      recordArchiveContextAllows(archiveBinding, detailKind)
+                    }
+                    canRetry={recordArchive.current.canRetry()}
+                    onArchive={() =>
+                      void startRecordArchive(
+                        detailKind,
+                        detailKind === "contact" ? selectedContact : selectedLead,
+                        archiveBinding,
+                      )
+                    }
+                    onReconcile={() => void reconcileRecordArchive(archiveSnapshot.command)}
+                    onForget={() => forgetRecordArchive(archiveSnapshot.command)}
+                  />
+                )}
+              </>
+            )}
           </dialog>
         )}
     </div>
