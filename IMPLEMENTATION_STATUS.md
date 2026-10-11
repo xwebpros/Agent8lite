@@ -1,5 +1,11 @@
 # Implementation status — 2026-10-11
 
+## ADR-049 accepted — contact duplicate review and merge
+
+The project owner delegated technical decision authority to the coordinating session and authorized continued implementation. ADR-049 was reviewed against `docs/tdd/technical-design.json`, the contact/consent schema and service boundaries, and the recoverable-command invariants, then accepted for implementation at commit `6fd0160`. The decision preserves immutable consent provenance, withdrawal-wins semantics unless a later verified grant exists, RLS and current scope checks, the established Contact → Lead lock order, and the frozen blueprint contracts. The additive implementation OpenAPI amendment, migration 0022, consent port, API command boundary, integration acceptance, and PWA review flow remain to be implemented.
+
+Verification at this checkpoint: `node scripts/check-contracts.mjs --generated` passes with 170 operations and 169 schemas; `node node_modules/vitest/vitest.mjs run tests/unit packages` passes **3,260/3,260** across 93 files. No production provider, outbound delivery, payment, or release action was performed.
+
 ## Full non-browser gate after ADR-050/051, review notes and Codex fixes (Claude Code)
 
 The owner asked to keep working; no test process was active, so the held gate ran.
