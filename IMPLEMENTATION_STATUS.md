@@ -1,5 +1,31 @@
 # Implementation status — 2026-10-11
 
+## Paused checkpoint — ADR-049 proposal, ADR-050 condition authoring, review notes (Claude Code)
+
+The owner asked for a pause to switch agents. Work ran on `feat/W01-foundation` in the shared checkout while a Codex agent committed in parallel (`cc26929`, Redis/CI; owner-confirmed, not reviewed by this session). At session start the development web `3000`, API `3001` and PostgreSQL `55432` were all down; only the local synthetic PostgreSQL cluster was restarted (`node scripts/local-db.mjs`) and it was left running. Owner untracked files were not staged or moved.
+
+- **ADR-049 contact duplicate review and merge** (`4a5b52e`): **proposal only, awaiting owner approval.** The frozen contract has no merge operation, and import `merge_reviewed` (still `422`) gives only a duplicate count with no consent. The ADR proposes three additive implementation-OpenAPI operations (duplicate candidates, merge command, merge result with consent outcomes: withdrawal wins unless a later verified grant exists), migration 0022, an internal `contact.merged` event and a consent-port merge method. No code depends on it.
+- **ADR-050 workflow condition branch authoring** (`ddce07c`, `c20a05e`): the PWA workflow editor authors a structured outline of steps and conditions with "when the lead matches" / "otherwise" branches that rejoin at the next step, nested up to three levels, as nested ordered lists with explicit buttons. The outline serializes deterministically to the frozen graph; saved graphs are copyable only when the parse round-trips exactly, otherwise they stay read-only. Predicates are the frozen `LeadFilter` fields (intent, stage, source, tags, assigned to me, name contains) with private catalogues read only under their own read grants; `401` ends workflow access, `403` disables only that list. No contract, migration or server change. Two retained tests were changed deliberately (structured branched graphs are now copyable and render as an outline); an unstructured graph keeps the read-only assertions.
+- **Review notes** (`03f1af5`):
+  1. Task create/PATCH now lock assignee memberships after Contact → Lead (matching Lead PATCH), keeping an unlocked check at the old position so error precedence is unchanged. The new PATCH lock-order case failed on the previous code (`could not obtain lock on row in relation "membership"`) and passes now.
+  2. Task create/edit client timezone checks now match the server's named-zone rule. The parity test also passes on the old client code because current ICU data rejects every value in the old gap, so this is alignment, not a reproduced defect.
+  3. Opening the archive confirmation moves focus to its labelled group; Cancel returns focus to the archive button; confirming does not move focus. Verified with an executable hook-level test only, not in a browser.
+
+Verification executed in this session:
+- Workflow unit group (8 files): **165/165**, of which outline/conditions/workspace/controller **85/85**.
+- `campaign-workflow-service` in a fresh isolated database: **38/38** (37 retained + 1 nested-graph case). The first attempt failed before tests ran: the isolated API did not become ready within 30 s on a cold start; the immediate rerun passed.
+- `task-edit-api` **38/38** and `task-create-api` **33/33**, each in its own fresh isolated database (one new lock-order case each).
+- Archive and Task unit groups: **633/633** across 17 files; timezone parity **20/20**; archive focus **3/3** (rerun after a final import-only change).
+- Root and web TypeScript, contracts with generated types (170 operations / 169 schemas), full Biome (466 files): pass.
+
+Not run in this session: the full `node scripts/test-isolated.mjs` gate (held because the parallel Codex agent shares port 55432 and source files), the full pure suite, production build, runtime/launch probes, and any browser/axe/keyboard/device check.
+
+Next, in order:
+1. Owner decision on ADR-049 (approve / revise / defer). If approved: amendment file, migration 0022, merge command, consent-port method, PWA review flow, `contact-merge-api.test.ts`.
+2. With the checkout idle, run the full isolated gate, build and runtime probes over `cc26929` + `c20a05e` + `03f1af5`, and review `cc26929`.
+3. M4 segment authoring: `previewBroadcast` (frozen `BroadcastRequest` → `BroadcastPreview` counts with consent/suppression eligibility, no sending) needs its own ADR.
+4. Still blocked: browser/axe/keyboard/device acceptance; Redis/Docker/WSL-dependent gates beyond what Codex is doing; live Trestle, real messaging, payments and production.
+
 ## M1 Redis local acceptance and CI isolation
 
 - **Local Redis:** Memurai Developer 4.1.2 (Redis 7.2.5-compatible, not the genuine Redis binary) was installed by the owner from an elevated shell and runs as a Windows service on `127.0.0.1:6379`. It is not the CI-pinned 7.4.6. Winget install without elevation failed with MSI 1603. Local runs use `REDIS_URL` / `REQUIRED_REDIS` = `redis://127.0.0.1:6379`; CI and `compose.yaml` keep 56379.
