@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import api from "../../packages/contracts/openapi.json";
 import amendment from "../../packages/contracts/amendments/ADR-022-listing-attribution-contact.json";
 import stageAmendment from "../../packages/contracts/amendments/ADR-043-stage-transition-if-match.json";
+import mergeAmendment from "../../packages/contracts/amendments/ADR-049-contact-merge.json";
 import { providedAttributionContact } from "../../packages/providers/mls/attribution";
 
 const ajv = new Ajv2020({ strict: false });
@@ -24,6 +25,13 @@ describe("reviewed listing participant attribution contact", () => {
     expect(stageOperation.operationId).toBe(stageAmendment.operationId);
     expect(stageOperation.parameters.at(-1)).toEqual(stageAmendment.parameter);
     stageOperation.parameters.pop();
+    // Strip ADR-049 additive paths and schemas before comparing to the frozen original.
+    for (const path of Object.keys(mergeAmendment.paths)) {
+      delete (implementation.paths as Record<string, unknown>)[path];
+    }
+    for (const schema of Object.keys(mergeAmendment.schemas)) {
+      delete (implementation.components.schemas as Record<string, unknown>)[schema];
+    }
     expect(implementation).toEqual(original);
     expect(validate(required)).toBe(true);
     expect(validate({ ...required, contact: null })).toBe(true);

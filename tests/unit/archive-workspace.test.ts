@@ -307,7 +307,8 @@ describe("ADR-047 workspace lifecycle guards include the archive command", () =>
     expect(text).toMatch(
       /taskCreate\.current\.getSnapshot\(\)\.command \|\|\s+recordArchive\.current\.getSnapshot\(\)\.command\s+\) \{\s+setLoading\(false\)/,
     );
-    expect(text).toContain("Boolean(recordArchive.current.getSnapshot().command);");
+    expect(text).toContain("Boolean(recordArchive.current.getSnapshot().command) ||");
+    expect(text).toContain("Boolean(contactMerge.current.getSnapshot().command);");
     expect(text).toContain("The app update activated. Reconcile the unconfirmed archive before reloading.");
     expect(text).toContain("Reconcile the unconfirmed archive before navigating away.");
   });
