@@ -1,5 +1,17 @@
 # Implementation status — 2026-10-11
 
+## ADR-052 public site service — in progress (Claude Code)
+
+ADR-052 written and committed at `af59791`. Implementation in progress on `feat/W01-foundation`.
+
+**API (`public-site-service.ts`):** `tryPublicSiteRoute` handles all 17 `/v1/public/**` operations via `withPublicSiteTransaction` (resolves published site → owner member TenantContext; no member session required). Phase A (form submission, property inquiry, public listings, visitor sessions, analytics, unsubscribes) and Phase B stubs (saved searches, favorites) implemented. `NativeCaptureService` runs under the owner's TenantContext for form and inquiry capture.
+
+**Tests (`public-site-api.test.ts`):** Integration tests for form CRUD, form submission idempotency, inquiry, analytics, unsubscribe, visitor login lifecycle and saved-search/favorite guards. Full isolated gate running.
+
+**Verification (in progress):** TypeScript and Biome pass. Unit tests: **2,534/2,534** across 79 files. Production build: clean. Full isolated gate: pending.
+
+---
+
 ## ADR-049 contact duplicate review and merge — complete (Claude Code)
 
 The project owner delegated technical decision authority to the coordinating session and authorized continued implementation. ADR-049 was reviewed and accepted at commit `6fd0160`. Implementation is complete at checkpoint `d15de54` (feat/W01-foundation).

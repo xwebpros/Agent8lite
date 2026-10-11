@@ -58,6 +58,7 @@ import { CampaignWorkflowService, WorkflowCommandError } from "./marketing/workf
 import { MessageDesignDraftService } from "./marketing/message-design-service";
 import { MessageDesignCommandError } from "./marketing/message-design-errors";
 import { messageDesignEtag } from "./marketing/message-design-model";
+import { tryPublicSiteRoute } from "./public-site-service";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -247,6 +248,13 @@ class ApiController {
         const session = await readSession(runtimePool, result.token);
         res.json(await sessionBody(session, res));
         return;
+      }
+      if (req.path.startsWith("/v1/public/")) {
+        const handled = await tryPublicSiteRoute(req, res, runtimePool, traceId, {
+          signingKey:
+            process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production",
+        });
+        if (handled) return;
       }
       if (!syntheticEnabled)
         throw new AccessError(
