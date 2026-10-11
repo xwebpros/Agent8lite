@@ -1997,7 +1997,8 @@ export class CrmService {
         );
       }
     };
-    await assertAssignees(true);
+    // Validate first so error precedence is unchanged; the membership locks come after the Leads.
+    await assertAssignees();
     const leadIds = [
       ...new Set<string>([
         ...(command.normalized.leadId ? [command.normalized.leadId] : []),
@@ -2038,6 +2039,9 @@ export class CrmService {
         ).rows[0] ?? notFound();
       source.ownerId = locked.owner_member_id;
     }
+    // Contact → Lead → membership → office, matching Lead PATCH: holding an assignee membership
+    // while waiting for a Lead could close a wait cycle with Lead PATCH and a member update.
+    await assertAssignees(true);
     if (scope === "team")
       await current.lockCaptureOffices([
         ...new Set([
@@ -2234,17 +2238,11 @@ export class CrmService {
         "Assignee must be an active eligible organization member.",
       );
     };
-    if (
-      (
-        await this.client.query(
-          `SELECT id FROM app.membership WHERE tenant_id=app.current_tenant()
-           AND id=ANY($1::uuid[]) ORDER BY id FOR SHARE`,
-          [assignees],
-        )
-      ).rowCount !== assignees.length
-    )
+    const membershipStatement = `SELECT id FROM app.membership WHERE tenant_id=app.current_tenant()
+      AND id=ANY($1::uuid[]) ORDER BY id`;
+    // Validate now so error precedence is unchanged; the membership locks come after the Leads.
+    if ((await this.client.query(membershipStatement, [assignees])).rowCount !== assignees.length)
       ownerUnavailable();
-    await assertAuthority();
     const assigneeStatement = `SELECT r.id FROM app.membership r WHERE r.tenant_id=app.current_tenant()
       AND r.id=ANY($1::uuid[]) AND r.status='active' AND $2::uuid IS NOT NULL
       AND ${current.memberScope("r.id", scope, "$2")}`;
@@ -2308,6 +2306,13 @@ export class CrmService {
       source.ownerId = bound.owner_member_id;
       await assertAuthority();
     }
+    // Contact → Lead → membership → office, matching Lead PATCH: holding an assignee membership
+    // while waiting for a Lead could close a wait cycle with Lead PATCH and a member update.
+    if (
+      (await this.client.query(`${membershipStatement} FOR SHARE`, [assignees])).rowCount !== assignees.length
+    )
+      ownerUnavailable();
+    await assertAuthority();
     if (
       scope === "team" ||
       (sources.length &&

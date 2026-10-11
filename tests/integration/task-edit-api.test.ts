@@ -741,6 +741,35 @@ describe("actual lock waits use current source and database clocks", () => {
       },
     );
   });
+  it("waits on a linked Lead without holding the assignee membership, matching Lead PATCH order", async () => {
+    const s = await source(),
+      t = await task({ assignee: fixtures.agentMemberA, lead: s.id });
+    const probe = await admin.connect();
+    let result: unknown;
+    try {
+      await held(
+        (c) =>
+          c.query("SELECT id FROM app.lead WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [fixtures.orgA, s.id]),
+        () => command(t, write(t, { state: "done" })),
+        async () => {
+          // A member update must not queue behind the Task command while it waits for the Lead.
+          await probe.query("BEGIN");
+          await probe.query("SELECT id FROM app.membership WHERE tenant_id=$1 AND id=$2 FOR UPDATE NOWAIT", [
+            fixtures.orgA,
+            fixtures.agentMemberA,
+          ]);
+          await probe.query("ROLLBACK");
+        },
+        async (pending) => {
+          result = await pending;
+        },
+      );
+    } finally {
+      await probe.query("ROLLBACK").catch(() => undefined);
+      probe.release();
+    }
+    expect(result).toMatchObject({ body: { id: t.id, state: "done", version: 2 } });
+  });
   it("target membership wait rechecks current eligibility", async () => {
     const t = await task();
     try {

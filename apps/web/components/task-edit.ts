@@ -101,12 +101,13 @@ export function validTaskEditTimezone(value: unknown): value is string {
     typeof value !== "string" ||
     value.length > 80 ||
     value.trim() !== value ||
-    (value !== "UTC" && !/^[A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)+$/.test(value))
+    // Same named-zone boundary as the server (task-create/patch-command.ts namedTimezone).
+    (value !== "UTC" && !/^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+$/.test(value))
   )
     return false;
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(0);
-    return true;
+    const resolved = new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions().timeZone;
+    return typeof resolved === "string" && (resolved === "UTC" || resolved.includes("/"));
   } catch {
     return false;
   }

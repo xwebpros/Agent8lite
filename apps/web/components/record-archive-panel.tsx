@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useRef, useState } from "react";
 import { localRecoveryForgottenWarning, localRecoveryForgettingExplanation } from "./contact-edit";
 import type { RecordArchiveKind, RecordArchiveSnapshot } from "./record-archive";
 import styles from "./record-archive-panel.module.css";
@@ -23,6 +23,10 @@ export type RecordArchiveViewProps = {
   onConfirm(): void;
   onReconcile(): void;
   onForget?(): void;
+  /** Receives focus when the confirmation step opens, so its label is announced. */
+  confirmRef?: Ref<HTMLDivElement>;
+  /** Receives focus back when the confirmation step is cancelled. */
+  requestRef?: Ref<HTMLButtonElement>;
 };
 
 const noun = (kind: RecordArchiveKind) => (kind === "contact" ? "contact" : "lead");
@@ -115,7 +119,13 @@ export function RecordArchiveView(props: RecordArchiveViewProps) {
           Archive becomes available after the current {thing} is read.
         </p>
       ) : props.confirming ? (
-        <div className={styles.confirm} role="group" aria-labelledby={confirmId}>
+        <div
+          ref={props.confirmRef}
+          className={styles.confirm}
+          role="group"
+          aria-labelledby={confirmId}
+          tabIndex={-1}
+        >
           <p id={confirmId}>
             <strong>Archive this {thing}?</strong>{" "}
             {props.kind === "contact"
@@ -139,6 +149,7 @@ export function RecordArchiveView(props: RecordArchiveViewProps) {
       ) : (
         <div className={styles.actions}>
           <button
+            ref={props.requestRef}
             type="button"
             className="button button-secondary"
             onClick={props.onRequest}
@@ -179,16 +190,36 @@ export default function RecordArchivePanel(props: PanelProps) {
     confirmingRef.current = value;
     setConfirming(value);
   };
+  const shown = confirming && ready;
+  const confirmBox = useRef<HTMLDivElement>(null);
+  const requestButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (shown) {
+      confirmBox.current?.focus();
+      return;
+    }
+    // Only an explicit cancel returns focus; an archive or a lost precondition leaves focus alone.
+    if (returnFocus.current) {
+      returnFocus.current = false;
+      requestButton.current?.focus();
+    }
+  }, [shown]);
   return (
     <RecordArchiveView
       {...props}
-      confirming={confirming && ready}
+      confirmRef={confirmBox}
+      requestRef={requestButton}
+      confirming={shown}
       onRequest={() => {
         const p = live.current;
         if (p.snapshot.command || !p.available || !p.canArchive || !p.online || !p.visible || p.busy) return;
         set(true);
       }}
-      onCancel={() => set(false)}
+      onCancel={() => {
+        returnFocus.current = true;
+        set(false);
+      }}
       onConfirm={() => {
         const p = live.current;
         if (

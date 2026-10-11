@@ -856,6 +856,41 @@ describe("actual waited Task creation boundaries", () => {
       );
     },
   );
+  it("waits on a linked Lead without holding the assignee membership, matching Lead PATCH order", async () => {
+    const own = await source();
+    const probe = await admin.connect();
+    let result: unknown;
+    try {
+      await grants(
+        () =>
+          held(
+            (b) =>
+              b.query("SELECT id FROM app.lead WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [
+                fixtures.orgA,
+                own.leadId,
+              ]),
+            () => command({ ...input(own.leadId), assigneeMemberId: fixtures.ownerMemberA }),
+            async () => {
+              // A member update must not queue behind the Task command while it waits for the Lead.
+              await probe.query("BEGIN");
+              await probe.query(
+                "SELECT id FROM app.membership WHERE tenant_id=$1 AND id=$2 FOR UPDATE NOWAIT",
+                [fixtures.orgA, fixtures.ownerMemberA],
+              );
+              await probe.query("ROLLBACK");
+            },
+            async (p) => {
+              result = await p;
+            },
+          ),
+        { scope: "organization" },
+      );
+    } finally {
+      await probe.query("ROLLBACK").catch(() => undefined);
+      probe.release();
+    }
+    expect(result).toMatchObject({ body: { assigneeMemberId: fixtures.ownerMemberA, leadId: own.leadId } });
+  });
   it("original due/body remain detached after advisory wait and replay cannot convert time twice", async () => {
     const body = input(),
       original = { ...body },
