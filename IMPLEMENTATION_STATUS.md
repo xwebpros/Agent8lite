@@ -1,5 +1,13 @@
 # Implementation status — 2026-10-11
 
+## M1 Redis local acceptance and CI isolation
+
+- **Local Redis:** Memurai Developer 4.1.2 (Redis 7.2.5-compatible, not the genuine Redis binary) was installed by the owner from an elevated shell and runs as a Windows service on `127.0.0.1:6379`. It is not the CI-pinned 7.4.6. Winget install without elevation failed with MSI 1603. Local runs use `REDIS_URL` / `REQUIRED_REDIS` = `redis://127.0.0.1:6379`; CI and `compose.yaml` keep 56379.
+- **Defect found and fixed:** `RedisWakeups` built its BullMQ `Queue` before the fail-fast producer connection (`enableOfflineQueue: false`) was ready. BullMQ caches that initialization failure, so every later `enqueue` returned `false`. The Queue is now created lazily once the producer is `ready` (`apps/worker/src/wakeups.ts`). The opt-in acceptance had never run against a real Redis, so this was latent.
+- **Verified locally:** `tests/recovery/redis-service` acceptance **1/1** against Memurai, whole-root `tsc` clean, `tests/unit` **2,482/2,482** (one earlier run showed 2 failures that did not reproduce in two reruns; their identity was not captured).
+- **CI change (not executed):** the workflow now has a separate `redis-acceptance` service (`redis:7.4.6-alpine` on 56380) used only by the BullMQ acceptance, so it is isolated from the dev server's `REDIS_URL` (56379), and both Redis services have health checks. The YAML parses, but the workflow has **not run on GitHub**; the M1 isolated-CI gate stays open until a CI run passes on real Redis 7.4.6.
+- **Still open:** Redis stop/restart/data-loss acceptance, and browser/device gates.
+
 ## M2 recoverable Contact/Lead archive (ADR-047) and Contact update event (ADR-048)
 
 **ADR-047** (design `54dff70`, API `5809fcd`, PWA `009805f`) implements the frozen `archiveContact` and `archiveLead` operations.

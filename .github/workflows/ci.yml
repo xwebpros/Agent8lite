@@ -23,6 +23,16 @@ jobs:
       redis:
         image: redis:7.4.6-alpine
         ports: ["56379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+      # Dedicated to the BullMQ acceptance: it must be isolated from application traffic.
+      redis-acceptance:
+        image: redis:7.4.6-alpine
+        ports: ["56380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 20
     env:
       APP_ENV: test
       DEV_AUTH_ENABLED: 'true'
@@ -68,7 +78,7 @@ jobs:
       - name: BullMQ transport with dedicated synthetic Redis
         run: pnpm exec vitest run --config tests/recovery/redis-service.vitest.config.mts
         env:
-          REQUIRED_REDIS: redis://127.0.0.1:56379
+          REQUIRED_REDIS: redis://127.0.0.1:56380
           REQUIRED_REDIS_ISOLATED: 'true'
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
