@@ -312,7 +312,7 @@ class ApiController {
       }
       if (
         req.path === "/v1/templates" ||
-        /^\/v1\/orgs\/[^/]+\/(?:sites|documents|revisions)(?:\/|$)/.test(req.path) ||
+        /^\/v1\/orgs\/[^/]+\/(?:sites|documents|revisions|domains|media|forms)(?:\/|$)/.test(req.path) ||
         /^\/dev\/orgs\/[^/]+\/cms\/documents\/[^/]+\/(?:drafts|revision-history|revisions\/[^/]+\/recovery)$/.test(
           req.path,
         )

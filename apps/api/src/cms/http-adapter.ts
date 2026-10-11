@@ -181,6 +181,49 @@ export class CmsHttpAdapter {
         const revision = new RegExp(`^${prefix}/revisions/([^/]+)$`).exec(path);
         if (revision && method === "GET")
           return { body: await service.getRevision(revision[1]), status: 200 };
+
+        // ADR-053: domain management
+        const siteDomains = new RegExp(`^${prefix}/sites/([^/]+)/domains$`).exec(path);
+        if (siteDomains) {
+          if (method === "GET") return { body: await service.listDomains(siteDomains[1]), status: 200 };
+          if (method === "POST")
+            return service.createDomain(
+              siteDomains[1],
+              request.body as Schemas["DomainWrite"],
+              commandHeaders,
+            );
+        }
+        const siteArchive = new RegExp(`^${prefix}/sites/([^/]+)/archive$`).exec(path);
+        if (siteArchive && method === "POST") return service.archiveSite(siteArchive[1]);
+        const domainVerify = new RegExp(`^${prefix}/domains/([^/]+)/verify$`).exec(path);
+        if (domainVerify && method === "POST") return service.verifyDomain(domainVerify[1]);
+        const domainArchive = new RegExp(`^${prefix}/domains/([^/]+)/archive$`).exec(path);
+        if (domainArchive && method === "POST") return service.archiveDomain(domainArchive[1]);
+
+        // ADR-053: media management
+        if (path === `${prefix}/media`) {
+          if (method === "GET") return { body: await service.listMedia(query), status: 200 };
+        }
+        if (path === `${prefix}/media/finalize` && method === "POST")
+          return service.finalizeMedia(request.body as Schemas["MediaFinalize"], commandHeaders);
+
+        // ADR-053: form management
+        const siteForms = new RegExp(`^${prefix}/sites/([^/]+)/forms$`).exec(path);
+        if (siteForms) {
+          if (method === "GET") return { body: await service.listForms(siteForms[1], query), status: 200 };
+          if (method === "POST")
+            return service.createForm(siteForms[1], request.body as Schemas["FormWrite"], commandHeaders);
+        }
+        const formById = new RegExp(`^${prefix}/forms/([^/]+)$`).exec(path);
+        if (formById && method === "GET") return { body: await service.getForm(formById[1]), status: 200 };
+        const formVersions = new RegExp(`^${prefix}/forms/([^/]+)/versions$`).exec(path);
+        if (formVersions && method === "POST")
+          return service.publishFormVersion(
+            formVersions[1],
+            request.body as Schemas["FormWrite"],
+            commandHeaders,
+          );
+
         // In particular, frozen saveRevision POST/publish/rollback remain unavailable.
         throw new AccessError(404, "route_unavailable", "Route unavailable.");
       });

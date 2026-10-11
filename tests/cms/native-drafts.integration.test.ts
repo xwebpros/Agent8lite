@@ -1442,3 +1442,284 @@ describe("unregistered native CMS API against a disposable real-role database", 
     }
   });
 });
+
+describe("ADR-053: domain, media and form management", () => {
+  it("lists an empty domain set for a new site", async () => {
+    const { site } = await createPair();
+    const res = await request(owner, "GET", `${base()}/sites/${site.id}/domains`);
+    const body = await success(res, "PageDomain");
+    expect((body as { items: unknown[] }).items).toHaveLength(0);
+  });
+
+  it("creates a domain and returns it with requiredDns pending TXT record", async () => {
+    const { site } = await createPair();
+    const hostname = `test-${randomUUID()}.example.invalid`;
+    const res = await request(owner, "POST", `${base()}/sites/${site.id}/domains`, {
+      hostname,
+      environment: "preview",
+    });
+    const body = (await success(res, "Domain", 201)) as Schemas["Domain"];
+    expect(body.hostname).toBe(hostname);
+    expect(body.verificationState).toBe("pending");
+    expect(body.tlsState).toBe("pending");
+    expect(body.requiredDns).toHaveLength(1);
+    expect(body.requiredDns[0].type).toBe("TXT");
+  });
+
+  it("idempotently returns the same domain on repeated create with same key", async () => {
+    const { site } = await createPair();
+    const hostname = `idem-${randomUUID()}.example.invalid`;
+    const key = randomUUID();
+    const body1 = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }, { key }),
+      "Domain",
+      201,
+    )) as Schemas["Domain"];
+    const body2 = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }, { key }),
+      "Domain",
+      200,
+    )) as Schemas["Domain"];
+    expect(body1.id).toBe(body2.id);
+  });
+
+  it("rejects a duplicate hostname from another site", async () => {
+    const { site: siteA } = await createPair();
+    const { site: siteB } = await createPair();
+    const hostname = `conflict-${randomUUID()}.example.invalid`;
+    await success(
+      await request(owner, "POST", `${base()}/sites/${siteA.id}/domains`, { hostname, environment: "preview" }),
+      "Domain",
+      201,
+    );
+    await assertProblem(
+      await request(owner, "POST", `${base()}/sites/${siteB.id}/domains`, { hostname, environment: "production" }),
+      409,
+    );
+  });
+
+  it("verifies a domain transitioning it to verified+active", async () => {
+    const { site } = await createPair();
+    const hostname = `verify-${randomUUID()}.example.invalid`;
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }),
+      "Domain",
+      201,
+    )) as Schemas["Domain"];
+    const verified = (await success(
+      await request(owner, "POST", `${base()}/domains/${created.id}/verify`),
+      "Domain",
+    )) as Schemas["Domain"];
+    expect(verified.verificationState).toBe("verified");
+    expect(verified.tlsState).toBe("active");
+    expect(verified.requiredDns).toHaveLength(0);
+  });
+
+  it("archives a domain and returns 202 Job", async () => {
+    const { site } = await createPair();
+    const hostname = `archive-${randomUUID()}.example.invalid`;
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }),
+      "Domain",
+      201,
+    )) as Schemas["Domain"];
+    const job = (await success(
+      await request(owner, "POST", `${base()}/domains/${created.id}/archive`),
+      "Job",
+      202,
+    )) as Schemas["Job"];
+    expect(job.state).toBe("succeeded");
+    // Archived domain no longer appears in list
+    const list = (await success(
+      await request(owner, "GET", `${base()}/sites/${site.id}/domains`),
+      "PageDomain",
+    )) as { items: Schemas["Domain"][] };
+    expect(list.items.find((d) => d.id === created.id)).toBeUndefined();
+  });
+
+  it("refuses to archive a site with a verified domain", async () => {
+    const { site } = await createPair();
+    const hostname = `block-${randomUUID()}.example.invalid`;
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }),
+      "Domain",
+      201,
+    )) as Schemas["Domain"];
+    await success(await request(owner, "POST", `${base()}/domains/${created.id}/verify`), "Domain");
+    await assertProblem(await request(owner, "POST", `${base()}/sites/${site.id}/archive`), 409);
+  });
+
+  it("archives a site with no verified domains", async () => {
+    const { site } = await createPair();
+    const job = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/archive`),
+      "Job",
+      202,
+    )) as Schemas["Job"];
+    expect(job.state).toBe("succeeded");
+  });
+
+  it("refuses to archive a site belonging to another tenant", async () => {
+    const { site } = await createPair();
+    await assertProblem(await request(otherOwner, "POST", `${base(otherOwner)}/sites/${site.id}/archive`), 404);
+  });
+
+  it("lists media assets for the tenant", async () => {
+    const res = await request(owner, "GET", `${base()}/media`);
+    const body = (await success(res, "PageMedia")) as { items: unknown[] };
+    expect(Array.isArray(body.items)).toBe(true);
+  });
+
+  it("finalizes a pending media asset", async () => {
+    // Insert a pending media_asset directly via admin connection
+    const assetId = randomUUID();
+    await environment.admin.query(
+      "INSERT INTO app.media_asset(tenant_id,id,object_key,mime_type,byte_size,scan_state,rights) VALUES($1,$2,$3,'image/png',1024,'pending','{}'::jsonb)",
+      [fixtures.orgA, assetId, `uploads/${assetId}`],
+    );
+    const res = await request(owner, "POST", `${base()}/media/finalize`, {
+      assetId,
+      checksum: "sha256-abc123",
+      altText: "Test image",
+      rightsAttestation: true,
+    });
+    const body = (await success(res, "Media")) as Schemas["Media"];
+    expect(body.id).toBe(assetId);
+    expect(body.scanState).toBe("clean");
+  });
+
+  it("rejects finalizing a rejected media asset", async () => {
+    const assetId = randomUUID();
+    await environment.admin.query(
+      "INSERT INTO app.media_asset(tenant_id,id,object_key,mime_type,byte_size,scan_state,rights) VALUES($1,$2,$3,'image/png',1024,'rejected','{}'::jsonb)",
+      [fixtures.orgA, assetId, `uploads/${assetId}`],
+    );
+    await assertProblem(
+      await request(owner, "POST", `${base()}/media/finalize`, {
+        assetId,
+        checksum: "sha256-abc123",
+        rightsAttestation: true,
+      }),
+      422,
+    );
+  });
+
+  it("refuses to finalize a media asset from another tenant", async () => {
+    const assetId = randomUUID();
+    await environment.admin.query(
+      "INSERT INTO app.media_asset(tenant_id,id,object_key,mime_type,byte_size,scan_state,rights) VALUES($1,$2,$3,'image/png',1024,'pending','{}'::jsonb)",
+      [fixtures.orgB, assetId, `uploads-b/${assetId}`],
+    );
+    await assertProblem(
+      await request(owner, "POST", `${base()}/media/finalize`, {
+        assetId,
+        checksum: "sha256-abc123",
+        rightsAttestation: true,
+      }),
+      404,
+    );
+  });
+
+  it("creates a form for a site", async () => {
+    const { site } = await createPair();
+    const formBody = {
+      name: "Contact Form",
+      fields: [{ key: "name", label: "Name", kind: "text", required: true }],
+      confirmation: "Thank you for your message.",
+      leadSourceId: fixtures.orgA,
+      state: "draft",
+    };
+    const res = await request(owner, "POST", `${base()}/sites/${site.id}/forms`, formBody);
+    const body = (await success(res, "Form", 201)) as Schemas["Form"];
+    expect(body.name).toBe("Contact Form");
+    expect(body.version).toBe(1);
+    expect(body.state).toBe("draft");
+    expect(body.fields).toHaveLength(1);
+  });
+
+  it("lists forms for a site", async () => {
+    const { site } = await createPair();
+    await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/forms`, {
+        name: "Inquiry Form",
+        fields: [],
+        confirmation: "Got it.",
+        leadSourceId: fixtures.orgA,
+        state: "draft",
+      }),
+      "Form",
+      201,
+    );
+    const list = (await success(
+      await request(owner, "GET", `${base()}/sites/${site.id}/forms`),
+      "PageForm",
+    )) as { items: Schemas["Form"][] };
+    expect(list.items.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("gets a form by id", async () => {
+    const { site } = await createPair();
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/forms`, {
+        name: "Get Test Form",
+        fields: [],
+        confirmation: "Done.",
+        leadSourceId: fixtures.orgA,
+        state: "draft",
+      }),
+      "Form",
+      201,
+    )) as Schemas["Form"];
+    const fetched = (await success(
+      await request(owner, "GET", `${base()}/forms/${created.id}`),
+      "Form",
+    )) as Schemas["Form"];
+    expect(fetched.id).toBe(created.id);
+    expect(fetched.name).toBe("Get Test Form");
+  });
+
+  it("publishes a new form version", async () => {
+    const { site } = await createPair();
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/forms`, {
+        name: "Versioned Form",
+        fields: [],
+        confirmation: "Done.",
+        leadSourceId: fixtures.orgA,
+        state: "draft",
+      }),
+      "Form",
+      201,
+    )) as Schemas["Form"];
+    expect(created.version).toBe(1);
+    const v2 = (await success(
+      await request(owner, "POST", `${base()}/forms/${created.id}/versions`, {
+        name: "Versioned Form",
+        fields: [{ key: "email", label: "Email", kind: "email", required: true }],
+        confirmation: "Thank you.",
+        leadSourceId: fixtures.orgA,
+        state: "published",
+      }),
+      "Form",
+      201,
+    )) as Schemas["Form"];
+    expect(v2.version).toBe(2);
+    expect(v2.state).toBe("published");
+  });
+
+  it("refuses to access another tenant's forms", async () => {
+    const { site } = await createPair();
+    const form = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/forms`, {
+        name: "Tenant Isolation Form",
+        fields: [],
+        confirmation: "Done.",
+        leadSourceId: fixtures.orgA,
+        state: "draft",
+      }),
+      "Form",
+      201,
+    )) as Schemas["Form"];
+    await assertProblem(await request(otherOwner, "GET", `${base(otherOwner)}/forms/${form.id}`), 404);
+  });
+});

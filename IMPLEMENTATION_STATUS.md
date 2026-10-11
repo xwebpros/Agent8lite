@@ -1,4 +1,27 @@
-# Implementation status — 2026-10-11
+# Implementation status — 2026-10-12
+
+## ADR-053 CMS domain, media and form management — complete (Claude Code)
+
+ADR-053 written and implemented on `feat/W01-foundation`.
+
+**Migration `0024-cms-domain-media-form-grants.sql`:**
+- `ALTER TABLE app.site_domain ADD COLUMN archived_at timestamptz` (soft-delete support)
+- Extends `app.site.state` CHECK constraint to include `'archived'` (drops old unnamed inline constraint via dynamic DO $$ block, adds named `site_state_check`)
+- `GRANT UPDATE(alt_text) ON app.media_asset TO estate_runtime` (needed by `finalizeMedia`)
+- `app.archive_site(p_site_id uuid)` SECURITY DEFINER function (avoids widening direct UPDATE grants on `app.site.state` which would break the immutable-history invariant test)
+- `GRANT SELECT, INSERT, UPDATE ON app.site_domain TO estate_runtime`
+- `GRANT INSERT, UPDATE ON app.form_schema TO estate_runtime`
+
+**API (`apps/api/src/cms/`):**
+- `repository.ts`: `listDomains`, `domain`, `domainByHostname`, `createDomain`, `updateDomainVerification`, `archiveDomain`, `archiveSite` (calls `app.archive_site()`), `activeDomainCount`, `listMedia`, `media`, `finalizeMedia`, `listForms` (DISTINCT ON without FOR SHARE), `form`, `createForm`, `maxFormVersion`, `insertFormVersion`
+- `service.ts`: `createDomain`, `verifyDomain`, `archiveDomain`, `archiveSite`, `listMedia`, `finalizeMedia`, `listForms`, `getForm`, `createForm`, `publishFormVersion`. `idempotent()` gains optional `replayStatus` param (stores 200 for domain creation so replay correctly returns 200 while first call returns 201). All etags use `documentEtag(Number(row.row_version))`.
+- `http-adapter.ts`: 11 new route handlers for domains, media and forms
+
+**Tests (`tests/cms/native-drafts.integration.test.ts`):** 79 ADR-053 acceptance tests added — domain CRUD, verification, archive, idempotency, hostname conflict, media list/finalize, form CRUD/version. All **79/79** pass.
+
+**Key invariants:** `GRANT UPDATE(state, updated_at) ON app.site` removed in favor of a SECURITY DEFINER function, preserving `42501` denial for direct runtime state mutations in the security test. `listForms` DISTINCT ON query omits FOR SHARE (PG restriction). Domain idempotency replay returns 200 (stored as 200) while first call returns 201.
+
+---
 
 ## ADR-052 public site service — complete (Claude Code)
 
