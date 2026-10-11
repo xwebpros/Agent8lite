@@ -26,12 +26,11 @@ async function withPublicSiteTransaction<T>(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const siteRow = await client.query(
-      "SELECT id, tenant_id FROM app.site WHERE id=$1 AND state='published'",
-      [siteId],
-    );
-    if (!siteRow.rowCount) throw new AccessError(404, "site_unavailable", "Published site not found.");
-    const organizationId: string = siteRow.rows[0].tenant_id;
+    // Use SECURITY DEFINER function to resolve the site before tenant context is established.
+    // app.site has RLS; direct SELECT would return 0 rows when app.tenant_id is not yet set.
+    const siteRow = await client.query("SELECT app.resolve_published_site($1) AS tenant_id", [siteId]);
+    const organizationId: string | null = siteRow.rows[0]?.tenant_id ?? null;
+    if (!organizationId) throw new AccessError(404, "site_unavailable", "Published site not found.");
     await client.query("SELECT set_config('app.tenant_id',$1,true),set_config('app.actor_id',$2,true)", [
       organizationId,
       organizationId,
@@ -413,6 +412,15 @@ export class PublicSiteService {
     assertUuid(siteId, "siteId");
     const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], this.signingKey);
     if (!visitorId) {
+      // Still validate site existence before returning empty list.
+      const client = await this.pool.connect();
+      try {
+        const r = await client.query("SELECT app.resolve_published_site($1) AS tenant_id", [siteId]);
+        if (!r.rows[0]?.tenant_id)
+          throw new AccessError(404, "site_unavailable", "Published site not found.");
+      } finally {
+        client.release();
+      }
       const empty = { items: [], nextCursor: null, hasMore: false };
       validateSchema("PageSavedSearch", empty, true);
       res.status(200).json(empty);
@@ -514,6 +522,14 @@ export class PublicSiteService {
     assertUuid(siteId, "siteId");
     const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], this.signingKey);
     if (!visitorId) {
+      const client = await this.pool.connect();
+      try {
+        const r = await client.query("SELECT app.resolve_published_site($1) AS tenant_id", [siteId]);
+        if (!r.rows[0]?.tenant_id)
+          throw new AccessError(404, "site_unavailable", "Published site not found.");
+      } finally {
+        client.release();
+      }
       res.status(200).json({ items: [], nextCursor: null, hasMore: false });
       return;
     }

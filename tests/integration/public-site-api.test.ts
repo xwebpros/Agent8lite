@@ -266,6 +266,7 @@ describe("ADR-052 public site — analytics and unsubscribe", () => {
       type: "page_view",
       path: "/",
       occurredAt: new Date().toISOString(),
+      consentPolicyVersion: "v1",
     });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -279,6 +280,7 @@ describe("ADR-052 public site — analytics and unsubscribe", () => {
         type: "invalid_type",
         path: "/",
         occurredAt: new Date().toISOString(),
+        consentPolicyVersion: "v1",
       }),
       422,
     );
