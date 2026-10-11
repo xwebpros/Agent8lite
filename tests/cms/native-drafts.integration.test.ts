@@ -20,7 +20,7 @@ let editor: Session;
 let profileA: string;
 let profileB: string;
 const editorRole = randomUUID();
-const grants = ["sites.read", "sites.write", "content.read", "content.write"].map((code) => ({
+const grants = ["sites.read", "sites.write", "content.read", "content.write", "content.publish"].map((code) => ({
   code,
   scope: "organization",
 }));
@@ -412,7 +412,7 @@ describe("unregistered native CMS API against a disposable real-role database", 
     expect(await counts(document.id)).toEqual(before);
   });
 
-  it("enforces session, CSRF, origin, selected organization and unavailable publication/frozen save routes", async () => {
+  it("enforces session, CSRF, origin, selected organization and frozen saveRevision route", async () => {
     const { document } = await createPair();
     await assertProblem(
       await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"', csrf: "incorrect" }),
@@ -427,23 +427,10 @@ describe("unregistered native CMS API against a disposable real-role database", 
     );
     await assertProblem(await request(owner, "GET", `${base(otherOwner)}/sites`), 403);
     await assertProblem(await fetch(`${environment.origin}${base()}/sites`), 401);
+    // saveRevision POST (/documents/{id}/revisions) remains frozen
     await assertProblem(
       await request(owner, "POST", `${base()}/documents/${document.id}/revisions`, draft(), {
         ifMatch: '"1"',
-      }),
-      404,
-    );
-    await assertProblem(
-      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
-        revisionId: randomUUID(),
-        expectedDocumentVersion: 1,
-      }),
-      404,
-    );
-    await assertProblem(
-      await request(owner, "POST", `${base()}/documents/${document.id}/rollback`, {
-        revisionId: randomUUID(),
-        expectedDocumentVersion: 1,
       }),
       404,
     );
@@ -1721,5 +1708,176 @@ describe("ADR-053: domain, media and form management", () => {
       201,
     )) as Schemas["Form"];
     await assertProblem(await request(otherOwner, "GET", `${base(otherOwner)}/forms/${form.id}`), 404);
+  });
+
+  // ── Publication (ADR-055 / MOD-C-003) ──────────────────────────────────────
+
+  it("publishes a revision, updating the document pointer idempotently", async () => {
+    const { document } = await createPair();
+    const revision = (await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+
+    const key = randomUUID();
+    const publishBody = { revisionId: revision.id, expectedDocumentVersion: 2 };
+
+    const res1 = await request(owner, "POST", `${base()}/documents/${document.id}/publish`, publishBody, { key });
+    const job1 = (await success(res1, "Job", 202)) as Schemas["Job"];
+    expect(job1.state).toBe("succeeded");
+    expect(job1.kind).toBe("document.published");
+    expect(res1.headers.get("etag")).toBe('"3"');
+
+    // Idempotent replay returns the same job body
+    const res2 = await request(owner, "POST", `${base()}/documents/${document.id}/publish`, publishBody, { key });
+    const job2 = (await success(res2, "Job", 202)) as Schemas["Job"];
+    expect(job2.id).toBe(job1.id);
+
+    // Document pointer is set
+    const doc = (await success(await request(owner, "GET", `${base()}/documents/${document.id}`), "Document")) as Schemas["Document"];
+    expect(doc.publishedRevisionId).toBe(revision.id);
+    expect(doc.version).toBe(3);
+  });
+
+  it("returns 412 when expectedDocumentVersion mismatches the current version", async () => {
+    const { document } = await createPair();
+    const revision = (await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+
+    await assertProblem(
+      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: revision.id,
+        expectedDocumentVersion: 1, // wrong — document is now at version 2
+      }),
+      412,
+    );
+  });
+
+  it("returns 404 for a revision that does not belong to the document", async () => {
+    const { document } = await createPair();
+    const other = await createPair();
+    const foreignRevision = (await success(
+      await request(owner, "POST", draftPath(other.document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+
+    await assertProblem(
+      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: foreignRevision.id,
+        expectedDocumentVersion: 1,
+      }),
+      404,
+    );
+  });
+
+  it("rolls back to a previous revision, updating the document pointer", async () => {
+    const { document } = await createPair();
+    const rev1 = (await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+    // Publish rev1
+    await success(
+      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: rev1.id,
+        expectedDocumentVersion: 2,
+      }),
+      "Job",
+      202,
+    );
+    // Save rev2
+    const changed = draft();
+    changed.seo.title = "Rollback target";
+    const rev2 = (await success(
+      await request(owner, "POST", draftPath(document.id), changed, { ifMatch: '"3"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+    // Publish rev2
+    await success(
+      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: rev2.id,
+        expectedDocumentVersion: 4,
+      }),
+      "Job",
+      202,
+    );
+    // Roll back to rev1
+    const rollbackKey = randomUUID();
+    const res = await request(
+      owner,
+      "POST",
+      `${base()}/documents/${document.id}/rollback`,
+      { revisionId: rev1.id, expectedDocumentVersion: 5 },
+      { key: rollbackKey },
+    );
+    const job = (await success(res, "Job", 202)) as Schemas["Job"];
+    expect(job.state).toBe("succeeded");
+    expect(job.kind).toBe("document.rolledback");
+    // Idempotent replay
+    const res2 = await request(
+      owner,
+      "POST",
+      `${base()}/documents/${document.id}/rollback`,
+      { revisionId: rev1.id, expectedDocumentVersion: 5 },
+      { key: rollbackKey },
+    );
+    const job2 = (await success(res2, "Job", 202)) as Schemas["Job"];
+    expect(job2.id).toBe(job.id);
+
+    const doc = (await success(await request(owner, "GET", `${base()}/documents/${document.id}`), "Document")) as Schemas["Document"];
+    expect(doc.publishedRevisionId).toBe(rev1.id);
+    expect(doc.version).toBe(6);
+  });
+
+  it("denies publication without content.publish permission", async () => {
+    const { document } = await createPair(editor);
+    const revision = (await success(
+      await request(editor, "POST", draftPath(document.id, editor), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+    // editor role currently has content.publish via grants; temporarily remove it
+    await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+      JSON.stringify(grants.filter((g) => g.code !== "content.publish")),
+      editorRole,
+    ]);
+    await assertProblem(
+      await request(editor, "POST", `${base(editor)}/documents/${document.id}/publish`, {
+        revisionId: revision.id,
+        expectedDocumentVersion: 2,
+      }),
+      403,
+    );
+  });
+
+  it("isolates publish across tenant boundaries", async () => {
+    const { document } = await createPair();
+    const revision = (await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+    // otherOwner cannot publish owner's document
+    await assertProblem(
+      await request(otherOwner, "POST", `${base(otherOwner)}/documents/${document.id}/publish`, {
+        revisionId: revision.id,
+        expectedDocumentVersion: 2,
+      }),
+      404,
+    );
+    await assertProblem(
+      await request(otherOwner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: revision.id,
+        expectedDocumentVersion: 2,
+      }),
+      403,
+    );
   });
 });

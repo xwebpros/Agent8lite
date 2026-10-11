@@ -1,5 +1,21 @@
 # Implementation status — 2026-10-12
 
+## ADR-055 CMS document publication — complete (Claude Code)
+
+ADR-055 written and committed on `feat/W01-foundation`. Implements `publishDocument` and `rollbackDocument` for the native CMS.
+
+**Migration `0025-cms-publication-grants.sql`:** SECURITY DEFINER function `app.publish_document(uuid, uuid, bigint)` — atomically sets `published_revision_id` via optimistic version lock without granting direct `UPDATE(published_revision_id)` to `estate_runtime` (which would break the 42501 security invariant test). `GRANT EXECUTE` on this function is the only new privilege.
+
+**API (`apps/api/src/cms/`):**
+- `repository.ts`: `setPublishedRevision()` — calls `SELECT * FROM app.publish_document(...)` and checks `row?.id != null` to distinguish a real update from the null-composite no-op that PG returns when the WHERE clause finds 0 rows.
+- `service.ts`: `publishDocument()` and `rollbackDocument()` with `content.publish` permission; `idempotent()` permission union extended to include `"content.publish"`.
+- `http-adapter.ts`: `POST .../publish` and `POST .../rollback` routes before the 404 throw.
+- `tests/cms/native-drafts.integration.test.ts`: 6 new tests — publish+replay, 412 version mismatch, 404 foreign revision, rollback flow, 403 permission denial, cross-tenant isolation.
+
+**Verification:** 85/85 integration tests pass. TypeScript clean. Security invariant (42501) preserved.
+
+---
+
 ## ADR-054 CMS site management panel (domains, media, forms) — complete (Claude Code)
 
 ADR-054 written and committed on `feat/W01-foundation`. Builds on ADR-053 API backend.

@@ -224,7 +224,24 @@ export class CmsHttpAdapter {
             commandHeaders,
           );
 
-        // In particular, frozen saveRevision POST/publish/rollback remain unavailable.
+        // ADR-055: document publication
+        const docPublish = new RegExp(`^${prefix}/documents/([^/]+)/publish$`).exec(path);
+        if (docPublish && method === "POST")
+          return service.publishDocument(
+            docPublish[1],
+            request.body as Schemas["PublishRequest"],
+            commandHeaders,
+          );
+
+        const docRollback = new RegExp(`^${prefix}/documents/([^/]+)/rollback$`).exec(path);
+        if (docRollback && method === "POST")
+          return service.rollbackDocument(
+            docRollback[1],
+            request.body as Schemas["PublishRequest"],
+            commandHeaders,
+          );
+
+        // frozen saveRevision POST remains unavailable
         throw new AccessError(404, "route_unavailable", "Route unavailable.");
       });
       if ("etag" in result && result.etag) headers.etag = result.etag;

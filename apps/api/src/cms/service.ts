@@ -172,7 +172,7 @@ export class CmsService {
    * replayStatus overrides the stored status_code returned to clients on replay (e.g. 200 for POST-creates). */
   private async idempotent<T>(
     route: string,
-    permission: "sites.write" | "content.write" | "domains.manage" | "media.write" | "forms.write",
+    permission: "sites.write" | "content.write" | "content.publish" | "domains.manage" | "media.write" | "forms.write",
     schema: keyof Schemas,
     body: unknown,
     headers: CommandHeaders,
@@ -680,6 +680,92 @@ export class CmsService {
         };
         const row = await this.repository.createForm(siteId, body.name, definition, body.state);
         return { body: formModel(row), status: 201, etag: documentEtag(Number(row.row_version)) };
+      },
+      async () => {},
+    );
+  }
+
+  // ── Document publication (ADR-055 / MOD-C-003) ───────────────────────────
+
+  async publishDocument(
+    id: string,
+    body: Schemas["PublishRequest"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Job"]>> {
+    await this.authorize("content.publish");
+    assertUuid(id);
+    assertUuid(body.revisionId);
+    const doc = await this.document(id, true);
+    return this.idempotent(
+      "cms:publish",
+      "content.publish",
+      "Job",
+      body,
+      headers,
+      async () => {
+        const revision = await this.repository.revision(body.revisionId);
+        if (!revision || revision.document_id !== doc.id) unavailable();
+        const updated = await this.repository.setPublishedRevision(
+          doc.id,
+          body.revisionId,
+          body.expectedDocumentVersion,
+        );
+        if (!updated)
+          throw new AccessError(
+            412,
+            "revision_changed",
+            "The document version has changed since you last loaded it.",
+          );
+        const jobBody: Schemas["Job"] = {
+          id: randomUUID(),
+          state: "succeeded",
+          kind: "document.published",
+          createdAt: new Date().toISOString(),
+        };
+        validateSchema("Job", jobBody, true);
+        return { body: jobBody, status: 202, etag: documentEtag(Number(updated.row_version)) };
+      },
+      async () => {},
+    );
+  }
+
+  async rollbackDocument(
+    id: string,
+    body: Schemas["PublishRequest"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Job"]>> {
+    await this.authorize("content.publish");
+    assertUuid(id);
+    assertUuid(body.revisionId);
+    const doc = await this.document(id, true);
+    return this.idempotent(
+      "cms:rollback",
+      "content.publish",
+      "Job",
+      body,
+      headers,
+      async () => {
+        const revision = await this.repository.revision(body.revisionId);
+        if (!revision || revision.document_id !== doc.id) unavailable();
+        const updated = await this.repository.setPublishedRevision(
+          doc.id,
+          body.revisionId,
+          body.expectedDocumentVersion,
+        );
+        if (!updated)
+          throw new AccessError(
+            412,
+            "revision_changed",
+            "The document version has changed since you last loaded it.",
+          );
+        const jobBody: Schemas["Job"] = {
+          id: randomUUID(),
+          state: "succeeded",
+          kind: "document.rolledback",
+          createdAt: new Date().toISOString(),
+        };
+        validateSchema("Job", jobBody, true);
+        return { body: jobBody, status: 202, etag: documentEtag(Number(updated.row_version)) };
       },
       async () => {},
     );

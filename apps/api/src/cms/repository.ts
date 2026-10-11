@@ -325,6 +325,22 @@ export class CmsRepository {
     return result.rows[0];
   }
 
+  /** Atomically set published_revision_id via SECURITY DEFINER (direct UPDATE grant remains denied).
+   * Composite-returning PG functions yield a null-field row (not 0 rows) when the WHERE finds no match;
+   * we check id!=null to distinguish a real update from the null-composite no-op. */
+  async setPublishedRevision(
+    documentId: string,
+    revisionId: string,
+    expectedVersion: number,
+  ): Promise<DocumentRow | undefined> {
+    const result = await this.client.query<DocumentRow>(
+      "SELECT * FROM app.publish_document($1, $2, $3)",
+      [documentId, revisionId, expectedVersion],
+    );
+    const row = result.rows[0];
+    return row?.id != null ? row : undefined;
+  }
+
   async insertRevision(plan: DraftAppendPlan, authorMemberId: string): Promise<RevisionRow> {
     const result = await this.client.query<RevisionRow>(
       "INSERT INTO app.content_revision(tenant_id,id,document_id,author_member_id,schema_version,block_data,seo,content_hash) VALUES(app.current_tenant(),$1,$2,$3,$4,$5,$6,$7) RETURNING *",
