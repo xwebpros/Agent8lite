@@ -1,0 +1,35 @@
+# ADR-047 — Recoverable Contact and Lead archive
+
+Accepted by the coordinating owner on 2026-10-11 after the ADR-046 verification gate. This bounded M2 slice implements the frozen `archiveContact` and `archiveLead` operations and advances MOD-D-006, MOD-D acceptance 3, INV-01/02/03 and MOD-K-006/007. It adds no migration, dependency, public-contract amendment or new event type. Pending-send cancellation and public organizer relationships have no stored producer yet; their consumers remain M4/M5 gates.
+
+## Contract
+
+`POST /v1/orgs/{orgId}/contacts/{contactId}/archive` (`crm.contacts.write`) and `POST /v1/orgs/{orgId}/leads/{leadId}/archive` (`crm.leads.write`) require `Idempotency-Key` and CSRF, accept no query parameters and no content fields, and return `202 Job` with `ETag` set to the archived resource's new version. The contract declares no `If-Match`; a supplied value is ignored and does not enter the request hash. Archive is not a field overwrite, so a concurrent unrelated edit does not make the request stale. An absent body or an empty JSON object is accepted; anything else is `422 body_not_allowed`. The request hash is the canonical `{body:null,expectedVersion:null}` over the exact route key, so there are no legacy receipts to preserve.
+
+Each fresh command commits synchronously and records an `integration_job` with `state: succeeded`, `kind` `crm.contact.archived` or `crm.lead.archived`, `result_ref` equal to the resource ID and `requesting_member_id` equal to the actor. The existing `GET /jobs/{jobId}` (`jobs.read`, requester-scoped) reads it. `resultUrl` and `error` are null.
+
+## Authorization and preconditions
+
+Both commands use the dedicated ADR-039/045 boundary pattern: detach and validate route, key and body before waiting; serialize by tenant, actor, route and key; inspect a matching receipt regardless of expiry; reject a changed hash with `409 idempotency_conflict` and an expired matching receipt with `409 receipt_expired`, without renewal or execution. The actual runtime role, transaction tenant/actor, active membership/role/organization, exact current grants and CRM capability are rechecked after every observable wait and before returning.
+
+Contact archive requires the intersection of current `crm.contacts.read` and `crm.contacts.write` own/team/organization scope over the unarchived Contact, matching Contact PATCH. It locks the Contact `FOR UPDATE` (which also blocks new Lead foreign-key references), then every referencing Lead `FOR SHARE`, then team offices. If any unarchived Lead references the Contact, it returns `409 contact_has_active_leads` with no effects. Existing scope rules already make the Contact visible to own/team scope only through a no-active-lead creator path or an in-scope active Lead, so this refusal does not disclose an out-of-scope Lead's attributes. Archiving a Contact with active Leads would leave those Leads listed but unwritable under ADR-036/045 source rules, so the human must archive Leads first.
+
+Lead archive requires current `crm.leads.write` own/team/organization scope over the unarchived Lead with an unarchived Contact, matching Lead PATCH. It locks the Contact `FOR SHARE` before the Lead `FOR UPDATE` (the established order), then the current owner's and actor's office relationships for team scope, and rechecks scope after the waits.
+
+## Effects
+
+A fresh Contact archive sets `archived_at` to database time, advances `row_version` by exactly one with compare-and-swap, and writes one `contact.archived` v1 outbox event using the frozen catalog envelope (`producer=crm`, `aggregateType=contact`, payload exactly `{resourceId,resourceVersion}` with the new version, database-clock timestamps, no personal data), one audit, one Job and one one-day receipt. Channels, consent evidence and suppression remain unchanged; archive is not consent withdrawal. The existing reference consumer selects only approved Lead families, so the event stays committed and unpublished for a future scoped consumer.
+
+A fresh Lead archive sets `archived_at`, advances `row_version` once and writes one privacy-safe internal `lead.archived` activity (references only), one audit, one Job and one one-day receipt. The frozen event catalog has no Lead-archive event; no outbox event is invented, and the gap remains documented under INV-03. Linked Tasks are not mutated; under ADR-036 they become unavailable with their archived source. Archived Leads remain excluded from new marketing enrollment by existing archive predicates.
+
+All effects commit or roll back together. A replay of the same key returns the historical `202 Job` and ETag only after strict receipt validation (Job shape, kind, succeeded state, stored Job row with matching `result_ref` and requester) and current authorization over the now-archived resource, ignoring only its archive marker. A new key against an already archived resource returns `404 resource_unavailable`.
+
+## PWA
+
+The Contact drawer and Lead drawer each expose an explicit archive action with a confirmation step built into the page. Both use one recoverable archive protocol: before the first await capture the resource kind/ID, UUID key and verified user/organization/member/CSRF/access-revision/full-grant binding. A strict matching `202 Job` with `kind`, `state: succeeded` and next-version ETag acknowledges only the historical archive, after which the drawer closes and lists refresh. Unknown outcomes retain the immutable command for a 23-hour wall-and-monotonic window, block competing commands, navigation, organization switch, sign-out, close and service-worker activation, and offer explicit reconciliation with the same key. A definitive initial non-timeout 4xx releases the command (`409 contact_has_active_leads` explains that Leads must be archived first). ADR-042 **Clear this tab’s recovery data** applies after expiry or clock failure. Offline, hidden and generic recovery states withhold record details.
+
+## Ownership and acceptance
+
+Backend owns the archive command module and service/route integration under `apps/api/**`. Frontend owns the protocol/controller/panel and drawer integration under `apps/web/**`. Tester owns PostgreSQL/RLS and client acceptance under `tests/**`. Root owns this ADR and integration review.
+
+Acceptance covers body/query/key validation; same-key concurrency (one effect set), distinct-key races (one archive, one 404); changed-hash, expired and corrupt receipts; replay after archive with current authorization and after grant/membership/capability loss; own/team/organization scope; active-Lead refusal and its race with concurrent Lead creation/archive; event schema/privacy and database time; Job readback through `GET /jobs/{jobId}`; Lead activity; rollback; and that archived records disappear from list/detail and from Task source authority. Client acceptance covers immutable capture, strict acknowledgement, unknown outcome, dual clocks, forgetting, stale callbacks, context cuts and private rendering. Browser/axe/keyboard and physical installed-mode behavior remain open.
