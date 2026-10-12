@@ -10,7 +10,7 @@ import { findOrCreateContact } from "./contact-upsert-port";
 const VISITOR_COOKIE = "estate_visitor_session";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,253}$/;
-const HMAC_TOKEN_RE = /^[A-Za-z0-9_=-]{1,512}$/;
+const HMAC_TOKEN_RE = /^[A-Za-z0-9_.=-]{1,512}$/;
 const SITE_RE = /^\/v1\/public\/sites\/([^/]+)\//;
 
 function assertUuid(value: unknown, label = "identifier"): asserts value is string {
@@ -673,7 +673,7 @@ export class PublicSiteService {
 
   async oneClickUnsubscribe(req: Request, res: Response): Promise<void> {
     validateSchema("OneClickUnsubscribeBody", req.body);
-    const token = String(req.body.token ?? req.body.List_Unsubscribe ?? "");
+    const token = String(req.query?.token ?? "");
     if (!HMAC_TOKEN_RE.test(token))
       throw new AccessError(422, "token_invalid", "Unsubscribe token is malformed.");
     const { tenantId, email, purpose } = this.verifyUnsubscribeToken(token);

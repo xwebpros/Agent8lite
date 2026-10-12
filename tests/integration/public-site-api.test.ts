@@ -313,10 +313,10 @@ describe("ADR-052 public site — analytics and unsubscribe", () => {
     await assertProblem(await post("/v1/public/message-unsubscriptions", { token: tampered }), 422);
   });
 
-  it("oneClickUnsubscribe accepts a valid signed token", async () => {
+  it("oneClickUnsubscribe accepts a valid signed token via query parameter", async () => {
     const signingKey = process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production";
     const token = generateUnsubscribeToken(signingKey, fixtures.orgA, `click-${randomUUID()}@example.test`, "marketing");
-    const res = await post("/v1/public/one-click-unsubscribe", { token });
+    const res = await post(`/v1/public/one-click-unsubscribe?token=${encodeURIComponent(token)}`, { "List-Unsubscribe": "One-Click" });
     expect(res.status).toBe(200);
     const body = await res.json();
     assertContract("SubmissionReceipt", body);
