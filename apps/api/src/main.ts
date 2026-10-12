@@ -674,9 +674,9 @@ class ApiController {
         res.status(result.status).json(result.body);
         return;
       }
-      const match = req.path.match(/^\/v1\/orgs\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
+      const match = req.path.match(/^\/v1\/orgs\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/);
       if (!match) throw new AccessError(404, "route_unavailable", "Route unavailable.");
-      const [, org, resource, id, action] = match;
+      let [, org, resource, id, action, subAction] = match;
       assertUuid(org);
       if (org !== session.organizationId)
         throw new AccessError(
@@ -684,6 +684,16 @@ class ApiController {
           "active_organization_mismatch",
           "Select this organization before accessing its records.",
         );
+      const compoundResources: Record<string, Set<string>> = {
+        ai: new Set(["jobs"]),
+        "local-presence": new Set(["entities", "profiles"]),
+        reports: new Set(["query"]),
+      };
+      if (id && compoundResources[resource!]?.has(id)) {
+        resource = `${resource}/${id}`;
+        id = action;
+        action = subAction;
+      }
       const resourceId: Record<string, string> = {
         contacts: "contactId",
         leads: "leadId",
@@ -708,6 +718,7 @@ class ApiController {
         "push-subscriptions": "pushDeviceId",
         "mls-feeds": "feedId",
         integrations: "integrationId",
+        "ai/jobs": "aiJobId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
