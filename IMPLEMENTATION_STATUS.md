@@ -127,10 +127,12 @@ Pushed through `7da55cd`.
 
 **Security fix — `2aab7eb`:** `listMembers` query added explicit `tenant_id=app.current_tenant()` filter. The RLS `membership_select` PERMISSIVE policy allowed `user_id=current_actor()` across tenants, leaking cross-tenant member IDs to the organization owner. Integration test confirms fix.
 
-**Test results (2026-10-13):**
+**Test results (2026-10-13, latest `d7fa712`):**
 - Control tests: 66/66 pass (disposable database, 4 suites)
-- Integration tests: 63/63 pass across 7 suites (admin-api, crm-api, invitation-api, deals-configuration-api, database-isolation, outbox, runtime-role)
-- 30 additional integration suites require `TEST_DATABASE_URL` with a disposable acceptance database (by design)
+- Integration tests: 122/122 pass across 16 suites (admin-api, billing-api, crm-api, data-transfer-api, database-isolation, deal-crud-api, deals-configuration-api, http-boundary, invitation-api, member-management-api, outbox, profile-reference, routing-capture-api, runtime-role, scoring-api, support-api)
+- Unit tests: 2,534/2,534 pass (79 suites)
+- Package tests: 737/737 pass (15 suites)
+- 27 additional integration suites require `TEST_DATABASE_URL`/`TEST_MIGRATION_DATABASE_URL`/`TEST_API_ORIGIN` with a disposable acceptance database (by design — these are the deep module-level acceptance tests)
 - Contract validation: 173 operations, 174 schemas — PASS
 - TypeScript: PASS
 
