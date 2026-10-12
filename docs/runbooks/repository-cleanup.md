@@ -75,8 +75,10 @@ start application services. Other agents/processes were not terminated.
 The owner subsequently requested **all project servers and databases remain
 stopped until ZIP creation finishes**. The separate synthetic probe API on port
 59999 was stopped, and the dedicated Memurai Redis-compatible service on port
-6379 was stopped with `SHUTDOWN SAVE`. Do not start project services or run
-service-dependent tests until the owner confirms ZIP completion/resumption.
+6379 was stopped with `SHUTDOWN SAVE`. The owner's later explicit restart request
+on 2026-10-13 ended this maintenance hold. The native database, Memurai, API, web
+and synthetic reference worker have resumed; see the newest implementation-status
+entry for startup checks. This runbook records cleanup's historical stopped state.
 
 ## Bounded verification
 

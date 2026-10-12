@@ -2,7 +2,7 @@
 
 > Maintenance note, 2026-10-13: the owner authorized repository cleanup after this handoff's snapshot. Duplicate audit/TDD packages, root evidence/reports and diagnostic scripts were preserved in `C:/Users/Monar/Agent8lite-archive/cleanup-20261013-015110/preserved/`, with a hash inventory and original-path restore map. The canonical `blueprint/` bundle remains in place. PostgreSQL was stopped at the owner's request, and the original development servers were stopped for cache cleanup. See `docs/runbooks/repository-cleanup.md`; use current Git state and the newest implementation-status evidence for continuation. The dated inventory below is historical.
 >
-> Latest owner instruction: keep all project servers and databases stopped until the owner confirms ZIP creation is complete. This overrides routine service-management authorization during the maintenance hold.
+> The owner subsequently requested service restart on 2026-10-13, superseding the earlier ZIP maintenance hold. Consult the newest `IMPLEMENTATION_STATUS.md` entry and current process identity for runtime state.
 
 Prepared on **2026-10-12, Asia/Bangkok** for `C:/Users/Monar/Agent8lite`. Repository snapshot: **`ed38ce2`**, branch **`feat/W01-foundation`**. Reinspect HEAD and the working tree before acting; this document is a dated handoff, not a live progress feed.
 

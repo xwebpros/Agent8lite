@@ -2,7 +2,7 @@
 
 > Maintenance note, 2026-10-13: this is a historical handoff. The owner's later cleanup authorization supersedes its prohibition on moving the listed raw artifacts: they were archived with hashes and an original-path restore map at `C:/Users/Monar/Agent8lite-archive/cleanup-20261013-015110/preserved/`. The canonical blueprint remains. PostgreSQL was stopped at the owner's request; the original development servers were stopped for cleanup. Inspect current Git/process state and read `docs/runbooks/repository-cleanup.md` and the newest implementation-status entries before continuing.
 >
-> Latest owner instruction: keep all project servers and databases stopped until the owner confirms ZIP creation is complete. This overrides routine service-management authorization during the maintenance hold.
+> The owner subsequently requested service restart on 2026-10-13, superseding the earlier ZIP maintenance hold. Consult the newest `IMPLEMENTATION_STATUS.md` entry and current process identity for runtime state.
 
 Read this file first, then `AGENTS.md` and the top three sections of `IMPLEMENTATION_STATUS.md`. Those two files are authoritative; this file explains how to work efficiently in this repo with several agents.
 

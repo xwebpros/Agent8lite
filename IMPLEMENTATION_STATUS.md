@@ -1,8 +1,16 @@
 # Implementation status — 2026-10-13
 
-## Owner maintenance hold — keep services stopped during ZIP creation
+## Local services resumed — 2026-10-13
 
-On 2026-10-13 the owner requested repository cleanup, then explicitly instructed that all project servers and databases remain stopped until the ZIP finishes. Honor this newer instruction before routine implementation authorization: do not start web/API/worker/PostgreSQL/Redis, run migrations/seeding, or run service-dependent acceptance during this hold. Wait for the owner's ZIP-complete/resume instruction. Independent file work and checks that do not start project services can continue.
+The owner's explicit request to restart the application supersedes the earlier ZIP maintenance hold. The preserved native PostgreSQL cluster is running on `127.0.0.1:55432`, the existing Memurai Redis-compatible service responds PONG on `127.0.0.1:6379`, and the development API/web are running on loopback ports 3001/3000. The synthetic reference-ledger worker is also running; it reports current-context recovery without failures and has no external communication or downstream domain effects. Runtime identity/PIDs and private logs are in ignored `.local/services/` and `.local/dev-processes.json`; verify current executable/start time before future stopping.
+
+Executed startup checks: web HTTP200; API health HTTP200 with the expected owned-instance marker, synthetic-loopback identity, mock MLS and no-delivery; web BFF synthetic Owner sign-in/session/Contact read HTTP200; the temporary verification session was logged out HTTP204. PostgreSQL and Redis are healthy. No seed, database reset or migration was run, and existing records/uploads were preserved. This is local startup verification, not full module or production acceptance.
+
+Migration follow-up for the implementation owner: the existing database has 31 migration-ledger entries and `app.scoring_rule` is present. Source `0032-engagement-scoring-trigger.sql` lacks the BEGIN/COMMIT boundary expected by the migration receipt runner; do not blindly replay it into this existing database. Review/repair its migration recording and replay behavior separately without resetting data. This did not block the verified local sign-in and CRM read.
+
+## Historical owner maintenance hold — superseded by restart request
+
+On 2026-10-13 the owner requested repository cleanup, then instructed that all project servers and databases remain stopped until the ZIP finishes. The later explicit restart request ended this hold. The entries below describe the cleanup checkpoint before restart, not current service state or an instruction to stop the application.
 
 Cleanup preserved 29 artifact targets outside the repository at `C:/Users/Monar/Agent8lite-archive/cleanup-20261013-015110/`, removed 11 identified disposable output targets, and retained database files, private uploads, provider evidence/configuration, dependencies, the canonical blueprint and other owners' edits. Original development processes and a separate synthetic probe API were stopped; PostgreSQL remains stopped. The dedicated Memurai Redis-compatible service was stopped with its CLI's `SHUTDOWN SAVE` and its listener was verified absent. See `docs/runbooks/repository-cleanup.md` for the inventory, archive/restore map and bounded verification; this housekeeping does not advance milestone acceptance.
 
