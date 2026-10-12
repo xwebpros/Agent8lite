@@ -68,19 +68,28 @@ async function withPublicSiteTransaction<T>(
   }
 }
 
-function visitorCookieValue(visitorId: string, signingKey: string): string {
-  const hmac = createHmac("sha256", signingKey).update(visitorId).digest("base64url");
-  return `${visitorId}.${hmac}`;
+function visitorCookieValue(visitorId: string, siteId: string, signingKey: string): string {
+  const hmac = createHmac("sha256", signingKey).update(`${siteId}:${visitorId}`).digest("base64url");
+  return `${siteId}:${visitorId}.${hmac}`;
 }
 
-function parseVisitorCookie(cookie: string | undefined, signingKey: string): string | null {
+function parseVisitorCookie(
+  cookie: string | undefined,
+  expectedSiteId: string,
+  signingKey: string,
+): string | null {
   if (!cookie) return null;
   const dot = cookie.lastIndexOf(".");
   if (dot < 0) return null;
-  const visitorId = cookie.slice(0, dot);
+  const payload = cookie.slice(0, dot);
   const sig = cookie.slice(dot + 1);
+  const colon = payload.indexOf(":");
+  if (colon < 0) return null;
+  const siteId = payload.slice(0, colon);
+  const visitorId = payload.slice(colon + 1);
+  if (siteId !== expectedSiteId) return null;
   if (!UUID_RE.test(visitorId)) return null;
-  const expected = createHmac("sha256", signingKey).update(visitorId).digest("base64url");
+  const expected = createHmac("sha256", signingKey).update(`${siteId}:${visitorId}`).digest("base64url");
   try {
     const sigBuf = Buffer.from(sig);
     const expBuf = Buffer.from(expected);
@@ -348,7 +357,8 @@ export class PublicSiteService {
           event: "visitor_otp_challenge",
           traceId: this.traceId,
           siteId,
-          otp,
+          // OTP is logged only in development mode for testing; never log in production.
+          ...(this.environment.APP_ENV === "development" ? { otp } : {}),
         }),
       );
     });
@@ -392,10 +402,10 @@ export class PublicSiteService {
       if (!row.rowCount) throw new AccessError(422, "token_invalid", "Visitor token is invalid or expired.");
       return row.rows[0].id as string;
     });
-    const cookieValue = visitorCookieValue(visitorId, this.signingKey);
+    const cookieValue = visitorCookieValue(visitorId, siteId!, this.signingKey);
     res.setHeader(
       "Set-Cookie",
-      `${VISITOR_COOKIE}=${cookieValue}; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}; Path=/v1/public`,
+      `${VISITOR_COOKIE}=${cookieValue}; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}; Path=/v1/public; Secure`,
     );
     const receipt = { receiptId: visitorId, message: "Visitor session established." };
     validateSchema("SubmissionReceipt", receipt, true);
@@ -403,14 +413,17 @@ export class PublicSiteService {
   }
 
   async signOutVisitor(_req: Request, res: Response): Promise<void> {
-    res.setHeader("Set-Cookie", `${VISITOR_COOKIE}=; HttpOnly; SameSite=Lax; Max-Age=0; Path=/v1/public`);
+    res.setHeader(
+      "Set-Cookie",
+      `${VISITOR_COOKIE}=; HttpOnly; SameSite=Lax; Max-Age=0; Path=/v1/public; Secure`,
+    );
     res.status(204).end();
   }
 
   async listSavedSearches(req: Request, res: Response): Promise<void> {
     const siteId = SITE_RE.exec(req.path)?.[1];
     assertUuid(siteId, "siteId");
-    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], this.signingKey);
+    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], siteId!, this.signingKey);
     if (!visitorId) {
       // Still validate site existence before returning empty list.
       const client = await this.pool.connect();
@@ -454,7 +467,7 @@ export class PublicSiteService {
   async createSavedSearch(req: Request, res: Response): Promise<void> {
     const siteId = SITE_RE.exec(req.path)?.[1];
     assertUuid(siteId, "siteId");
-    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], this.signingKey);
+    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], siteId!, this.signingKey);
     if (!visitorId) throw new AccessError(401, "visitor_session_required", "Visitor session required.");
     validateSchema("SavedSearchWrite", req.body);
     const result = await withPublicSiteTransaction(this.pool, siteId, async (client, _context, orgId) => {
@@ -484,7 +497,7 @@ export class PublicSiteService {
     const savedSearchId = match?.[2];
     assertUuid(siteId, "siteId");
     assertUuid(savedSearchId, "savedSearchId");
-    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], this.signingKey);
+    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], siteId!, this.signingKey);
     if (!visitorId) throw new AccessError(401, "visitor_session_required", "Visitor session required.");
     validateSchema("SavedSearchWrite", req.body);
     const result = await withPublicSiteTransaction(this.pool, siteId, async (client, _context, orgId) => {
@@ -520,7 +533,7 @@ export class PublicSiteService {
   async listFavorites(req: Request, res: Response): Promise<void> {
     const siteId = SITE_RE.exec(req.path)?.[1];
     assertUuid(siteId, "siteId");
-    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], this.signingKey);
+    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], siteId!, this.signingKey);
     if (!visitorId) {
       const client = await this.pool.connect();
       try {
@@ -550,7 +563,7 @@ export class PublicSiteService {
   async addFavorite(req: Request, res: Response): Promise<void> {
     const siteId = SITE_RE.exec(req.path)?.[1];
     assertUuid(siteId, "siteId");
-    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], this.signingKey);
+    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], siteId!, this.signingKey);
     if (!visitorId) throw new AccessError(401, "visitor_session_required", "Visitor session required.");
     validateSchema("FavoriteWrite", req.body);
     assertUuid(req.body.listingId, "listingId");
@@ -569,7 +582,7 @@ export class PublicSiteService {
     const listingId = match?.[2];
     assertUuid(siteId, "siteId");
     assertUuid(listingId, "listingId");
-    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], this.signingKey);
+    const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], siteId!, this.signingKey);
     if (!visitorId) throw new AccessError(401, "visitor_session_required", "Visitor session required.");
     await withPublicSiteTransaction(this.pool, siteId, async (client, _context, orgId) => {
       await client.query("DELETE FROM app.favorite WHERE tenant_id=$1 AND visitor_id=$2 AND listing_id=$3", [
