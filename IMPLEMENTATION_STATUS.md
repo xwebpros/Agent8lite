@@ -1,5 +1,51 @@
 # Implementation status — 2026-10-12
 
+## R02 Contract operations — continued (Claude Code)
+
+**Committed:**
+- `189ae17` test: add audit-events and billing-portal integration tests — verifies listAuditEvents pagination/cursor and billing portal 201/403.
+
+---
+
+## R03 Foundation recovery and isolated CI — in progress (Claude Code)
+
+**Committed:**
+- `9da19d3` test(recovery): add outbox recovery and wakeup resilience tests — 11 tests proving PostgreSQL-authoritative outbox recovery without Redis, RedisWakeups.enqueue returning false when Redis unreachable, TrustedContextRegistry input validation.
+
+**Known remaining R03 items:**
+- Redis stop/restart/data-loss acceptance tests (require dedicated disposable Redis instance, covered in CI).
+- Fully green isolated CI run to link as evidence.
+
+---
+
+## R04 Production identity — in progress (Claude Code)
+
+**Committed:**
+- `5bb6165` feat(auth): add production OIDC token verifier with JWKS discovery — OidcTokenVerifier with cached JWKS fetching, RS256 signature verification, standard claims validation, key rotation support. IdentityTokenVerifier port updated to support async verification.
+- `20a13c8` feat(auth): enable session reads in all environments and add createSession — readSession no longer gated to dev mode, createSyntheticSession retains dev-only gate, new createSession for production use after OIDC verification.
+
+**Known remaining R04 items:**
+- Production OIDC callback route in main.ts (using OidcTokenVerifier + createSession).
+- Staff session production mode (currently requires synthetic mode).
+- Token refresh/rotation mechanism.
+- Staff principal CRUD API (control plane, R05/R10 overlap).
+
+---
+
+## R01 Security/integrity boundary repairs — in progress (Claude Code)
+
+**Committed fixes:**
+- `da3e7c4` fix(marketing): correct enrollment entity, permissions and response status — enrollLead now validates against app.lead (not app.contact), uses campaigns.enroll permission, cancel returns 201 per contract.
+- `7842f56` fix(public-site): harden visitor session cookies — HMAC now bound to siteId preventing cross-site reuse, Secure flag added, OTP redacted from logs outside dev mode.
+- `618d697` fix(security): rate-limit public routes and harden SECURITY DEFINER functions — per-IP rate limiting on /v1/public/** routes, migration 0029 sets search_path on all SECURITY DEFINER functions from 0023-0027.
+
+**Known remaining R01 items:**
+- findOrCreatePublicContact writes CRM tables directly (module boundary violation, needs CRM service port).
+- Unsubscribe/analytics stubs return success receipts without side effects (acceptable M1 stubs; real implementation deferred to consent/analytics modules).
+- Publication/source eligibility relies on historical receipts — requires investigation when consent module is built.
+
+---
+
 ## ADR-058 Media upload grant — complete (Claude Code)
 
 ADR-058 written and committed on `feat/W01-foundation`. Adds `createUploadGrant` to the CMS module.
