@@ -190,7 +190,7 @@ describe("M1/M2 — verified sessions, tenant and own scope", () => {
         { status: "disabled" },
         { method: "PATCH", revision: `"${ownDetail.body.version}"` },
       ),
-      409,
+      422,
     );
     try {
       const promoted = await owner.command(

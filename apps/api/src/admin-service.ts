@@ -308,7 +308,7 @@ export class AdminService {
     const cursor = decodeCursor(query.cursor, binding);
     if (cursor) assertUuid(cursor);
     const result = await this.client.query(
-      `SELECT * FROM app.membership WHERE ($1::uuid IS NULL OR id>$1::uuid) ORDER BY id LIMIT $2`,
+      `SELECT * FROM app.membership WHERE tenant_id=app.current_tenant() AND ($1::uuid IS NULL OR id>$1::uuid) ORDER BY id LIMIT $2`,
       [cursor, limit + 1],
     );
     const hasMore = result.rows.length > limit;
