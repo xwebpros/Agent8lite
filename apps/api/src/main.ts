@@ -798,6 +798,14 @@ class ApiController {
               )
                 throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
               body = await crm.getContactMerge(id);
+            } else if (resource === "leads" && id && action === "activity") {
+              if (req.body !== undefined || Number(req.headers["content-length"] || 0) > 0)
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              body = await crm.activity(id);
+            } else if (resource === "leads" && id && action === "notes" && req.method === "GET") {
+              if (req.body !== undefined || Number(req.headers["content-length"] || 0) > 0)
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              body = await crm.notes(id);
             } else if (!action)
               body = id ? await crm.detail(resource, id) : await crm.list(resource, req.query);
             else throw new AccessError(404, "route_unavailable", "Route unavailable.");
