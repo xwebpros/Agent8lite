@@ -18,6 +18,7 @@ import {
 import { validateStaff } from "./validation";
 import { SupportService, type StaffSessionView } from "./support-service";
 import { SupportCrmReader } from "./support-crm-read";
+import { StaffPrincipalService } from "./staff-principal-service";
 import type {
   SupportGrantReference,
   SupportResource,
@@ -168,12 +169,15 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
       `^/dev/staff/support/organizations/(${uuid})/crm/(contacts|leads|tasks|deals|pipeline-stages|lead-sources|tags)(?:/(${uuid}))?$`,
     ).exec(path);
     const contextCommand = path === "/dev/staff/support/select" || path === "/dev/staff/support/clear";
+    const principalList = path === "/dev/staff/principals";
+    const principalDetail = new RegExp(`^/dev/staff/principals/(${uuid})$`).exec(path);
+    const principalDeactivate = new RegExp(`^/dev/staff/principals/(${uuid})/deactivate$`).exec(path);
     const owned =
       path === "/dev/staff/session" ||
       path === "/dev/staff/logout" ||
       path === "/v1/platform/organizations" ||
       path.startsWith("/dev/staff/support/") ||
-      Boolean(jobRoute || createGrant || revokeGrant || supportJob || supportRead || contextCommand);
+      Boolean(jobRoute || createGrant || revokeGrant || supportJob || supportRead || contextCommand || principalList || principalDetail || principalDeactivate);
     if (!owned) return false;
     const traceId = randomUUID();
     response.setHeader("Cache-Control", "private, no-store");
@@ -435,6 +439,67 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
           options.bootstrapPorts,
         );
         respond(response, 202, result);
+        return true;
+      }
+      if (principalList && method === "GET") {
+        const url = new URL(request.url!, options.allowedOrigins[0]);
+        const result = await withStaffTransaction(options.control, opaque, (client, session) =>
+          new StaffPrincipalService(client, session, traceId).list({
+            limit: url.searchParams.get("limit") ?? undefined,
+            cursor: url.searchParams.get("cursor") ?? undefined,
+          }),
+        );
+        respond(response, 200, result);
+        return true;
+      }
+      if (principalList && method === "POST") {
+        const input = await body(request);
+        validateStaff("StaffPrincipalCreate", input);
+        const result = await withStaffTransaction(options.control, opaque, (client, session) => {
+          verifyStaffCsrf(session, value(request, "x-csrf-token"));
+          return new StaffPrincipalService(client, session, traceId).create(
+            (input as { userId: string }).userId,
+            (input as { permissionCodes: string[] }).permissionCodes,
+            value(request, "idempotency-key") ?? "",
+          );
+        });
+        respond(response, 201, result);
+        return true;
+      }
+      if (principalDetail && method === "GET") {
+        const result = await withStaffTransaction(options.control, opaque, (client, session) =>
+          new StaffPrincipalService(client, session, traceId).read(principalDetail[1]),
+        );
+        response.setHeader("ETag", `"${result.rowVersion}"`);
+        respond(response, 200, result);
+        return true;
+      }
+      if (principalDetail && method === "POST") {
+        const input = await body(request);
+        validateStaff("StaffPrincipalUpdate", input);
+        const result = await withStaffTransaction(options.control, opaque, (client, session) => {
+          verifyStaffCsrf(session, value(request, "x-csrf-token"));
+          return new StaffPrincipalService(client, session, traceId).update(
+            principalDetail[1],
+            input as { permissionCodes?: string[]; active?: boolean },
+            (value(request, "if-match") ?? "").replace(/"/g, ""),
+          );
+        });
+        response.setHeader("ETag", `"${result.rowVersion}"`);
+        respond(response, 200, result);
+        return true;
+      }
+      if (principalDeactivate && method === "POST") {
+        validateStaff("EmptyCommand", await body(request));
+        const result = await withStaffTransaction(options.control, opaque, (client, session) => {
+          verifyStaffCsrf(session, value(request, "x-csrf-token"));
+          return new StaffPrincipalService(client, session, traceId).deactivate(
+            principalDeactivate[1],
+            (value(request, "if-match") ?? "").replace(/"/g, ""),
+          );
+        });
+        response.setHeader("ETag", `"${result.rowVersion}"`);
+        respond(response, 200, result);
         return true;
       }
       throw new AccessError(404, "route_unavailable", "Route unavailable.");

@@ -141,6 +141,12 @@ export async function withStaffTransactionEx<T>(
 ): Promise<StaffTransactionResult<T>> {
   if (!token || !/^[0-9a-f]{64}$/.test(token))
     throw new AccessError(401, "staff_authentication_required", "Staff sign in required.");
+  const env = process.env;
+  const syntheticAvailable =
+    ["development", "test"].includes(env.APP_ENV ?? "") && env.DEV_AUTH_ENABLED === "true";
+  const oidcAvailable = !!(env.OIDC_ISSUER && env.OIDC_CLIENT_ID);
+  if (!syntheticAvailable && !oidcAvailable)
+    throw new AccessError(401, "identity_provider_unconfigured", "An approved staff identity provider is required.");
   const tokenHash = hash(token),
     client = await pool.connect();
   try {

@@ -18,6 +18,34 @@
       "required": ["organizationId", "accessGrantId"]
     },
     "EmptyCommand": { "type": "object", "additionalProperties": false, "maxProperties": 0 },
+    "StaffPrincipalCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "userId": { "type": "string", "format": "uuid" },
+        "permissionCodes": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 100 }
+        }
+      },
+      "required": ["userId", "permissionCodes"]
+    },
+    "StaffPrincipalUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "permissionCodes": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 100 }
+        },
+        "active": { "type": "boolean" }
+      },
+      "minProperties": 1
+    },
     "SessionResponse": {
       "type": "object",
       "additionalProperties": false,
