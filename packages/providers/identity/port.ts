@@ -20,5 +20,8 @@ export interface OidcTokenExchange {
   readonly codeVerifier: string;
 }
 export interface IdentityTokenVerifier {
-  verifyIdentityToken(token: string, input: { clientId: string; nonce: string }): VerifiedOidcIdentity;
+  verifyIdentityToken(
+    token: string,
+    input: { clientId: string; nonce: string },
+  ): VerifiedOidcIdentity | Promise<VerifiedOidcIdentity>;
 }

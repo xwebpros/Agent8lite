@@ -234,7 +234,7 @@ class ApiController {
           code: callback.searchParams.get("code")!,
           codeVerifier: verifier,
         });
-        const verified = oidc!.verifyIdentityToken(token.idToken, {
+        const verified = await oidc!.verifyIdentityToken(token.idToken, {
           clientId: "estate-synthetic-bff",
           nonce,
         });

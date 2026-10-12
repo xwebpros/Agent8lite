@@ -209,7 +209,7 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
         );
         if (callback.searchParams.get("state") !== state)
           throw new AccessError(401, "staff_identity_unavailable", "Verified staff identity is unavailable.");
-        const verified = identity.verifyIdentityToken(
+        const verified = await identity.verifyIdentityToken(
           identity.exchange({
             clientId,
             redirectUri,
