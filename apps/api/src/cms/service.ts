@@ -771,6 +771,69 @@ export class CmsService {
     );
   }
 
+  async archiveDocument(
+    id: string,
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Job"]>> {
+    await this.authorize("content.write");
+    assertUuid(id);
+    return this.idempotent(
+      `cms:archive-document:${id}`,
+      "content.write",
+      "Job",
+      {},
+      headers,
+      async () => {
+        const doc = await this.repository.document(id, "write");
+        if (!doc) unavailable();
+        await this.site(doc.site_id);
+        const updated = await this.repository.archiveDocument(doc.id);
+        if (!updated)
+          throw new AccessError(409, "document_already_archived", "The document is already archived.");
+        const jobBody: Schemas["Job"] = {
+          id: randomUUID(),
+          state: "succeeded",
+          kind: "document.archived",
+          createdAt: new Date().toISOString(),
+        };
+        validateSchema("Job", jobBody, true);
+        return { body: jobBody, status: 202, etag: documentEtag(Number(updated.row_version)) };
+      },
+      async () => {},
+    );
+  }
+
+  async updateSite(
+    id: string,
+    body: Schemas["SiteWrite"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Site"]>> {
+    await this.authorize("sites.write");
+    validateSchema("SiteWrite", body);
+    const name = nonempty(body.name);
+    await this.profile(body.businessProfileId);
+    const current = await this.repository.site(id);
+    if (!current || !["draft", "published"].includes(current.state)) unavailable();
+    await this.profile(current.business_profile_id);
+    return this.idempotent(
+      `cms:update-site:${id}`,
+      "sites.write",
+      "Site",
+      body,
+      headers,
+      async () => {
+        const nextVersion = requireDraftVersion(Number(current.row_version), headers.ifMatch);
+        const updated = await this.repository.updateSite(id, name, body.businessProfileId, nextVersion);
+        if (!updated)
+          throw new AccessError(412, "revision_changed", "The site version changed since you last loaded it.");
+        return this.response("Site", siteModel(updated), 200, nextVersion);
+      },
+      async (historical) => {
+        await this.site(historical.id);
+      },
+    );
+  }
+
   async getForm(id: string): Promise<Schemas["Form"]> {
     await this.authorize("forms.read");
     assertUuid(id);

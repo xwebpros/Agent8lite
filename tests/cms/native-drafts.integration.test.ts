@@ -1881,3 +1881,104 @@ describe("ADR-053: domain, media and form management", () => {
     );
   });
 });
+
+describe("ADR-057: document archive and site update", () => {
+  it("archives a document idempotently and marks it unavailable", async () => {
+    const { document } = await createPair();
+    const key = randomUUID();
+    const archivePath = `${base()}/documents/${document.id}/archive`;
+
+    const res1 = await request(owner, "POST", archivePath, {}, { key });
+    const job1 = (await success(res1, "Job", 202)) as Schemas["Job"];
+    expect(job1.state).toBe("succeeded");
+    expect(job1.kind).toBe("document.archived");
+    expect(res1.headers.get("etag")).toBe('"2"');
+
+    // Idempotent replay
+    const res2 = await request(owner, "POST", archivePath, {}, { key });
+    const job2 = (await success(res2, "Job", 202)) as Schemas["Job"];
+    expect(job2.id).toBe(job1.id);
+
+    // Document no longer visible in list
+    const list = (await success(
+      await request(owner, "GET", `${base()}/sites/${document.siteId ?? "x"}/documents`),
+      "PageDocument",
+    )) as Schemas["PageDocument"];
+    expect(list.items.find((d) => d.id === document.id)).toBeUndefined();
+  });
+
+  it("returns 409 when archiving an already-archived document without idempotency key", async () => {
+    const { document } = await createPair();
+    // First archive succeeds
+    await success(await request(owner, "POST", `${base()}/documents/${document.id}/archive`, {}), "Job", 202);
+    // Second archive (different key) returns 409
+    await assertProblem(
+      await request(owner, "POST", `${base()}/documents/${document.id}/archive`, {}),
+      409,
+    );
+  });
+
+  it("updates a site name and profile idempotently", async () => {
+    const { site } = await createPair();
+    const profileId = site.businessProfileId;
+    const key = randomUUID();
+    const newName = `Renamed ${randomUUID()}`;
+    const patchBody = { name: newName, businessProfileId: profileId, templateCode: "agent-introduction" };
+    const patchPath = `${base()}/sites/${site.id}`;
+
+    const res1 = await request(owner, "PATCH", patchPath, patchBody, { key, ifMatch: '"1"' });
+    const updated1 = (await success(res1, "Site", 200)) as Schemas["Site"];
+    expect(updated1.name).toBe(newName);
+    expect(res1.headers.get("etag")).toBe('"2"');
+
+    // Idempotent replay
+    const res2 = await request(owner, "PATCH", patchPath, patchBody, { key, ifMatch: '"1"' });
+    const updated2 = (await success(res2, "Site", 200)) as Schemas["Site"];
+    expect(updated2.id).toBe(updated1.id);
+  });
+
+  it("returns 412 when site version mismatches on update", async () => {
+    const { site } = await createPair();
+    const patchBody = {
+      name: `Renamed ${randomUUID()}`,
+      businessProfileId: site.businessProfileId,
+      templateCode: "agent-introduction",
+    };
+    await assertProblem(
+      await request(owner, "PATCH", `${base()}/sites/${site.id}`, patchBody, { ifMatch: '"99"' }),
+      412,
+    );
+  });
+
+  it("denies archiveDocument without content.write permission", async () => {
+    const { document } = await createPair(editor);
+    // editor role lacks content.write when grants are cleared to read-only
+    const readOnly = [
+      { code: "sites.read", scope: "org" },
+      { code: "content.read", scope: "org" },
+    ];
+    await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+      JSON.stringify(readOnly),
+      editorRole,
+    ]);
+    try {
+      await assertProblem(
+        await request(editor, "POST", `${base(editor)}/documents/${document.id}/archive`, {}),
+        403,
+      );
+    } finally {
+      await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+        JSON.stringify(grants),
+        editorRole,
+      ]);
+    }
+  });
+
+  it("isolates archiveDocument across tenant boundaries", async () => {
+    const { document } = await createPair();
+    await assertProblem(
+      await request(otherOwner, "POST", `${base(otherOwner)}/documents/${document.id}/archive`, {}),
+      404,
+    );
+  });
+});

@@ -1,5 +1,35 @@
 # Implementation status — 2026-10-12
 
+## ADR-057 Document archive and site update — complete (Claude Code)
+
+ADR-057 written and committed on `feat/W01-foundation`. Adds `archiveDocument` and `updateSite` operations.
+
+**Migration `0026-document-archive-site-update.sql`:** `app.archive_document(uuid)` SECURITY DEFINER (archived_at denied to estate_runtime directly) + `GRANT UPDATE(name, business_profile_id, updated_at) ON app.site`.
+
+**API (`apps/api/src/cms/`):**
+- `repository.ts`: `archiveDocument()` with null-composite guard; `updateSite()` with optimistic-lock WHERE.
+- `service.ts`: `archiveDocument()` — idempotent, document fetch inside command closure (avoids 404 on replay after archive); `updateSite()` — idempotent, `requireDraftVersion` If-Match precondition.
+- `http-adapter.ts`: `POST .../documents/{docId}/archive` and `PATCH .../sites/{siteId}` routes.
+- `tests/cms/native-drafts.integration.test.ts`: 6 new tests — archive idempotency, 409 re-archive, site update idempotency, 412 mismatch, 403 permission, tenant isolation.
+
+**Verification:** 91/91 integration tests pass. TypeScript clean.
+
+---
+
+## ADR-056 CMS document publication panel — complete (Claude Code)
+
+ADR-056 written and committed on `feat/W01-foundation`. Adds the publication UI for ADR-055.
+
+**PWA (`apps/web/features/cms/document-publication.tsx`):**
+- `CmsDocumentPublication` renders when `documentId` is set and `content.publish` is in the session's grants.
+- Reads current document state (version, publishedRevisionId) and the revision list on mount.
+- Publish/rollback radio selection; revision dropdown; idempotency key retained on unknown outcomes; 412 version-mismatch reloads the document and shows a clear message.
+- Integrated into `cms-workspace.tsx` after the site management panel.
+
+**Verification:** TypeScript clean. 91/91 integration tests pass.
+
+---
+
 ## ADR-055 CMS document publication — complete (Claude Code)
 
 ADR-055 written and committed on `feat/W01-foundation`. Implements `publishDocument` and `rollbackDocument` for the native CMS.

@@ -14,6 +14,7 @@ import { CmsDraftController } from "../features/cms/draft-controller";
 import type { CmsDraftClient } from "../features/cms/draft-controller";
 import { CmsDraftEditor } from "../features/cms/draft-editor";
 import { CmsSiteManagement } from "../features/cms/site-management";
+import { CmsDocumentPublication } from "../features/cms/document-publication";
 import { api, ApiError } from "../lib/api";
 import type { Schema } from "../lib/api";
 import styles from "./cms-workspace.module.css";
@@ -418,6 +419,7 @@ export default function CmsWorkspace({
   const canManageDomains = has("domains.manage");
   const canWriteMedia = has("media.write");
   const canWriteForms = has("forms.write");
+  const canPublishContent = has("content.publish");
   const base = `/v1/orgs/${session.activeOrgId}`;
   const [dataContext, setDataContext] = useState(context);
   const [sites, setSites] = useState<Schema<"Site">[]>([]);
@@ -1398,6 +1400,14 @@ export default function CmsWorkspace({
           canManageDomains={canManageDomains}
           canWriteMedia={canWriteMedia}
           canWriteForms={canWriteForms}
+        />
+      )}
+      {documentId && canPublishContent && currentData && (
+        <CmsDocumentPublication
+          documentId={documentId}
+          base={base}
+          csrf={csrf}
+          online={online}
         />
       )}
       {form && (

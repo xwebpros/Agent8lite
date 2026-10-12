@@ -241,6 +241,15 @@ export class CmsHttpAdapter {
             commandHeaders,
           );
 
+        // ADR-057: document archive and site update
+        const docArchive = new RegExp(`^${prefix}/documents/([^/]+)/archive$`).exec(path);
+        if (docArchive && method === "POST")
+          return service.archiveDocument(docArchive[1], commandHeaders);
+
+        const siteById = new RegExp(`^${prefix}/sites/([^/]+)$`).exec(path);
+        if (siteById && method === "PATCH")
+          return service.updateSite(siteById[1], request.body as Schemas["SiteWrite"], commandHeaders);
+
         // frozen saveRevision POST remains unavailable
         throw new AccessError(404, "route_unavailable", "Route unavailable.");
       });

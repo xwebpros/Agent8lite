@@ -200,6 +200,24 @@ export class CmsRepository {
     return result.rows[0] ?? undefined;
   }
 
+  /** Atomically archive a document via SECURITY DEFINER (archived_at grant denied to estate_runtime). */
+  async archiveDocument(id: string): Promise<DocumentRow | undefined> {
+    const result = await this.client.query<DocumentRow>(
+      "SELECT * FROM app.archive_document($1)",
+      [id],
+    );
+    const row = result.rows[0];
+    return row?.id != null ? row : undefined;
+  }
+
+  async updateSite(id: string, name: string, businessProfileId: string, nextVersion: number): Promise<SiteRow | undefined> {
+    const result = await this.client.query<SiteRow>(
+      "UPDATE app.site SET name=$1,business_profile_id=$2,row_version=$3,updated_at=now() WHERE tenant_id=app.current_tenant() AND id=$4 AND row_version=$5 AND state IN ('draft','published') RETURNING *",
+      [name, businessProfileId, nextVersion, id, nextVersion - 1],
+    );
+    return result.rows[0];
+  }
+
   async activeDomainCount(siteId: string): Promise<number> {
     const result = await this.client.query<{ count: string }>(
       "SELECT count(*) FROM app.site_domain WHERE tenant_id=app.current_tenant() AND site_id=$1 AND archived_at IS NULL AND verification_state='verified'",
