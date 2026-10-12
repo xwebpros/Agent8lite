@@ -288,11 +288,7 @@ export class ContactMergeProtocol {
     this.lastMonotonic = 0;
   }
 
-  private settle(
-    command: ContactMergeCommand | null,
-    phase: ContactMergePhase,
-    from: ContactMergeCommand,
-  ) {
+  private settle(command: ContactMergeCommand | null, phase: ContactMergePhase, from: ContactMergeCommand) {
     this.state = Object.freeze({
       command,
       phase,
@@ -369,9 +365,12 @@ export class ContactMergeProtocol {
   }
 
   /** Pause to show the phone-only acknowledgement warning without beginning a new send. */
-  showPhoneOnlyWarning(
-    input: { survivorId: string; sourceId: string; survivorVersion: number; sourceVersion: number },
-  ): void {
+  showPhoneOnlyWarning(input: {
+    survivorId: string;
+    sourceId: string;
+    survivorVersion: number;
+    sourceVersion: number;
+  }): void {
     if (!this.context || this.state.command || this.state.phase === "forgotten")
       throw new Error("Cannot show phone-only warning: another command is pending.");
     const data = snapshot(input).value;
@@ -557,8 +556,7 @@ export async function contactMergeRequest(
     !validId(captured.survivorId) ||
     !validId(captured.sourceId) ||
     !sameId(captured.organizationId, parsed.organizationId) ||
-    captured.route !==
-      contactMergeRoute(captured.organizationId, captured.survivorId) ||
+    captured.route !== contactMergeRoute(captured.organizationId, captured.survivorId) ||
     !validId(captured.key) ||
     !Number.isSafeInteger(captured.survivorVersion) ||
     captured.survivorVersion < 1 ||

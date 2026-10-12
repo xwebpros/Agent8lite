@@ -202,10 +202,7 @@ export class CampaignDraftService {
       await this.authorize("campaigns.write");
       return { body: receipt.response_body as Schemas["Job"], status: 202, etag: receipt.response_etag };
     }
-    const archived = await this.client.query(
-      `SELECT * FROM app.archive_campaign($1)`,
-      [id],
-    );
+    const archived = await this.client.query(`SELECT * FROM app.archive_campaign($1)`, [id]);
     if (!archived.rowCount || !archived.rows[0]?.id)
       throw new AccessError(404, "resource_unavailable", "Campaign unavailable or already archived.");
     const row = archived.rows[0];

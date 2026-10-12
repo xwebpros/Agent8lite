@@ -21,10 +21,12 @@ let editor: Session;
 let profileA: string;
 let profileB: string;
 const editorRole = randomUUID();
-const grants = ["sites.read", "sites.write", "content.read", "content.write", "content.publish"].map((code) => ({
-  code,
-  scope: "organization",
-}));
+const grants = ["sites.read", "sites.write", "content.read", "content.write", "content.publish"].map(
+  (code) => ({
+    code,
+    scope: "organization",
+  }),
+);
 const base = (session = owner) => `/v1/orgs/${session.org}`;
 const draftPath = (id: string, session = owner) => `/dev/orgs/${session.org}/cms/documents/${id}/drafts`;
 const recoveryPath = (documentId: string, revisionId: string, session = owner) =>
@@ -1461,12 +1463,24 @@ describe("ADR-053: domain, media and form management", () => {
     const hostname = `idem-${randomUUID()}.example.invalid`;
     const key = randomUUID();
     const body1 = (await success(
-      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }, { key }),
+      await request(
+        owner,
+        "POST",
+        `${base()}/sites/${site.id}/domains`,
+        { hostname, environment: "preview" },
+        { key },
+      ),
       "Domain",
       201,
     )) as Schemas["Domain"];
     const body2 = (await success(
-      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }, { key }),
+      await request(
+        owner,
+        "POST",
+        `${base()}/sites/${site.id}/domains`,
+        { hostname, environment: "preview" },
+        { key },
+      ),
       "Domain",
       200,
     )) as Schemas["Domain"];
@@ -1478,12 +1492,18 @@ describe("ADR-053: domain, media and form management", () => {
     const { site: siteB } = await createPair();
     const hostname = `conflict-${randomUUID()}.example.invalid`;
     await success(
-      await request(owner, "POST", `${base()}/sites/${siteA.id}/domains`, { hostname, environment: "preview" }),
+      await request(owner, "POST", `${base()}/sites/${siteA.id}/domains`, {
+        hostname,
+        environment: "preview",
+      }),
       "Domain",
       201,
     );
     await assertProblem(
-      await request(owner, "POST", `${base()}/sites/${siteB.id}/domains`, { hostname, environment: "production" }),
+      await request(owner, "POST", `${base()}/sites/${siteB.id}/domains`, {
+        hostname,
+        environment: "production",
+      }),
       409,
     );
   });
@@ -1492,7 +1512,10 @@ describe("ADR-053: domain, media and form management", () => {
     const { site } = await createPair();
     const hostname = `verify-${randomUUID()}.example.invalid`;
     const created = (await success(
-      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }),
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, {
+        hostname,
+        environment: "preview",
+      }),
       "Domain",
       201,
     )) as Schemas["Domain"];
@@ -1509,7 +1532,10 @@ describe("ADR-053: domain, media and form management", () => {
     const { site } = await createPair();
     const hostname = `archive-${randomUUID()}.example.invalid`;
     const created = (await success(
-      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }),
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, {
+        hostname,
+        environment: "preview",
+      }),
       "Domain",
       201,
     )) as Schemas["Domain"];
@@ -1531,7 +1557,10 @@ describe("ADR-053: domain, media and form management", () => {
     const { site } = await createPair();
     const hostname = `block-${randomUUID()}.example.invalid`;
     const created = (await success(
-      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, { hostname, environment: "preview" }),
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, {
+        hostname,
+        environment: "preview",
+      }),
       "Domain",
       201,
     )) as Schemas["Domain"];
@@ -1551,7 +1580,10 @@ describe("ADR-053: domain, media and form management", () => {
 
   it("refuses to archive a site belonging to another tenant", async () => {
     const { site } = await createPair();
-    await assertProblem(await request(otherOwner, "POST", `${base(otherOwner)}/sites/${site.id}/archive`), 404);
+    await assertProblem(
+      await request(otherOwner, "POST", `${base(otherOwner)}/sites/${site.id}/archive`),
+      404,
+    );
   });
 
   it("lists media assets for the tenant", async () => {
@@ -1726,19 +1758,26 @@ describe("ADR-053: domain, media and form management", () => {
     const key = randomUUID();
     const publishBody = { revisionId: revision.id, expectedDocumentVersion: 2 };
 
-    const res1 = await request(owner, "POST", `${base()}/documents/${document.id}/publish`, publishBody, { key });
+    const res1 = await request(owner, "POST", `${base()}/documents/${document.id}/publish`, publishBody, {
+      key,
+    });
     const job1 = (await success(res1, "Job", 202)) as Schemas["Job"];
     expect(job1.state).toBe("succeeded");
     expect(job1.kind).toBe("document.published");
     expect(res1.headers.get("etag")).toBe('"3"');
 
     // Idempotent replay returns the same job body
-    const res2 = await request(owner, "POST", `${base()}/documents/${document.id}/publish`, publishBody, { key });
+    const res2 = await request(owner, "POST", `${base()}/documents/${document.id}/publish`, publishBody, {
+      key,
+    });
     const job2 = (await success(res2, "Job", 202)) as Schemas["Job"];
     expect(job2.id).toBe(job1.id);
 
     // Document pointer is set
-    const doc = (await success(await request(owner, "GET", `${base()}/documents/${document.id}`), "Document")) as Schemas["Document"];
+    const doc = (await success(
+      await request(owner, "GET", `${base()}/documents/${document.id}`),
+      "Document",
+    )) as Schemas["Document"];
     expect(doc.publishedRevisionId).toBe(revision.id);
     expect(doc.version).toBe(3);
   });
@@ -1834,7 +1873,10 @@ describe("ADR-053: domain, media and form management", () => {
     const job2 = (await success(res2, "Job", 202)) as Schemas["Job"];
     expect(job2.id).toBe(job.id);
 
-    const doc = (await success(await request(owner, "GET", `${base()}/documents/${document.id}`), "Document")) as Schemas["Document"];
+    const doc = (await success(
+      await request(owner, "GET", `${base()}/documents/${document.id}`),
+      "Document",
+    )) as Schemas["Document"];
     expect(doc.publishedRevisionId).toBe(rev1.id);
     expect(doc.version).toBe(6);
   });
@@ -1915,10 +1957,7 @@ describe("ADR-057: document archive and site update", () => {
     // First archive succeeds
     await success(await request(owner, "POST", `${base()}/documents/${document.id}/archive`, {}), "Job", 202);
     // Second archive (different key) returns 409
-    await assertProblem(
-      await request(owner, "POST", `${base()}/documents/${document.id}/archive`, {}),
-      409,
-    );
+    await assertProblem(await request(owner, "POST", `${base()}/documents/${document.id}/archive`, {}), 409);
   });
 
   it("updates a site name and profile idempotently", async () => {
@@ -2002,9 +2041,7 @@ describe("ADR-058: media upload grant", () => {
     );
     expect(grant.method).toBe("PUT");
     expect(grant.url).toMatch(/\/dev\/uploads\//);
-    expect(grant.assetId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
+    expect(grant.assetId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(typeof grant.expiresAt).toBe("string");
     expect(grant.requiredHeaders["Content-Type"]).toBe("image/jpeg");
   });
@@ -2046,10 +2083,7 @@ describe("ADR-058: media upload grant", () => {
       editorRole,
     ]);
     try {
-      await assertProblem(
-        await request(editor, "POST", `${base(editor)}/uploads`, uploadBody()),
-        403,
-      );
+      await assertProblem(await request(editor, "POST", `${base(editor)}/uploads`, uploadBody()), 403);
     } finally {
       await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
         JSON.stringify(grants),

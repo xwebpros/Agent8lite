@@ -1174,9 +1174,7 @@ describe("ADR-059 archiveCampaign", () => {
     const { response } = await create();
     const result = await archive(response.body.id);
     expect(result.body.state).toBe("succeeded");
-    const row = (
-      await admin.query("SELECT state FROM app.campaign WHERE id=$1", [response.body.id])
-    ).rows[0];
+    const row = (await admin.query("SELECT state FROM app.campaign WHERE id=$1", [response.body.id])).rows[0];
     expect(row.state).toBe("archived");
   });
 

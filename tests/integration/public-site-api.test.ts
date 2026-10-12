@@ -78,12 +78,21 @@ afterAll(async () => {
         [fixtures.orgA, id],
       );
       await admin.query("DELETE FROM app.lead WHERE tenant_id=$1 AND contact_id=$2", [fixtures.orgA, id]);
-      await admin.query("DELETE FROM app.contact_channel WHERE tenant_id=$1 AND contact_id=$2", [fixtures.orgA, id]);
+      await admin.query("DELETE FROM app.contact_channel WHERE tenant_id=$1 AND contact_id=$2", [
+        fixtures.orgA,
+        id,
+      ]);
       await admin.query("DELETE FROM app.contact WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, id]);
     }
-    await admin.query("DELETE FROM app.form_schema WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, formSchemaId]);
+    await admin.query("DELETE FROM app.form_schema WHERE tenant_id=$1 AND id=$2", [
+      fixtures.orgA,
+      formSchemaId,
+    ]);
     await admin.query("DELETE FROM app.site WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, siteId]);
-    await admin.query("DELETE FROM app.business_profile WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, businessProfileId]);
+    await admin.query("DELETE FROM app.business_profile WHERE tenant_id=$1 AND id=$2", [
+      fixtures.orgA,
+      businessProfileId,
+    ]);
   };
   await cleanup().catch(() => {});
   await admin.end();

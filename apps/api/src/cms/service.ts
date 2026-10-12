@@ -128,7 +128,11 @@ export class CmsService {
     private readonly client: PoolClient,
     readonly context: TenantContext,
     traceId: string,
-    private readonly dependencies: { profiles: CmsProfileReferencePort; trustedLinkPolicy: PublishPolicy; storage: StoragePort },
+    private readonly dependencies: {
+      profiles: CmsProfileReferencePort;
+      trustedLinkPolicy: PublishPolicy;
+      storage: StoragePort;
+    },
   ) {
     this.repository = new CmsRepository(client);
     this.audit = new CrmService(client, context, traceId);
@@ -173,7 +177,13 @@ export class CmsService {
    * replayStatus overrides the stored status_code returned to clients on replay (e.g. 200 for POST-creates). */
   private async idempotent<T>(
     route: string,
-    permission: "sites.write" | "content.write" | "content.publish" | "domains.manage" | "media.write" | "forms.write",
+    permission:
+      | "sites.write"
+      | "content.write"
+      | "content.publish"
+      | "domains.manage"
+      | "media.write"
+      | "forms.write",
     schema: keyof Schemas,
     body: unknown,
     headers: CommandHeaders,
@@ -218,7 +228,15 @@ export class CmsService {
     await this.authorize(permission);
     await this.client.query(
       "INSERT INTO app.idempotency_record(tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at) VALUES(app.current_tenant(),$1,$2,$3,$4,$5,$6,$7,now()+interval '1 day')",
-      [this.context.userId, route, key, hash, JSON.stringify(result.body), replayStatus ?? result.status, result.etag],
+      [
+        this.context.userId,
+        route,
+        key,
+        hash,
+        JSON.stringify(result.body),
+        replayStatus ?? result.status,
+        result.etag,
+      ],
     );
     await this.authorize(permission);
     return result;
@@ -772,10 +790,7 @@ export class CmsService {
     );
   }
 
-  async archiveDocument(
-    id: string,
-    headers: CommandHeaders,
-  ): Promise<Mutation<Schemas["Job"]>> {
+  async archiveDocument(id: string, headers: CommandHeaders): Promise<Mutation<Schemas["Job"]>> {
     await this.authorize("content.write");
     assertUuid(id);
     return this.idempotent(
@@ -826,7 +841,11 @@ export class CmsService {
         const nextVersion = requireDraftVersion(Number(current.row_version), headers.ifMatch);
         const updated = await this.repository.updateSite(id, name, body.businessProfileId, nextVersion);
         if (!updated)
-          throw new AccessError(412, "revision_changed", "The site version changed since you last loaded it.");
+          throw new AccessError(
+            412,
+            "revision_changed",
+            "The site version changed since you last loaded it.",
+          );
         return this.response("Site", siteModel(updated), 200, nextVersion);
       },
       async (historical) => {

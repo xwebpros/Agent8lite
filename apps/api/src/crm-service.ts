@@ -2945,8 +2945,7 @@ export class CrmService {
     if (rawCursor) {
       try {
         const decoded = JSON.parse(Buffer.from(rawCursor, "base64url").toString("utf8"));
-        if (typeof decoded?.afterId === "string" && uuid.test(decoded.afterId))
-          afterId = decoded.afterId;
+        if (typeof decoded?.afterId === "string" && uuid.test(decoded.afterId)) afterId = decoded.afterId;
         else throw new Error("bad cursor");
       } catch {
         throw new AccessError(422, "cursor_invalid", "Cursor is invalid or expired.");
@@ -3167,23 +3166,25 @@ export class CrmService {
     );
 
     // Recheck after lock — version and scope
-    const survivorLocked = (
-      await this.client.query(
-        `SELECT r.id, r.row_version, r.birthday, r.merged_into_contact_id FROM app.contact r
+    const survivorLocked =
+      (
+        await this.client.query(
+          `SELECT r.id, r.row_version, r.birthday, r.merged_into_contact_id FROM app.contact r
          WHERE r.tenant_id = app.current_tenant() AND r.id = $1 AND r.archived_at IS NULL
            AND $2::uuid IS NOT NULL AND ${survivorScopeSql}`,
-        [command.survivorId, context.memberId],
-      )
-    ).rows[0] ?? notFound();
+          [command.survivorId, context.memberId],
+        )
+      ).rows[0] ?? notFound();
 
-    const sourceLocked = (
-      await this.client.query(
-        `SELECT r.id, r.row_version, r.birthday, r.merged_into_contact_id FROM app.contact r
+    const sourceLocked =
+      (
+        await this.client.query(
+          `SELECT r.id, r.row_version, r.birthday, r.merged_into_contact_id FROM app.contact r
          WHERE r.tenant_id = app.current_tenant() AND r.id = $1 AND r.archived_at IS NULL
            AND $2::uuid IS NOT NULL AND ${survivorScopeSql}`,
-        [command.sourceId, context.memberId],
-      )
-    ).rows[0] ?? notFound();
+          [command.sourceId, context.memberId],
+        )
+      ).rows[0] ?? notFound();
 
     // Verify versions from If-Match and body
     if (Number(survivorLocked.row_version) !== command.survivorExpectedVersion)
@@ -3290,8 +3291,11 @@ export class CrmService {
     let channelsMoved = 0;
     let channelsCombined = 0;
     const survivorChannelIds: string[] = [];
-    const combinedPairs: Array<{ survivorChannelId: string; sourceChannelId: string; channelKind: "email" | "phone" }> =
-      [];
+    const combinedPairs: Array<{
+      survivorChannelId: string;
+      sourceChannelId: string;
+      channelKind: "email" | "phone";
+    }> = [];
 
     for (const srcCh of sourceChannels.rows) {
       // Check if survivor already has a channel with this (kind, normalized_value)
@@ -3410,7 +3414,8 @@ export class CrmService {
           reason = "same_state";
         }
 
-        const conflict = survivorState !== mergedState && survivorState !== "unknown" && mergedState !== "unknown";
+        const conflict =
+          survivorState !== mergedState && survivorState !== "unknown" && mergedState !== "unknown";
 
         // Update survivor channel consent_state if it changed
         if (resultState !== survivorState) {
@@ -3454,7 +3459,11 @@ export class CrmService {
     // 4. Update survivor: null birthday if source provides a non-null value and survivor's is null
     const sourceBirthday = sourceLocked.birthday;
     const survivorBirthday = survivorLocked.birthday;
-    if (sourceBirthday !== null && sourceBirthday !== undefined && (survivorBirthday === null || survivorBirthday === undefined)) {
+    if (
+      sourceBirthday !== null &&
+      sourceBirthday !== undefined &&
+      (survivorBirthday === null || survivorBirthday === undefined)
+    ) {
       await this.client.query(
         `UPDATE app.contact SET birthday = $1, updated_at = $2
          WHERE tenant_id = app.current_tenant() AND id = $3`,

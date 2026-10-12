@@ -675,7 +675,12 @@ class ApiController {
             } else if (resource === "campaign-versions" && id && !action && req.method === "GET") {
               const body = await workflows.get(id);
               response = { body, status: 200, etag: campaignEtag(body.version) };
-            } else if (resource === "campaign-versions" && id && action === "publish" && req.method === "POST") {
+            } else if (
+              resource === "campaign-versions" &&
+              id &&
+              action === "publish" &&
+              req.method === "POST"
+            ) {
               response = await workflows.publish(id, {
                 key: req.headers["idempotency-key"] as string | undefined,
               });

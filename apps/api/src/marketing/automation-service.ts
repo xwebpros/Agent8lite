@@ -164,7 +164,11 @@ export class AutomationService {
     headers: { key: string | undefined },
   ): Promise<AutomationMutation> {
     await this.authorize("automations.write");
-    const key = String(headers.key ?? "").slice(0, 255) || (() => { throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required."); })();
+    const key =
+      String(headers.key ?? "").slice(0, 255) ||
+      (() => {
+        throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required.");
+      })();
     const route = `marketing:automation:create`;
     const requestHash = createHash("sha256").update(stable(input)).digest("hex");
     await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
@@ -182,16 +186,29 @@ export class AutomationService {
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       validateSchema("Automation", receipt.response_body, true);
       await this.authorize("automations.write");
-      return { body: receipt.response_body as Schemas["Automation"], status: 201, etag: receipt.response_etag };
+      return {
+        body: receipt.response_body as Schemas["Automation"],
+        status: 201,
+        etag: receipt.response_etag,
+      };
     }
     await this.assertPublishedVersion(input.campaignVersionId);
-    const row = (await this.client.query<AutomationRow>(
-      `INSERT INTO app.automation_rule(tenant_id,name,trigger_type,condition,campaign_version_id,restart_policy,inactivity_seconds,active)
+    const row = (
+      await this.client.query<AutomationRow>(
+        `INSERT INTO app.automation_rule(tenant_id,name,trigger_type,condition,campaign_version_id,restart_policy,inactivity_seconds,active)
        VALUES(app.current_tenant(),$1,$2,$3,$4,$5,$6,$7)
        RETURNING id,name,trigger_type,condition,campaign_version_id,restart_policy,inactivity_seconds,active,version,row_version`,
-      [input.name, input.trigger, JSON.stringify(input.conditions ?? {}), input.campaignVersionId,
-       input.restartPolicy, input.inactivitySeconds ?? null, input.active],
-    )).rows[0];
+        [
+          input.name,
+          input.trigger,
+          JSON.stringify(input.conditions ?? {}),
+          input.campaignVersionId,
+          input.restartPolicy,
+          input.inactivitySeconds ?? null,
+          input.active,
+        ],
+      )
+    ).rows[0];
     const body = automationModel(row);
     const etag = automationEtag(body.version);
     await this.authorize("automations.write");
@@ -212,12 +229,22 @@ export class AutomationService {
   ): Promise<AutomationMutation> {
     assertUuid(id);
     await this.authorize("automations.write");
-    const key = String(headers.key ?? "").slice(0, 255) || (() => { throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required."); })();
+    const key =
+      String(headers.key ?? "").slice(0, 255) ||
+      (() => {
+        throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required.");
+      })();
     const expectedVersion = headers.ifMatch ? parseInt(headers.ifMatch.replace(/"/g, ""), 10) : NaN;
     if (!Number.isInteger(expectedVersion) || expectedVersion < 1)
-      throw new AccessError(428, "revision_required", "If-Match header with a valid version ETag is required.");
+      throw new AccessError(
+        428,
+        "revision_required",
+        "If-Match header with a valid version ETag is required.",
+      );
     const route = `marketing:automation:update:${id}`;
-    const requestHash = createHash("sha256").update(stable({ body: input, ifMatch: headers.ifMatch ?? null })).digest("hex");
+    const requestHash = createHash("sha256")
+      .update(stable({ body: input, ifMatch: headers.ifMatch ?? null }))
+      .digest("hex");
     await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
       `${this.context.organizationId}:${this.context.userId}:${route}:${key}`,
     ]);
@@ -233,7 +260,11 @@ export class AutomationService {
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       validateSchema("Automation", receipt.response_body, true);
       await this.authorize("automations.write");
-      return { body: receipt.response_body as Schemas["Automation"], status: 200, etag: receipt.response_etag };
+      return {
+        body: receipt.response_body as Schemas["Automation"],
+        status: 200,
+        etag: receipt.response_etag,
+      };
     }
     await this.assertPublishedVersion(input.campaignVersionId);
     const updated = await this.client.query<AutomationRow>(
@@ -242,8 +273,17 @@ export class AutomationService {
            inactivity_seconds=$6,active=$7,version=version+1,row_version=row_version+1,updated_at=now()
        WHERE tenant_id=app.current_tenant() AND id=$8 AND row_version=$9
        RETURNING id,name,trigger_type,condition,campaign_version_id,restart_policy,inactivity_seconds,active,version,row_version`,
-      [input.name, input.trigger, JSON.stringify(input.conditions ?? {}), input.campaignVersionId,
-       input.restartPolicy, input.inactivitySeconds ?? null, input.active, id, expectedVersion],
+      [
+        input.name,
+        input.trigger,
+        JSON.stringify(input.conditions ?? {}),
+        input.campaignVersionId,
+        input.restartPolicy,
+        input.inactivitySeconds ?? null,
+        input.active,
+        id,
+        expectedVersion,
+      ],
     );
     if (!updated.rowCount)
       throw new AccessError(412, "revision_stale", "Automation changed; refresh before updating.");
@@ -269,7 +309,11 @@ export class AutomationService {
     await this.authorize("automations.write");
     assertUuid(input.leadId);
     assertUuid(input.campaignVersionId);
-    const key = String(headers.key ?? "").slice(0, 255) || (() => { throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required."); })();
+    const key =
+      String(headers.key ?? "").slice(0, 255) ||
+      (() => {
+        throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required.");
+      })();
     const route = `marketing:enrollment:enroll`;
     const requestHash = createHash("sha256").update(stable(input)).digest("hex");
     await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
@@ -287,16 +331,22 @@ export class AutomationService {
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       validateSchema("Enrollment", receipt.response_body, true);
       await this.authorize("automations.write");
-      return { body: receipt.response_body as Schemas["Enrollment"], status: 201, etag: receipt.response_etag };
+      return {
+        body: receipt.response_body as Schemas["Enrollment"],
+        status: 201,
+        etag: receipt.response_etag,
+      };
     }
     await this.assertPublishedVersion(input.campaignVersionId);
     await this.assertLead(input.leadId);
-    const row = (await this.client.query<EnrollmentRow>(
-      `INSERT INTO app.enrollment(tenant_id,lead_id,campaign_version_id,source_event_id,state)
+    const row = (
+      await this.client.query<EnrollmentRow>(
+        `INSERT INTO app.enrollment(tenant_id,lead_id,campaign_version_id,source_event_id,state)
        VALUES(app.current_tenant(),$1,$2,$3,'active')
        RETURNING id,lead_id,campaign_version_id,state,current_step,version,row_version`,
-      [input.leadId, input.campaignVersionId, key],
-    )).rows[0];
+        [input.leadId, input.campaignVersionId, key],
+      )
+    ).rows[0];
     const body = enrollmentModel(row);
     const etag = enrollmentEtag(body.version);
     await this.authorize("automations.write");
@@ -334,13 +384,14 @@ export class AutomationService {
     return body;
   }
 
-  async cancelEnrollment(
-    id: string,
-    headers: { key: string | undefined },
-  ): Promise<CancelMutation> {
+  async cancelEnrollment(id: string, headers: { key: string | undefined }): Promise<CancelMutation> {
     assertUuid(id);
     await this.authorize("automations.write");
-    const key = String(headers.key ?? "").slice(0, 255) || (() => { throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required."); })();
+    const key =
+      String(headers.key ?? "").slice(0, 255) ||
+      (() => {
+        throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required.");
+      })();
     const route = `marketing:enrollment:cancel:${id}`;
     const requestHash = createHash("sha256").update(id).digest("hex");
     await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
@@ -358,7 +409,11 @@ export class AutomationService {
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       validateSchema("Enrollment", receipt.response_body, true);
       await this.authorize("automations.write");
-      return { body: receipt.response_body as Schemas["Enrollment"], status: 200, etag: receipt.response_etag };
+      return {
+        body: receipt.response_body as Schemas["Enrollment"],
+        status: 200,
+        etag: receipt.response_etag,
+      };
     }
     const updated = await this.client.query<EnrollmentRow>(
       `UPDATE app.enrollment
@@ -368,7 +423,11 @@ export class AutomationService {
       [id],
     );
     if (!updated.rowCount)
-      throw new AccessError(409, "enrollment_not_cancellable", "Enrollment is already completed or cancelled, or does not exist.");
+      throw new AccessError(
+        409,
+        "enrollment_not_cancellable",
+        "Enrollment is already completed or cancelled, or does not exist.",
+      );
     const body = enrollmentModel(updated.rows[0]);
     const etag = enrollmentEtag(body.version);
     await this.authorize("automations.write");

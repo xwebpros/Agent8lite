@@ -1234,7 +1234,9 @@ export default function CmsWorkspace({
       <div className={styles.notice}>
         <FlaskConical size={22} aria-hidden="true" />
         <p>
-          This editor saves immutable private draft revisions. Publication, public preview and Puck are unavailable in this slice. Domain management, media library and form catalogue are available when the corresponding permissions are present. Links use local paths only.
+          This editor saves immutable private draft revisions. Publication, public preview and Puck are
+          unavailable in this slice. Domain management, media library and form catalogue are available when
+          the corresponding permissions are present. Links use local paths only.
         </p>
       </div>
       {!online && (
@@ -1403,12 +1405,7 @@ export default function CmsWorkspace({
         />
       )}
       {documentId && canPublishContent && currentData && (
-        <CmsDocumentPublication
-          documentId={documentId}
-          base={base}
-          csrf={csrf}
-          online={online}
-        />
+        <CmsDocumentPublication documentId={documentId} base={base} csrf={csrf} online={online} />
       )}
       {form && (
         <section className={styles.card} aria-labelledby="cms-create-title">

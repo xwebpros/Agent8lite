@@ -1,8 +1,4 @@
-import {
-  type ContactMergeCommand,
-  type ContactMergeProtocol,
-  contactMergeRequest,
-} from "./contact-merge";
+import { type ContactMergeCommand, type ContactMergeProtocol, contactMergeRequest } from "./contact-merge";
 export { contactMergeRequest } from "./contact-merge";
 
 export type ContactMergeOutcome = Readonly<
@@ -93,9 +89,7 @@ export class ContactMergeController {
         type: "released",
         command,
         phase:
-          phase === "blocked" ||
-          phase === "unavailable" ||
-          phase === "phone_only_warning"
+          phase === "blocked" || phase === "unavailable" || phase === "phone_only_warning"
             ? phase
             : "rejected",
       };

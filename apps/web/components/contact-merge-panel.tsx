@@ -46,8 +46,8 @@ export function ContactMergeView(props: ContactMergeViewProps) {
   if (phase === "denied")
     return (
       <div className={styles.panel} role="status">
-        Merge access is unavailable. Private record details were cleared. Refresh workspace access
-        before continuing. No interrupted outcome is inferred.
+        Merge access is unavailable. Private record details were cleared. Refresh workspace access before
+        continuing. No interrupted outcome is inferred.
       </div>
     );
 
@@ -59,9 +59,8 @@ export function ContactMergeView(props: ContactMergeViewProps) {
       <section className={styles.panel} aria-label="Phone-only match warning">
         <h3>These contacts share only a phone number</h3>
         <p>
-          Merging contacts that share only a phone number may combine records from different people
-          in the same household. Confirm you have reviewed both records and they belong to the same
-          person.
+          Merging contacts that share only a phone number may combine records from different people in the
+          same household. Confirm you have reviewed both records and they belong to the same person.
         </p>
         <p>
           <strong>Survivor (kept):</strong> {props.survivorName}
@@ -113,8 +112,8 @@ export function ContactMergeView(props: ContactMergeViewProps) {
   if (phase === "blocked")
     return (
       <div className={styles.panel} role="status">
-        Merge unavailable: one or more source leads are outside your current scope. Reassign those
-        leads before merging.
+        Merge unavailable: one or more source leads are outside your current scope. Reassign those leads
+        before merging.
       </div>
     );
 
@@ -148,8 +147,8 @@ export function ContactMergeView(props: ContactMergeViewProps) {
           <strong>Source (archived):</strong> {props.sourceName}
         </p>
         <p>
-          Channels, leads and consent history will be combined. Withdrawal wins where records
-          conflict unless a later verified grant exists. This cannot be undone.
+          Channels, leads and consent history will be combined. Withdrawal wins where records conflict unless
+          a later verified grant exists. This cannot be undone.
         </p>
         {props.phoneOnlyMatch && (
           <p>

@@ -38,12 +38,7 @@ const sessions: ApiSession[] = []; // kept for potential future teardown use
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 async function createContact(
-  options: {
-    creator?: string;
-    email?: string | null;
-    phone?: string | null;
-    tenant?: string;
-  } = {},
+  options: { creator?: string; email?: string | null; phone?: string | null; tenant?: string } = {},
 ) {
   const tid = options.tenant ?? fixtures.orgA;
   const id = randomUUID();
@@ -127,19 +122,19 @@ async function getDuplicates(session: ApiSession = agent, query = "") {
 
 async function mergeRow(mergeId: string) {
   return (
-    await admin.query(
-      "SELECT * FROM app.contact_merge WHERE tenant_id=$1 AND id=$2::uuid",
-      [fixtures.orgA, mergeId],
-    )
+    await admin.query("SELECT * FROM app.contact_merge WHERE tenant_id=$1 AND id=$2::uuid", [
+      fixtures.orgA,
+      mergeId,
+    ])
   ).rows[0];
 }
 
 async function mergedIntoId(contactId: string) {
   return (
-    await admin.query(
-      "SELECT merged_into_contact_id FROM app.contact WHERE tenant_id=$1 AND id=$2",
-      [fixtures.orgA, contactId],
-    )
+    await admin.query("SELECT merged_into_contact_id FROM app.contact WHERE tenant_id=$1 AND id=$2", [
+      fixtures.orgA,
+      contactId,
+    ])
   ).rows[0]?.merged_into_contact_id as string | null | undefined;
 }
 
@@ -236,10 +231,10 @@ describe("POST /v1/orgs/{orgId}/contacts/{contactId}/merges", () => {
     expect(mergedInto).toBe(survivor);
 
     // lead should now point to survivor
-    const leadRow = await admin.query(
-      "SELECT contact_id FROM app.lead WHERE tenant_id=$1 AND id=$2",
-      [fixtures.orgA, leadId],
-    );
+    const leadRow = await admin.query("SELECT contact_id FROM app.lead WHERE tenant_id=$1 AND id=$2", [
+      fixtures.orgA,
+      leadId,
+    ]);
     expect(leadRow.rows[0]?.contact_id).toBe(survivor);
 
     // outbox event should exist
@@ -316,11 +311,7 @@ describe("POST /v1/orgs/{orgId}/contacts/{contactId}/merges", () => {
   it("returns 409 when survivorContactId equals sourceContactId", async () => {
     const survivor = await createContact();
     const v = await contactVersion(survivor);
-    const r = await merge(
-      survivor,
-      { sourceContactId: survivor, sourceVersion: v },
-      { survivorVersion: v },
-    );
+    const r = await merge(survivor, { sourceContactId: survivor, sourceVersion: v }, { survivorVersion: v });
     expect(r.status).toBe(409);
   });
 
@@ -343,10 +334,11 @@ describe("POST /v1/orgs/{orgId}/contacts/{contactId}/merges", () => {
       "if-match": `"${survivorV}"`,
     };
     // POST to orgB with agent's orgA session
-    const r = await agent.request(
-      `/v1/orgs/${fixtures.orgB}/contacts/${survivor}/merges`,
-      { method: "POST", headers, body: JSON.stringify({ sourceContactId: source, sourceVersion: sourceV }) },
-    );
+    const r = await agent.request(`/v1/orgs/${fixtures.orgB}/contacts/${survivor}/merges`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ sourceContactId: source, sourceVersion: sourceV }),
+    });
     expect(r.status).toBe(403);
   });
 
@@ -365,10 +357,11 @@ describe("POST /v1/orgs/{orgId}/contacts/{contactId}/merges", () => {
       const stripped = (original.permission_grants as Array<{ code: string; scope: string }>).filter(
         (g) => g.code !== "crm.contacts.write",
       );
-      await admin.query(
-        "UPDATE app.role_definition SET permission_grants=$3 WHERE tenant_id=$1 AND id=$2",
-        [fixtures.orgA, original.id, JSON.stringify(stripped)],
-      );
+      await admin.query("UPDATE app.role_definition SET permission_grants=$3 WHERE tenant_id=$1 AND id=$2", [
+        fixtures.orgA,
+        original.id,
+        JSON.stringify(stripped),
+      ]);
       try {
         // Sign in after stripping the permission so the session reflects the reduced grants
         const limited = await new ApiSession().signIn("agent");
@@ -466,7 +459,10 @@ describe("contact.merged outbox event schema", () => {
       { sourceContactId: source, sourceVersion: sourceV },
       { survivorVersion: survivorV },
     );
-    const dispatchIdentity: VerifiedIdentityContext = { userId: fixtures.agentUser, organizationId: fixtures.orgA };
+    const dispatchIdentity: VerifiedIdentityContext = {
+      userId: fixtures.agentUser,
+      organizationId: fixtures.orgA,
+    };
     await dispatchOutbox(worker, dispatchIdentity);
     const rows = await admin.query(
       "SELECT payload FROM app.outbox WHERE tenant_id=$1 AND aggregate_id=$2::text AND event_type='contact.merged' ORDER BY created_at DESC LIMIT 1",

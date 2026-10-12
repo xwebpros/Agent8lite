@@ -246,8 +246,7 @@ export class CmsHttpAdapter {
 
         // ADR-057: document archive and site update
         const docArchive = new RegExp(`^${prefix}/documents/([^/]+)/archive$`).exec(path);
-        if (docArchive && method === "POST")
-          return service.archiveDocument(docArchive[1], commandHeaders);
+        if (docArchive && method === "POST") return service.archiveDocument(docArchive[1], commandHeaders);
 
         const siteById = new RegExp(`^${prefix}/sites/([^/]+)$`).exec(path);
         if (siteById && method === "PATCH")

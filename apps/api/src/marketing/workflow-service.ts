@@ -253,10 +253,7 @@ export class CampaignWorkflowService {
   }
 
   /** ADR-059: publish a draft campaign version, activating its parent campaign. Idempotent. */
-  async publish(
-    versionId: string,
-    headers: { key: string | undefined },
-  ): Promise<CampaignWorkflowMutation> {
+  async publish(versionId: string, headers: { key: string | undefined }): Promise<CampaignWorkflowMutation> {
     assertUuid(versionId);
     const key = campaignKey(headers.key);
     const route = `marketing:workflow:publish:${versionId}`;
@@ -277,7 +274,11 @@ export class CampaignWorkflowService {
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       validateSchema("CampaignVersion", receipt.response_body, true);
       await this.authority.require("campaigns.publish");
-      return { body: receipt.response_body as CampaignWorkflowVersion, status: 201, etag: receipt.response_etag };
+      return {
+        body: receipt.response_body as CampaignWorkflowVersion,
+        status: 201,
+        etag: receipt.response_etag,
+      };
     }
     const draft = await this.version(versionId).catch(async () => {
       // RLS filters published versions from estate_runtime — check the idempotency log
@@ -304,7 +305,12 @@ export class CampaignWorkflowService {
       );
     const published = publishedModel(result.rows[0]);
     const etag = campaignEtag(published.version);
-    await this.audit.audit("campaign.workflow_published", "campaign_version", published.id, published.version);
+    await this.audit.audit(
+      "campaign.workflow_published",
+      "campaign_version",
+      published.id,
+      published.version,
+    );
     await this.authority.require("campaigns.publish");
     await this.client.query(
       `INSERT INTO app.idempotency_record

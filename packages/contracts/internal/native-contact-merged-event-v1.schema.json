@@ -42,12 +42,12 @@
       ],
       "properties": {
         "survivorContactId": { "type": "string", "format": "uuid" },
-        "survivorVersion":   { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
-        "mergedContactId":   { "type": "string", "format": "uuid" },
-        "mergedVersion":     { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
-        "channelsMoved":     { "type": "integer", "minimum": 0 },
-        "channelsCombined":  { "type": "integer", "minimum": 0 },
-        "leadsMoved":        { "type": "integer", "minimum": 0 }
+        "survivorVersion": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "mergedContactId": { "type": "string", "format": "uuid" },
+        "mergedVersion": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "channelsMoved": { "type": "integer", "minimum": 0 },
+        "channelsCombined": { "type": "integer", "minimum": 0 },
+        "leadsMoved": { "type": "integer", "minimum": 0 }
       }
     }
   }

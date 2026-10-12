@@ -67,8 +67,7 @@ export function prepareMerge(
   if (typeof ifMatch !== "string" || !ifMatch || ifMatch.length > 100)
     throw new AccessError(400, "revision_required", "If-Match revision header is required.");
   const survivorVersionMatch = /^(?:"(\d+)"|(\d+))$/.exec(ifMatch);
-  if (!survivorVersionMatch)
-    throw new AccessError(400, "revision_invalid", "If-Match revision is invalid.");
+  if (!survivorVersionMatch) throw new AccessError(400, "revision_invalid", "If-Match revision is invalid.");
   const survivorExpectedVersion = Number(survivorVersionMatch[1] ?? survivorVersionMatch[2]);
   if (!Number.isSafeInteger(survivorExpectedVersion) || survivorExpectedVersion < 1)
     throw new AccessError(400, "revision_invalid", "If-Match revision must be a positive integer.");
@@ -97,11 +96,7 @@ export function prepareMerge(
     throw new AccessError(409, "merge_same_contact", "Source and survivor contacts must differ.");
 
   const rawSourceVersion = bodyRecord.sourceVersion;
-  if (
-    typeof rawSourceVersion !== "number" ||
-    !Number.isSafeInteger(rawSourceVersion) ||
-    rawSourceVersion < 1
-  )
+  if (typeof rawSourceVersion !== "number" || !Number.isSafeInteger(rawSourceVersion) || rawSourceVersion < 1)
     throw new AccessError(422, "source_version_invalid", "sourceVersion must be a positive integer.");
 
   const acknowledgePhoneOnly = bodyRecord.acknowledgePhoneOnly === true;

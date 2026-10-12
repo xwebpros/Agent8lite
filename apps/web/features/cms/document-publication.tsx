@@ -59,9 +59,7 @@ export function CmsDocumentPublication({
     setLoadingRevisions(true);
     setRevisionsError("");
     try {
-      const result = await api<Schema<"PageRevision">>(
-        `${base}/documents/${documentId}/revisions?limit=20`,
-      );
+      const result = await api<Schema<"PageRevision">>(`${base}/documents/${documentId}/revisions?limit=20`);
       setRevisions(result.data.items);
     } catch (e) {
       setRevisionsError(fail(e));
@@ -104,9 +102,7 @@ export function CmsDocumentPublication({
       setNotice(`${verb} successfully.`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 412) {
-        setCommandError(
-          "The document version changed since you loaded it. Refresh to see the latest state.",
-        );
+        setCommandError("The document version changed since you loaded it. Refresh to see the latest state.");
         void loadDocument();
       } else if (uncertain(e)) {
         setUnknownOutcome(true);
@@ -163,9 +159,7 @@ export function CmsDocumentPublication({
             <dt>Published revision</dt>
             <dd>
               {document.publishedRevisionId ? (
-                <code style={{ fontSize: "0.75rem" }}>
-                  {document.publishedRevisionId.slice(0, 8)}…
-                </code>
+                <code style={{ fontSize: "0.75rem" }}>{document.publishedRevisionId.slice(0, 8)}…</code>
               ) : (
                 <Badge>unpublished</Badge>
               )}
@@ -214,8 +208,7 @@ export function CmsDocumentPublication({
                 <option value="">Choose a revision</option>
                 {revisions.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.id.slice(0, 8)}… · schema v{r.schemaVersion} ·{" "}
-                    {new Date(r.createdAt).toLocaleString()}
+                    {r.id.slice(0, 8)}… · schema v{r.schemaVersion} · {new Date(r.createdAt).toLocaleString()}
                     {r.id === document.publishedRevisionId ? " (current)" : ""}
                   </option>
                 ))}
@@ -294,8 +287,8 @@ export function CmsDocumentPublication({
       )}
 
       <p className={styles.help} style={{ marginTop: 8 }}>
-        <BookOpen size={12} aria-hidden="true" /> Publishing sets the public pointer for this
-        document. Revisions are immutable; rollback simply moves the pointer back.
+        <BookOpen size={12} aria-hidden="true" /> Publishing sets the public pointer for this document.
+        Revisions are immutable; rollback simply moves the pointer back.
       </p>
     </section>
   );

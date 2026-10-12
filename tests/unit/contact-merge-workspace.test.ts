@@ -23,9 +23,7 @@ describe("ADR-049 workspace source-wiring: ContactMergeProtocol", () => {
   });
 
   it("binds contactMerge in access-refresh path", () => {
-    expect(workspaceSource).toContain(
-      "contactMerge.current.bind(nextContactMergeBinding)",
-    );
+    expect(workspaceSource).toContain("contactMerge.current.bind(nextContactMergeBinding)");
     expect(workspaceSource).toContain("setContactMergeDenied(false)");
     expect(workspaceSource).toContain("updateContactMerge(");
   });

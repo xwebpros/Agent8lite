@@ -74,13 +74,9 @@ export function CmsSiteManagement({
         aria-labelledby={`tab-${tab.id}`}
         style={{ minWidth: 0 }}
       >
-        {tab.id === "domains" && (
-          <DomainsPanel siteId={siteId} base={base} csrf={csrf} online={online} />
-        )}
+        {tab.id === "domains" && <DomainsPanel siteId={siteId} base={base} csrf={csrf} online={online} />}
         {tab.id === "media" && <MediaPanel base={base} csrf={csrf} online={online} />}
-        {tab.id === "forms" && (
-          <FormsPanel siteId={siteId} base={base} csrf={csrf} online={online} />
-        )}
+        {tab.id === "forms" && <FormsPanel siteId={siteId} base={base} csrf={csrf} online={online} />}
       </div>
     </section>
   );
@@ -205,7 +201,15 @@ function DomainsPanel({
           {notice}
         </p>
       )}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
         <p style={{ margin: 0 }}>
           {loading ? "Reading domains…" : `${domains.length} active domain${domains.length === 1 ? "" : "s"}`}
         </p>
@@ -229,15 +233,29 @@ function DomainsPanel({
               <tr key={d.id}>
                 <td style={{ padding: "4px 8px", fontFamily: "monospace", fontSize: 13 }}>{d.hostname}</td>
                 <td style={{ padding: "4px 8px" }}>
-                  <Badge tone={d.environment === "production" ? "positive" : "neutral"}>{d.environment}</Badge>
+                  <Badge tone={d.environment === "production" ? "positive" : "neutral"}>
+                    {d.environment}
+                  </Badge>
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <Badge tone={d.verificationState === "verified" ? "positive" : d.verificationState === "failed" ? "warning" : "neutral"}>
+                  <Badge
+                    tone={
+                      d.verificationState === "verified"
+                        ? "positive"
+                        : d.verificationState === "failed"
+                          ? "warning"
+                          : "neutral"
+                    }
+                  >
                     {d.verificationState}
                   </Badge>
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <Badge tone={d.tlsState === "active" ? "positive" : d.tlsState === "failed" ? "warning" : "neutral"}>
+                  <Badge
+                    tone={
+                      d.tlsState === "active" ? "positive" : d.tlsState === "failed" ? "warning" : "neutral"
+                    }
+                  >
                     {d.tlsState}
                   </Badge>
                 </td>
@@ -264,7 +282,16 @@ function DomainsPanel({
               .filter((d) => d.requiredDns.length > 0)
               .flatMap((d) =>
                 d.requiredDns.map((rec, i) => (
-                  <div key={`${d.id}-${i}`} style={{ fontFamily: "monospace", fontSize: 13, background: "var(--color-surface-raised, #f5f5f5)", padding: "8px 12px", borderRadius: 6 }}>
+                  <div
+                    key={`${d.id}-${i}`}
+                    style={{
+                      fontFamily: "monospace",
+                      fontSize: 13,
+                      background: "var(--color-surface-raised, #f5f5f5)",
+                      padding: "8px 12px",
+                      borderRadius: 6,
+                    }}
+                  >
                     <strong>{rec.type}</strong> {rec.name} → {rec.value}
                   </div>
                 )),
@@ -311,15 +338,7 @@ function DomainsPanel({
   );
 }
 
-function MediaPanel({
-  base,
-  csrf,
-  online,
-}: {
-  base: string;
-  csrf: string;
-  online: boolean;
-}) {
+function MediaPanel({ base, csrf, online }: { base: string; csrf: string; online: boolean }) {
   const [assets, setAssets] = useState<Schema<"Media">[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -410,7 +429,15 @@ function MediaPanel({
           {notice}
         </p>
       )}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
         <p style={{ margin: 0 }}>
           {loading ? "Reading media…" : `${assets.length} asset${assets.length === 1 ? "" : "s"} (first 20)`}
         </p>
@@ -436,7 +463,15 @@ function MediaPanel({
                 <td style={{ padding: "4px 8px", fontSize: 13 }}>{a.mimeType}</td>
                 <td style={{ padding: "4px 8px", fontSize: 13 }}>{(a.bytes / 1024).toFixed(1)} KB</td>
                 <td style={{ padding: "4px 8px" }}>
-                  <Badge tone={a.scanState === "clean" ? "positive" : a.scanState === "rejected" ? "warning" : "neutral"}>
+                  <Badge
+                    tone={
+                      a.scanState === "clean"
+                        ? "positive"
+                        : a.scanState === "rejected"
+                          ? "warning"
+                          : "neutral"
+                    }
+                  >
                     {a.scanState}
                   </Badge>
                 </td>
@@ -450,7 +485,8 @@ function MediaPanel({
         <fieldset disabled={!online || finalizing}>
           <legend style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Finalize pending asset</legend>
           <p style={{ fontSize: 13, margin: "0 0 8px" }}>
-            After a signed upload, supply the asset ID, its SHA-256 checksum, and optional alt text to mark it as clean.
+            After a signed upload, supply the asset ID, its SHA-256 checksum, and optional alt text to mark it
+            as clean.
           </p>
           <div className={styles.fields}>
             <label>
@@ -501,7 +537,9 @@ function MediaPanel({
           )}
           <Button
             type="submit"
-            disabled={!online || finalizing || !finalizeId.trim() || !finalizeChecksum.trim() || !finalizeRights}
+            disabled={
+              !online || finalizing || !finalizeId.trim() || !finalizeChecksum.trim() || !finalizeRights
+            }
           >
             {finalizing ? "Finalizing…" : "Finalize asset"}
           </Button>
@@ -556,7 +594,15 @@ function FormsPanel({
           {notice}
         </p>
       )}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
         <p style={{ margin: 0 }}>
           {loading ? "Reading forms…" : `${forms.length} form${forms.length === 1 ? "" : "s"}`}
         </p>
@@ -589,12 +635,11 @@ function FormsPanel({
         </table>
       )}
       {!loading && forms.length === 0 && (
-        <p style={{ fontSize: 14 }}>
-          No forms yet. Create forms through the API or a future form designer.
-        </p>
+        <p style={{ fontSize: 14 }}>No forms yet. Create forms through the API or a future form designer.</p>
       )}
       <p style={{ fontSize: 13, color: "var(--color-ink-secondary, #666)", margin: 0 }}>
-        Form creation and the full designer are available through the API. This panel shows the current form catalogue.
+        Form creation and the full designer are available through the API. This panel shows the current form
+        catalogue.
       </p>
     </div>
   );

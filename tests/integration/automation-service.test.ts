@@ -39,7 +39,9 @@ const automationGrants: PermissionGrant[] = [
 ];
 
 async function actor(grants = automationGrants): Promise<Actor> {
-  const userId = randomUUID(), memberId = randomUUID(), roleId = randomUUID();
+  const userId = randomUUID(),
+    memberId = randomUUID(),
+    roleId = randomUUID();
   await admin.query(
     "INSERT INTO app.user_identity(id,issuer,subject,display_name,email_verified)VALUES($1,'urn:estate:synthetic',$2,'Synthetic automation actor',true)",
     [userId, randomUUID()],
@@ -57,7 +59,11 @@ async function actor(grants = automationGrants): Promise<Actor> {
 
 async function use<T>(
   identity: VerifiedIdentityContext,
-  operation: (service: AutomationService, client: import("pg").PoolClient, context: TenantContext) => Promise<T>,
+  operation: (
+    service: AutomationService,
+    client: import("pg").PoolClient,
+    context: TenantContext,
+  ) => Promise<T>,
 ) {
   return withTenantTransaction(runtime, identity, (client, context) =>
     operation(new AutomationService(client, context), client, context),
@@ -84,7 +90,9 @@ async function publishedVersion(identity: VerifiedIdentityContext = ownerA): Pro
     ),
   );
   await withTenantTransaction(runtime, identity, (client, context) =>
-    new CampaignWorkflowService(client, context, randomUUID()).publish(version.body.id, { key: randomUUID() }),
+    new CampaignWorkflowService(client, context, randomUUID()).publish(version.body.id, {
+      key: randomUUID(),
+    }),
   );
   return version.body.id;
 }
@@ -168,10 +176,14 @@ describe("ADR-060 automation CRUD", () => {
     const vId = await publishedVersion(a);
     const { body } = await use(a, (svc) => svc.createAutomation(automationInput(vId), { key: randomUUID() }));
     const updated = await use(a, (svc) =>
-      svc.updateAutomation(body.id, { ...body.definition, active: true }, {
-        key: randomUUID(),
-        ifMatch: '"' + body.version + '"',
-      }),
+      svc.updateAutomation(
+        body.id,
+        { ...body.definition, active: true },
+        {
+          key: randomUUID(),
+          ifMatch: '"' + body.version + '"',
+        },
+      ),
     );
     expect(updated.status).toBe(200);
     expect(updated.body.definition.active).toBe(true);
@@ -262,9 +274,9 @@ describe("ADR-060 enrollment CRUD", () => {
       svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key: randomUUID() }),
     );
     await use(a, (svc) => svc.cancelEnrollment(body.id, { key: randomUUID() }));
-    await expect(
-      use(a, (svc) => svc.cancelEnrollment(body.id, { key: randomUUID() })),
-    ).rejects.toMatchObject({ status: 409 });
+    await expect(use(a, (svc) => svc.cancelEnrollment(body.id, { key: randomUUID() }))).rejects.toMatchObject(
+      { status: 409 },
+    );
   });
 
   it("rejects enrollment without automations.write", async () => {

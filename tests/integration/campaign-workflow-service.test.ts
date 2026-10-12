@@ -1606,9 +1606,7 @@ describe("ADR-059 publishCampaign", () => {
     const publishId = await publishActor();
     const result = await publish(response.body.id, publishId);
     expect(result.body.id).toBe(response.body.id);
-    const row = (
-      await admin.query("SELECT state FROM app.campaign WHERE id=$1", [campaign.body.id])
-    ).rows[0];
+    const row = (await admin.query("SELECT state FROM app.campaign WHERE id=$1", [campaign.body.id])).rows[0];
     expect(row.state).toBe("active");
     const vrow = (
       await admin.query("SELECT state,published_at FROM app.campaign_version WHERE id=$1", [response.body.id])
