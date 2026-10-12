@@ -1,22 +1,47 @@
 # Implementation status — 2026-10-13
 
-## Latest verification run — `df798d9` (2026-10-13)
+## Windows source-package bootstrap — 2026-10-13 (Codex)
+
+The owner requested a click-to-run installer for recipients of a source ZIP. Added `Start-Agent8lite.cmd`, `scripts/bootstrap/` and `docs/runbooks/bootstrap-windows.md`; README and ADR-011 describe its scope. CI adds the bootstrap boundary suite; that workflow change has not been executed remotely. No application contract, dependency pin, lockfile, database migration or live-provider activation changed for this slice.
+
+The Windows Intel/AMD 64-bit launcher installs checksum-verified portable Node24.19.0/project-local pnpm11.25.0, guides Docker Desktop installation/WSL approvals, verifies a local Linux engine and path-derived Compose container ownership, runs existing forward migrations/control-issuer configuration/synthetic seed, supervises loopback API/web and opens localhost:3000 after owned-instance readiness. It excludes inherited hosted/production/provider settings and refuses private environment files. It never resets a database, deletes volumes, changes role passwords to resolve a mismatch, kills unrelated processes or requests an automatic reboot. Ordinary setup/application child trees use handshake-before-execution Windows Job Objects; separately brokered elevated installers require visible completion/cancellation.
+
+Verified locally on 2026-10-13 against this working-tree slice (base source advanced through `b492838` while another owner continued independent implementation):
+
+- Bootstrap Vitest **77/77** pass, including native PowerShell argument quoting, environment confinement, strict second-click ownership/health, Docker ownership parsing, inert imports, actual native Job timeout/descendant termination with an unrelated process preserved, and actual tar extraction beyond260-character paths. No test installed Docker or touched application/database services.
+- A separate real portable-tool smoke downloaded the official Node archive, verified publisher/reviewed archive SHA-256 and extracted executable bytes, installed pnpm11.25.0 only into an owned ignored verification cache, and ran it through the native Job wrapper. Result: PASS; no Docker/global PATH/service changes. Safe metadata is retained in `.local/bootstrap-portable-verification.json`. The cache is excluded from shared source packages.
+- The first real smoke exposed PowerShell5.1 Expand-Archive's nested-path failure; switched to built-in Windows tar and the rerun passes. The regression uses a tiny fixture archive, actual tar and no network.
+- PowerShell AST and `-CheckOnly` pass; CheckOnly reports occupied local app/database ports and performs no actions. Node syntax, scoped Biome, root/web TypeScript, exact contracts173 operations/174 schemas and diff whitespace checks pass. These are bounded bootstrap/current-source checks, not a rerun of the full historical application aggregate.
+
+Not performed: first Docker installation/UAC/WSL/BIOS setup on a clean recipient machine, reboot/resume, actual Docker image pulls and complete clean-machine bootstrap-to-browser, or remote CI. Existing local app/database services were preserved. This adds a local setup tool and does not complete M1/M8 or establish production readiness.
+
+## R01 security hardening — `8200b06` (2026-10-13)
+
+**Committed:**
+- `b492838` fix(marketing): add audit trail and outbox events to AutomationService — createAutomation, updateAutomation, enrollLead, cancelEnrollment now emit audit_event and outbox rows. Addresses handoff finding #3.
+- `8200b06` fix(security): harden SECURITY DEFINER functions and public site service:
+  - Migration 0031: REVOKE ALL FROM PUBLIC on 6 SECURITY DEFINER functions (0023–0027). Only estate_runtime retains EXECUTE.
+  - Visitor OTP challenge: 10-minute expiry window on verification.
+  - Visitor logout: server-side deactivation of visitor_identity row.
+  - Analytics/unsubscribe: honest 202 status instead of false 200 success claims.
+
+**Known remaining R01 items:**
+- Consent-api: 5 pre-existing failures (consentEligible logic, not caused by current changes).
+- `assertPublishedVersion` uses idempotency receipt as proxy — needs current campaign version check (R15/R16 scope).
+- Visitor session stolen-cookie window (30 days) — full fix requires status='active' check in every consuming query.
+
+## Latest verification run — `8200b06` (2026-10-13)
 
 | Suite | Result |
 |---|---|
-| Unit tests | 2,534 passed (79 files) |
-| Integration tests | 158 passed (16 files, 0 failures) |
-| CMS tests | 153 passed (2 files) |
-| MLS tests | 490 passed (13 files) |
-| Recovery tests | 11 passed |
-| Redis acceptance | 1 passed (Memurai 4.1.2 on loopback) |
-| Control/provisioning | 44 passed (2 files) |
-| Runtime role + isolation | 17 passed (2 files) |
+| Root unit+integration (vitest) | 3,960 passed, 8 failed (5 consent-api pre-existing), 104 skipped |
+| CMS integration | 96 passed |
+| Public site API | 25 passed (including 202 status updates) |
 | Contract validation | 173 operations, 174 schemas — PASS |
 | TypeScript typecheck | PASS |
-| Biome lint (source) | PASS (`.local/` build artifacts excluded) |
+| Biome lint (source) | PASS |
 
-Session boundary probe now passes in production mode (previously crashed). All 8 synthetic-session-boundary tests pass including production OIDC readiness.
+The 5 consent-api failures are pre-existing (consentEligible logic) and unrelated to current changes. The 3 public-site failures that appeared after the 202 status change were fixed in test expectations.
 
 ## R02 Contract operations — continued (Claude Code)
 
