@@ -275,6 +275,19 @@ export class CmsRepository {
     return result.rows[0];
   }
 
+  async createMediaUploadSlot(
+    assetId: string,
+    mimeType: string,
+    byteSize: number,
+    purpose: "media" | "contact_import",
+  ): Promise<MediaRow> {
+    const result = await this.client.query<MediaRow>(
+      "INSERT INTO app.media_asset(tenant_id,id,object_key,mime_type,byte_size,scan_state,purpose,rights,upload_expires_at) VALUES(app.current_tenant(),$1,$2,$3,$4,'pending',$5,'{}',now()+interval '1 hour') RETURNING *",
+      [assetId, assetId, mimeType, byteSize, purpose],
+    );
+    return result.rows[0];
+  }
+
   async createForm(siteId: string, name: string, definition: unknown, state: string): Promise<FormRow> {
     const result = await this.client.query<FormRow>(
       "INSERT INTO app.form_schema(tenant_id,site_id,name,version,definition,state) VALUES(app.current_tenant(),$1,$2,1,$3,$4) RETURNING *",

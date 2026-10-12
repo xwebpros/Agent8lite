@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { CmsProfileReferencePort } from "../../../../packages/cms/ports";
+import type { StoragePort } from "../../../../packages/providers/storage/port";
 import { DraftConflictError, TemplateUnavailableError } from "../../../../packages/cms";
 import { RecoveryEnvelopeError } from "../../../../packages/cms/recovery";
 import { HistoryEnvelopeError } from "../../../../packages/cms/history";
@@ -55,6 +56,7 @@ export class CmsHttpAdapter {
       profiles: (client: PoolClient, context: TenantContext) => CmsProfileReferencePort;
       trustedLinkPolicy: PublishPolicy;
       allowedOrigins: ReadonlySet<string>;
+      storage: StoragePort;
     },
   ) {}
 
@@ -118,6 +120,7 @@ export class CmsHttpAdapter {
         const service = new CmsService(client, context, traceId, {
           profiles: this.dependencies.profiles(client, context),
           trustedLinkPolicy: this.dependencies.trustedLinkPolicy,
+          storage: this.dependencies.storage,
         });
         const path = url.pathname;
         const prefix = `/v1/orgs/${context.organizationId}`;
@@ -249,6 +252,10 @@ export class CmsHttpAdapter {
         const siteById = new RegExp(`^${prefix}/sites/([^/]+)$`).exec(path);
         if (siteById && method === "PATCH")
           return service.updateSite(siteById[1], request.body as Schemas["SiteWrite"], commandHeaders);
+
+        // ADR-058: media upload grant
+        if (path === `${prefix}/uploads` && method === "POST")
+          return service.createUploadGrant(request.body as Schemas["UploadRequest"], commandHeaders);
 
         // frozen saveRevision POST remains unavailable
         throw new AccessError(404, "route_unavailable", "Route unavailable.");

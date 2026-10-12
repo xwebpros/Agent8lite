@@ -1,5 +1,25 @@
 # Implementation status — 2026-10-12
 
+## ADR-058 Media upload grant — complete (Claude Code)
+
+ADR-058 written and committed on `feat/W01-foundation`. Adds `createUploadGrant` to the CMS module.
+
+**Storage provider seam (`packages/providers/storage/`):**
+- `port.ts`: `StoragePort` interface — `createUploadGrant(request)` → `StorageUploadGrant`.
+- `mock.ts`: `MockStorageProvider` — returns loopback dev URLs at `{devApiOrigin}/dev/uploads/{assetId}`.
+- `CmsHttpAdapter` and `CmsService` accept `storage: StoragePort` in their `dependencies`. `main.ts` injects `MockStorageProvider`.
+
+**API (`apps/api/src/cms/`):**
+- `repository.ts`: `createMediaUploadSlot()` — INSERTs a `pending` `media_asset` row. Uses distinct `$1`/`$2` parameters for `id` (uuid) and `object_key` (text) to avoid PG-42P08 type ambiguity.
+- `service.ts`: `createUploadGrant()` — `media.write`, validates `UploadRequest`, idempotent with static route `cms:upload-grant` (assetId generated inside closure for correct replay).
+- `http-adapter.ts`: `POST .../uploads` route.
+
+**Tests (`tests/cms/native-drafts.integration.test.ts`):** 5 new tests — 201 grant creation, idempotency replay, distinct keys, 403 permission denied, tenant isolation via org prefix.
+
+**Verification:** 96/96 integration tests pass. TypeScript clean.
+
+---
+
 ## ADR-057 Document archive and site update — complete (Claude Code)
 
 ADR-057 written and committed on `feat/W01-foundation`. Adds `archiveDocument` and `updateSite` operations.

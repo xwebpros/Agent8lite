@@ -48,6 +48,7 @@ import type { NativeCaptureDecision } from "../../../packages/contracts/internal
 import { validateSyntheticConsent } from "./contract-validation";
 import { tryNativeMockRead } from "./mls";
 import { CmsHttpAdapter } from "./cms";
+import { MockStorageProvider } from "../../../packages/providers/storage/mock";
 import { createCmsProfileReferencePort } from "./admin-profile-reference";
 import { createStaffPools } from "../../../packages/db/staff-pools";
 import { createStaffHttpAdapter } from "./control/http-adapter";
@@ -324,6 +325,7 @@ class ApiController {
           profiles: createCmsProfileReferencePort,
           trustedLinkPolicy: { approvedLinkOrigins: new Set() },
           allowedOrigins,
+          storage: new MockStorageProvider(`http://127.0.0.1:${process.env.PORT ?? 3001}`),
         }).handle({
           method: req.method,
           url: req.originalUrl,

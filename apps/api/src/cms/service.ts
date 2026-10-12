@@ -9,6 +9,7 @@ import {
   templateThemeVersion,
 } from "../../../../packages/cms";
 import type { CmsProfileReferencePort } from "../../../../packages/cms/ports";
+import type { StoragePort } from "../../../../packages/providers/storage/port";
 import { revisionRecovery } from "../../../../packages/cms/recovery";
 import { requireRevisionHistory } from "../../../../packages/cms/history";
 import type { components } from "../../../../packages/contracts/generated/api";
@@ -127,7 +128,7 @@ export class CmsService {
     private readonly client: PoolClient,
     readonly context: TenantContext,
     traceId: string,
-    private readonly dependencies: { profiles: CmsProfileReferencePort; trustedLinkPolicy: PublishPolicy },
+    private readonly dependencies: { profiles: CmsProfileReferencePort; trustedLinkPolicy: PublishPolicy; storage: StoragePort },
   ) {
     this.repository = new CmsRepository(client);
     this.audit = new CrmService(client, context, traceId);
@@ -830,6 +831,50 @@ export class CmsService {
       },
       async (historical) => {
         await this.site(historical.id);
+      },
+    );
+  }
+
+  // ── Media upload grants (ADR-058 / MOD-C-006) ────────────────────────────
+
+  async createUploadGrant(
+    body: Schemas["UploadRequest"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["UploadGrant"]>> {
+    await this.authorize("media.write");
+    validateSchema("UploadRequest", body);
+    return this.idempotent(
+      "cms:upload-grant",
+      "media.write",
+      "UploadGrant",
+      body,
+      headers,
+      async () => {
+        const assetId = randomUUID();
+        const slot = await this.repository.createMediaUploadSlot(
+          assetId,
+          body.mimeType,
+          body.bytes,
+          body.purpose,
+        );
+        const grant = await this.dependencies.storage.createUploadGrant({
+          assetId: slot.id,
+          mimeType: body.mimeType,
+          bytes: body.bytes,
+          purposeKey: body.purpose,
+        });
+        const grantBody: Schemas["UploadGrant"] = {
+          assetId: slot.id,
+          url: grant.url,
+          method: "PUT",
+          expiresAt: grant.expiresAt,
+          requiredHeaders: grant.requiredHeaders,
+        };
+        validateSchema("UploadGrant", grantBody, true);
+        return { body: grantBody, status: 201, etag: documentEtag(Number(slot.row_version)) };
+      },
+      async (historical) => {
+        await this.repository.media(historical.assetId);
       },
     );
   }

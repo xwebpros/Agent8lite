@@ -11,6 +11,7 @@ import { fixtures } from "../../packages/db/fixtures";
 import { withTenantTransaction } from "../../packages/db/tenant-transaction";
 import { assertContract, assertProblem, type Schemas } from "../helpers/api";
 import { cmsTestOrigin, cmsTestPolicy, createIsolatedCms, testProfilePort } from "./isolated";
+import { MockStorageProvider } from "../../packages/providers/storage/mock";
 
 let environment: Awaited<ReturnType<typeof createIsolatedCms>>;
 type Session = { token: string; csrfToken: string; org: string; user: string };
@@ -91,6 +92,7 @@ async function direct<T>(
         new CmsService(client, context, randomUUID(), {
           profiles: testProfilePort(client, context, environment.deniedProfiles),
           trustedLinkPolicy: cmsTestPolicy,
+          storage: new MockStorageProvider(cmsTestOrigin),
         }),
         client,
       ),
@@ -1340,6 +1342,7 @@ describe("unregistered native CMS API against a disposable real-role database", 
               },
             },
             trustedLinkPolicy: cmsTestPolicy,
+            storage: new MockStorageProvider(cmsTestOrigin),
           });
           return service.createSite(
             { name: "Wrong port binding", businessProfileId: profileA, templateCode: "agent-introduction" },
@@ -1980,5 +1983,92 @@ describe("ADR-057: document archive and site update", () => {
       await request(otherOwner, "POST", `${base(otherOwner)}/documents/${document.id}/archive`, {}),
       404,
     );
+  });
+});
+
+describe("ADR-058: media upload grant", () => {
+  const uploadBody = () => ({
+    filename: "photo.jpg",
+    mimeType: "image/jpeg",
+    bytes: 1024,
+    purpose: "media" as const,
+  });
+
+  it("creates an upload grant and returns 201 UploadGrant", async () => {
+    const grant = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    expect(grant.method).toBe("PUT");
+    expect(grant.url).toMatch(/\/dev\/uploads\//);
+    expect(grant.assetId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(typeof grant.expiresAt).toBe("string");
+    expect(grant.requiredHeaders["Content-Type"]).toBe("image/jpeg");
+  });
+
+  it("replays the same grant for the same idempotency key", async () => {
+    const key = randomUUID();
+    const first = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody(), { key }),
+      "UploadGrant",
+      201,
+    );
+    const second = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody(), { key }),
+      "UploadGrant",
+      201,
+    );
+    expect(second.assetId).toBe(first.assetId);
+    expect(second.url).toBe(first.url);
+  });
+
+  it("returns distinct grants for distinct idempotency keys", async () => {
+    const first = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    const second = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    expect(second.assetId).not.toBe(first.assetId);
+  });
+
+  it("returns 403 when media.write permission is absent", async () => {
+    const readOnly = grants.filter((g) => g.code !== "media.write");
+    await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+      JSON.stringify(readOnly),
+      editorRole,
+    ]);
+    try {
+      await assertProblem(
+        await request(editor, "POST", `${base(editor)}/uploads`, uploadBody()),
+        403,
+      );
+    } finally {
+      await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+        JSON.stringify(grants),
+        editorRole,
+      ]);
+    }
+  });
+
+  it("isolates upload grants across tenant boundaries by using distinct org prefixes", async () => {
+    const grant = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    const otherGrant = await success(
+      await request(otherOwner, "POST", `${base(otherOwner)}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    expect(otherGrant.assetId).not.toBe(grant.assetId);
   });
 });

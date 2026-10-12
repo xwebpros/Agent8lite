@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import pg, { type PoolClient } from "pg";
 import { CmsHttpAdapter } from "../../apps/api/src/cms";
 import type { CmsProfileReferencePort } from "../../packages/cms/ports";
+import { MockStorageProvider } from "../../packages/providers/storage/mock";
 import { AccessError, type TenantContext } from "../../packages/db/tenant-transaction";
 import { migrate } from "../../packages/db/migrate";
 import { seed } from "../../packages/db/seed";
@@ -94,6 +95,7 @@ export async function createIsolatedCms() {
       profiles: (client, context) => testProfilePort(client, context, deniedProfiles),
       trustedLinkPolicy: cmsTestPolicy,
       allowedOrigins: new Set([cmsTestOrigin]),
+      storage: new MockStorageProvider(cmsTestOrigin),
     });
     server = createServer(async (request, response) => {
       try {
