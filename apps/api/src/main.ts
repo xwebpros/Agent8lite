@@ -18,7 +18,9 @@ import {
   withTenantTransaction,
 } from "../../../packages/db/tenant-transaction";
 import {
+  createSession,
   createSyntheticSession,
+  readProductionSession,
   readSession,
   resolveVerifiedIdentity,
   revokeSession,
@@ -32,6 +34,7 @@ import { CrmService, assertUuid } from "./crm-service";
 import { organization } from "./models";
 import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { MockOidcProvider } from "../../../packages/providers/identity/mock";
+import { OidcTokenVerifier, discoverOidcIssuer } from "../../../packages/providers/identity/oidc";
 import { acceptInvitation, AdminService } from "./admin-service";
 import { SupportService } from "./support-service";
 import { NotificationService } from "./notification-service";
@@ -74,6 +77,11 @@ const oidc = syntheticEnabled
       mode: process.env.APP_ENV === "test" ? "test" : "development",
     })
   : null;
+const productionOidc = !syntheticEnabled && process.env.OIDC_ISSUER && process.env.OIDC_CLIENT_ID
+  ? { issuer: process.env.OIDC_ISSUER, clientId: process.env.OIDC_CLIENT_ID }
+  : null;
+let productionVerifier: OidcTokenVerifier | null = null;
+const pendingOidcStates = new Map<string, { nonce: string; verifier: string; expires: number }>();
 const loopback = (address: string | undefined) =>
   !!address && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address);
 const loginAttempts = new Map<string, { count: number; resets: number }>();
@@ -159,7 +167,7 @@ async function sessionBody(session: ServerSession, res: Response) {
     const identity = identities.rows[0];
     res.setHeader("X-CSRF-Token", session.csrfToken);
     res.setHeader("X-Member-Id", context.memberId);
-    res.setHeader("X-Synthetic-Identity", "true");
+    if (syntheticEnabled) res.setHeader("X-Synthetic-Identity", "true");
     res.setHeader("ETag", `"${identity.row_version}"`);
     const body = {
       userId: session.userId,
@@ -189,7 +197,7 @@ class ApiController {
           res.setHeader("X-Verification-Instance", process.env.API_VERIFICATION_ID!);
         res.json({
           status: "ready",
-          identityMode: syntheticEnabled ? "synthetic-loopback" : "unconfigured",
+          identityMode: syntheticEnabled ? "synthetic-loopback" : productionOidc ? "oidc" : "unconfigured",
           mlsMode: "mock",
           deliveryMode: "no-delivery",
         });
@@ -251,6 +259,86 @@ class ApiController {
         res.json(await sessionBody(session, res));
         return;
       }
+      if (req.path === "/v1/auth/login" && req.method === "POST" && productionOidc) {
+        rate(loginAttempts, req.socket.remoteAddress ?? "", 20);
+        origin(req);
+        const discovery = await discoverOidcIssuer(productionOidc.issuer);
+        const verifier = randomBytes(32).toString("base64url");
+        const state = randomBytes(32).toString("base64url");
+        const nonce = randomBytes(32).toString("base64url");
+        const redirectUri = req.body?.redirectUri;
+        if (!redirectUri || typeof redirectUri !== "string" || !allowedOrigins.has(new URL(redirectUri).origin))
+          throw new AccessError(422, "redirect_uri_invalid", "A permitted redirect URI is required.");
+        const codeChallenge = createHash("sha256").update(verifier).digest("base64url");
+        const params = new URLSearchParams({
+          response_type: "code",
+          client_id: productionOidc.clientId,
+          redirect_uri: redirectUri,
+          scope: "openid email profile",
+          state,
+          nonce,
+          code_challenge: codeChallenge,
+          code_challenge_method: "S256",
+        });
+        pendingOidcStates.set(state, { nonce, verifier, expires: Date.now() + 10 * 60_000 });
+        for (const [k, s] of pendingOidcStates) if (s.expires < Date.now()) pendingOidcStates.delete(k);
+        res.json({ authorizationUrl: `${discovery.authorizationEndpoint}?${params}` });
+        return;
+      }
+      if (req.path === "/v1/auth/callback" && req.method === "POST" && productionOidc) {
+        rate(loginAttempts, req.socket.remoteAddress ?? "", 20);
+        origin(req);
+        const { code, state, redirectUri } = req.body ?? {};
+        if (!code || !state || !redirectUri)
+          throw new AccessError(422, "callback_parameters_missing", "Code, state and redirectUri are required.");
+        const pending = pendingOidcStates.get(state);
+        if (!pending) throw new AccessError(401, "oidc_state_invalid", "State expired or invalid.");
+        pendingOidcStates.delete(state);
+        if (pending.expires < Date.now())
+          throw new AccessError(401, "oidc_state_expired", "Authentication attempt expired.");
+        const discovery = await discoverOidcIssuer(productionOidc.issuer);
+        if (!productionVerifier)
+          productionVerifier = new OidcTokenVerifier({ issuer: discovery.issuer, jwksUri: discovery.jwksUri });
+        const tokenResponse = await fetch(discovery.tokenEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: productionOidc.clientId,
+            redirect_uri: redirectUri,
+            code,
+            code_verifier: pending.verifier,
+          }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!tokenResponse.ok)
+          throw new AccessError(401, "oidc_token_exchange_failed", "Identity provider rejected the token exchange.");
+        const tokens = (await tokenResponse.json()) as { id_token?: string };
+        if (!tokens.id_token)
+          throw new AccessError(401, "oidc_no_id_token", "Identity provider did not return an ID token.");
+        const verified = await productionVerifier.verifyIdentityToken(tokens.id_token, {
+          clientId: productionOidc.clientId,
+          nonce: pending.nonce,
+        });
+        const userId = await resolveVerifiedIdentity(runtimePool, verified);
+        const membership = await runtimePool.query(
+          "SELECT tenant_id FROM app.membership WHERE user_id=$1 AND status='active' ORDER BY created_at LIMIT 1",
+          [userId],
+        );
+        if (!membership.rowCount)
+          throw new AccessError(403, "membership_required", "Active membership required.");
+        const result = await createSession(runtimePool, userId, membership.rows[0].tenant_id);
+        res.cookie(sessionCookie, result.token, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: true,
+          path: "/",
+          maxAge: 8 * 60 * 60 * 1000,
+        });
+        const session = await readProductionSession(runtimePool, result.token);
+        res.json(await sessionBody(session, res));
+        return;
+      }
       if (req.path.startsWith("/v1/public/")) {
         const isMutation = req.method !== "GET" && req.method !== "HEAD";
         rate(
@@ -264,14 +352,10 @@ class ApiController {
         });
         if (handled) return;
       }
-      if (!syntheticEnabled)
-        throw new AccessError(
-          401,
-          "identity_provider_unconfigured",
-          "An approved identity provider is required.",
-        );
-      const session = await readSession(runtimePool, req.cookies?.[sessionCookie]);
-      localAccess(req);
+      const session = syntheticEnabled
+        ? await readSession(runtimePool, req.cookies?.[sessionCookie])
+        : await readProductionSession(runtimePool, req.cookies?.[sessionCookie]);
+      if (syntheticEnabled) localAccess(req);
       const reading = ["GET", "HEAD"].includes(req.method);
       rate(
         requestRates,
@@ -291,10 +375,24 @@ class ApiController {
         res.json(await sessionBody({ ...session, organizationId: req.body.organizationId }, res));
         return;
       }
+      if (req.path === "/v1/session/organization" && req.method === "POST") {
+        if (!req.body || Object.keys(req.body).length !== 1)
+          throw new AccessError(422, "organization_invalid", "Organization ID required.");
+        assertUuid(req.body.organizationId);
+        await switchOrganization(runtimePool, session, req.body.organizationId);
+        res.json(await sessionBody({ ...session, organizationId: req.body.organizationId }, res));
+        return;
+      }
       if (req.path === "/dev/logout" && req.method === "POST") {
         localIdentity(req);
         await revokeSession(runtimePool, session);
         res.clearCookie(sessionCookie, { path: "/" });
+        res.status(204).end();
+        return;
+      }
+      if (req.path === "/v1/logout" && req.method === "POST") {
+        await revokeSession(runtimePool, session);
+        res.clearCookie(sessionCookie, { path: "/", httpOnly: true, sameSite: "lax", secure: true });
         res.status(204).end();
         return;
       }
@@ -1450,7 +1548,7 @@ if (typeof require === "function" && typeof module !== "undefined" && require.ma
       console.log(
         JSON.stringify({
           status: "listening",
-          identityMode: syntheticEnabled ? "synthetic-loopback" : "unconfigured",
+          identityMode: syntheticEnabled ? "synthetic-loopback" : productionOidc ? "oidc" : "unconfigured",
           mlsMode: "mock",
           deliveryMode: "no-delivery",
         }),

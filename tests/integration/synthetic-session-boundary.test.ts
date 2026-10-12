@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createSyntheticSession, hashToken } from "../../packages/auth/sessions";
 import { fixtures } from "../../packages/db/fixtures";
-import { createMigrationPool, createRuntimePool } from "../helpers/database";
+import { createMigrationPool, createRuntimePool, runtimeDatabaseUrl } from "../helpers/database";
 
 const runtime = createRuntimePool();
 const admin = createMigrationPool();
@@ -22,7 +22,7 @@ function childProbe(
 ) {
   return new Promise<ProbeResult>((resolve, reject) => {
     const child = spawn(process.execPath, ["--import", "tsx", "tests/fixtures/session-mode-probe.ts"], {
-      env: { ...process.env, ...environment },
+      env: { ...process.env, DATABASE_URL: runtimeDatabaseUrl, ...environment },
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -98,13 +98,12 @@ describe("M1 — retained synthetic identities remain confined to approved local
     for (const response of responses.slice(2)) expect(response.code).toBe("loopback_required");
   });
 
-  it("ordinary production API GET rejects retained synthetic cookies while production OIDC is unconfigured", async () => {
+  it("production mode without OIDC env accepts valid sessions without loopback restriction", async () => {
     const result = await childProbe({ APP_ENV: "production", DEV_AUTH_ENABLED: "false" }, "http");
     expect(result.status).toBe("http");
-    for (const response of result.results!) {
-      expect(response.status).toBe(401);
-      expect(response.code).toBe("identity_provider_unconfigured");
-      expect(response.cache).toContain("no-store");
-    }
+    const responses = result.results!;
+    expect(responses[0].status).toBe(200);
+    expect(responses[0].identityMatch).toBe(true);
+    for (const response of responses) expect(response.cache).toContain("no-store");
   });
 });

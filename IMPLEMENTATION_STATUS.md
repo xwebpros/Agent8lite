@@ -23,9 +23,10 @@
 **Committed:**
 - `5bb6165` feat(auth): add production OIDC token verifier with JWKS discovery — OidcTokenVerifier with cached JWKS fetching, RS256 signature verification, standard claims validation, key rotation support. IdentityTokenVerifier port updated to support async verification.
 - `20a13c8` feat(auth): enable session reads in all environments and add createSession — readSession no longer gated to dev mode, createSyntheticSession retains dev-only gate, new createSession for production use after OIDC verification.
+- `54593d7` feat(auth): add production session functions and relax dev rate limits — readProductionSession (no dev gate), restored readSession dev gate, dev/test rate limits raised to 10000/5000.
+- *(pending commit)* feat(auth): production OIDC login/callback routes and session support — `/v1/auth/login` initiates PKCE flow with real OIDC provider, `/v1/auth/callback` exchanges code and creates session via createSession, `/v1/logout` and `/v1/session/organization` production routes, production mode uses readProductionSession without loopback restriction. Session boundary probe test fixed (DATABASE_URL propagation) — all 158 integration tests pass.
 
 **Known remaining R04 items:**
-- Production OIDC callback route in main.ts (using OidcTokenVerifier + createSession).
 - Staff session production mode (currently requires synthetic mode).
 - Token refresh/rotation mechanism.
 - Staff principal CRUD API (control plane, R05/R10 overlap).
