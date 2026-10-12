@@ -464,3 +464,70 @@ describe("M2 — durable CRM commands and optimistic concurrency", () => {
     );
   });
 });
+
+describe("session profile", () => {
+  async function profileRevision() {
+    const row = await admin.query(
+      "SELECT row_version FROM app.user_identity WHERE id=$1",
+      [owner.session.userId],
+    );
+    return `"${row.rows[0].row_version}"`;
+  }
+
+  it("updates display name and timezone with optimistic concurrency", async () => {
+    const revision = await profileRevision();
+    const newName = `Synthetic Owner ${randomUUID().slice(0, 6)}`;
+    const response = await owner.command(
+      "/v1/session/profile",
+      { displayName: newName, phone: null, timezone: "America/Chicago" },
+      { method: "PATCH", revision },
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    assertContract("Profile", body);
+    expect(body.displayName).toBe(newName);
+    expect(body.timezone).toBe("America/Chicago");
+
+    const restored = await owner.command(
+      "/v1/session/profile",
+      { displayName: "Synthetic Owner", phone: null, timezone: "America/New_York" },
+      { method: "PATCH", revision: response.headers.get("etag")! },
+    );
+    expect(restored.status).toBe(200);
+  });
+
+  it("rejects invalid timezone", async () => {
+    const revision = await profileRevision();
+    await assertProblem(
+      await owner.command(
+        "/v1/session/profile",
+        { displayName: "Test", phone: null, timezone: "Invalid/Zone" },
+        { method: "PATCH", revision },
+      ),
+      422,
+    );
+  });
+
+  it("rejects empty display name", async () => {
+    const revision = await profileRevision();
+    await assertProblem(
+      await owner.command(
+        "/v1/session/profile",
+        { displayName: "   ", phone: null, timezone: "America/New_York" },
+        { method: "PATCH", revision },
+      ),
+      422,
+    );
+  });
+
+  it("rejects stale revision", async () => {
+    await assertProblem(
+      await owner.command(
+        "/v1/session/profile",
+        { displayName: "Test", phone: null, timezone: "America/New_York" },
+        { method: "PATCH", revision: '"0"' },
+      ),
+      412,
+    );
+  });
+});
