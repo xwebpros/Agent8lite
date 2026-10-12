@@ -65,6 +65,8 @@ jobs:
         run: |
           pnpm exec vitest run --config scripts/vitest.launch.config.mts
           pnpm exec vitest run --config scripts/hosting/vitest.config.mts
+      - name: Source-package bootstrap boundaries
+        run: pnpm exec vitest run --config scripts/bootstrap/vitest.config.mts
       - run: pnpm build
       - run: pnpm verify:runtime
       - name: Compiled API fixture-mode and production-denial smoke

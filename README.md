@@ -6,6 +6,8 @@ The local application includes organization switching and administration, contac
 
 Use Node 24.19.0 and pnpm 11.25.0. Start the dedicated PostgreSQL/PostGIS service, migrate and seed explicitly enabled synthetic data, then run `pnpm dev`. The existing Windows workspace uses a dedicated portable database on loopback port 55432. Follow the [local development runbook](docs/runbooks/local-development.md) for setup, role separation and verification commands.
 
+For a clean source ZIP on 64-bit Intel/AMD Windows, extract it and double-click **Start-Agent8lite.cmd**. The launcher installs portable pinned Node/pnpm, guides Docker setup, initializes its own local synthetic database and opens the app when ready. Windows/Docker approval or a restart may be needed on the first run. See the [Windows bootstrap runbook](docs/runbooks/bootstrap-windows.md) for retry, data preservation and source-package instructions.
+
 Open the application at `http://localhost:3000`. Synthetic sign-in offers fictional owner and agent identities. No app-store distribution is required; actual iPhone/Android installation acceptance needs HTTPS staging and physical-device checks.
 
 Run `pnpm contracts:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test:isolated` and `pnpm build` for non-browser verification. The isolated test runner creates and removes only its own databases, API processes and private-object directories. Browser tests use the approved Playwright harness when browser access is available.
