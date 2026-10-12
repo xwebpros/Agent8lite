@@ -54,6 +54,7 @@ import { createStaffPools } from "../../../packages/db/staff-pools";
 import { createStaffHttpAdapter } from "./control/http-adapter";
 import { withStaffTransaction } from "../../../packages/auth/staff-sessions";
 import { CampaignDraftService, campaignEtag } from "./marketing";
+import { AutomationService } from "./marketing/automation-service";
 import { BroadcastPreviewService } from "./marketing/broadcast-preview-service";
 import { CampaignWorkflowService, WorkflowCommandError } from "./marketing/workflow-service";
 import { MessageDesignDraftService } from "./marketing/message-design-service";
@@ -710,6 +711,49 @@ class ApiController {
                 key: req.headers["idempotency-key"] as string | undefined,
                 ifMatch: revision(req),
               });
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
+          if (resource === "automations") {
+            localAccess(req);
+            const automations = new AutomationService(client, context);
+            let response: ApiCommandResponse;
+            if (req.method === "GET" && id && !action) {
+              response = { body: await automations.getAutomation(id), status: 200, etag: undefined };
+            } else if (req.method === "GET" && !id && !action) {
+              response = { body: await automations.listAutomations(req.query), status: 200 };
+            } else if (req.method === "POST" && !id && !action) {
+              const result = await automations.createAutomation(req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+              response = result as ApiCommandResponse;
+            } else if (req.method === "PATCH" && id && !action) {
+              const result = await automations.updateAutomation(id, req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+                ifMatch: revision(req),
+              });
+              response = result as ApiCommandResponse;
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
+          if (resource === "enrollments") {
+            localAccess(req);
+            const automations = new AutomationService(client, context);
+            let response: ApiCommandResponse;
+            if (req.method === "POST" && !id && !action) {
+              const result = await automations.enrollLead(req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+              response = result as ApiCommandResponse;
+            } else if (req.method === "GET" && !id && !action) {
+              response = { body: await automations.listEnrollments(req.query), status: 200 };
+            } else if (req.method === "POST" && id && action === "cancel") {
+              const result = await automations.cancelEnrollment(id, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+              response = result as ApiCommandResponse;
             } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
             if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
             return response;

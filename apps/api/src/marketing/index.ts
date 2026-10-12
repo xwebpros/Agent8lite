@@ -23,3 +23,11 @@ export {
   type CampaignWorkflowPage,
   type CampaignWorkflowVersion,
 } from "./workflow-service";
+export {
+  AutomationService,
+  type AutomationMutation,
+  type EnrollmentMutation,
+  type CancelMutation,
+  type AutomationPage,
+  type EnrollmentPage,
+} from "./automation-service";
