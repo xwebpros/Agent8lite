@@ -34,6 +34,7 @@ const automationGrants: PermissionGrant[] = [
   { code: "campaigns.read", scope: "organization" },
   { code: "campaigns.write", scope: "organization" },
   { code: "campaigns.publish", scope: "organization" },
+  { code: "campaigns.enroll", scope: "organization" },
   { code: "automations.read", scope: "organization" },
   { code: "automations.write", scope: "organization" },
 ];
@@ -115,10 +116,15 @@ beforeAll(async () => {
       "INSERT INTO app.entitlement(tenant_id,feature,state)VALUES($1,'marketing','enabled')",
       [tenant],
     );
-  // Insert synthetic lead contacts for enrollment tests (not in the default seed)
+  // Insert synthetic contact and lead for enrollment tests (not in the default seed)
+  const syntheticContactId = randomUUID();
   await admin.query(
     "INSERT INTO app.contact(tenant_id,id,display_name,created_by_member_id)VALUES($1,$2,'Synthetic Lead A',$3) ON CONFLICT DO NOTHING",
-    [fixtures.orgA, fixtures.leadA, fixtures.ownerMemberA],
+    [fixtures.orgA, syntheticContactId, fixtures.ownerMemberA],
+  );
+  await admin.query(
+    "INSERT INTO app.lead(tenant_id,id,contact_id,source_id,owner_member_id)VALUES($1,$2,$3,(SELECT id FROM app.lead_source WHERE tenant_id=$1 LIMIT 1),$4) ON CONFLICT DO NOTHING",
+    [fixtures.orgA, fixtures.leadA, syntheticContactId, fixtures.ownerMemberA],
   );
   ownerHttp = await new ApiSession().signIn("owner");
 });
@@ -250,7 +256,7 @@ describe("ADR-060 enrollment CRUD", () => {
       svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key: randomUUID() }),
     );
     const cancelled = await use(a, (svc) => svc.cancelEnrollment(body.id, { key: randomUUID() }));
-    expect(cancelled.status).toBe(200);
+    expect(cancelled.status).toBe(201);
     expect(cancelled.body.state).toBe("cancelled");
   });
 
@@ -279,8 +285,11 @@ describe("ADR-060 enrollment CRUD", () => {
     );
   });
 
-  it("rejects enrollment without automations.write", async () => {
-    const a = await actor([{ code: "automations.read", scope: "organization" }]);
+  it("rejects enrollment without campaigns.enroll", async () => {
+    const a = await actor([
+      { code: "automations.read", scope: "organization" },
+      { code: "automations.write", scope: "organization" },
+    ]);
     const vId = await publishedVersion(ownerA);
     await expect(
       use(a, (svc) =>

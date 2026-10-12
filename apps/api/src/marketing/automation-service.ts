@@ -42,11 +42,11 @@ type ReceiptRow = {
 
 export type AutomationMutation = { body: Schemas["Automation"]; status: 200 | 201; etag: string };
 export type EnrollmentMutation = { body: Schemas["Enrollment"]; status: 201; etag: string };
-export type CancelMutation = { body: Schemas["Enrollment"]; status: 200; etag: string };
+export type CancelMutation = { body: Schemas["Enrollment"]; status: 201; etag: string };
 export type AutomationPage = Schemas["PageAutomation"];
 export type EnrollmentPage = Schemas["PageEnrollment"];
 
-type Permission = "automations.read" | "automations.write";
+type Permission = "automations.read" | "automations.write" | "campaigns.enroll" | "campaigns.read";
 
 function automationEtag(version: number): string {
   return '"' + version + '"';
@@ -306,7 +306,7 @@ export class AutomationService {
     input: Schemas["EnrollmentWrite"],
     headers: { key: string | undefined },
   ): Promise<EnrollmentMutation> {
-    await this.authorize("automations.write");
+    await this.authorize("campaigns.enroll");
     assertUuid(input.leadId);
     assertUuid(input.campaignVersionId);
     const key =
@@ -319,7 +319,7 @@ export class AutomationService {
     await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
       `${this.context.organizationId}:${this.context.userId}:${route}:${key}`,
     ]);
-    await this.authorize("automations.write");
+    await this.authorize("campaigns.enroll");
     const existing = await this.client.query<ReceiptRow>(
       `SELECT request_hash,response_body,status_code,response_etag FROM app.idempotency_record
        WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
@@ -330,7 +330,7 @@ export class AutomationService {
       if (receipt.request_hash !== requestHash)
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       validateSchema("Enrollment", receipt.response_body, true);
-      await this.authorize("automations.write");
+      await this.authorize("campaigns.enroll");
       return {
         body: receipt.response_body as Schemas["Enrollment"],
         status: 201,
@@ -349,19 +349,19 @@ export class AutomationService {
     ).rows[0];
     const body = enrollmentModel(row);
     const etag = enrollmentEtag(body.version);
-    await this.authorize("automations.write");
+    await this.authorize("campaigns.enroll");
     await this.client.query(
       `INSERT INTO app.idempotency_record
        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
        VALUES(app.current_tenant(),$1,$2,$3,$4,$5,201,$6,'infinity'::timestamptz)`,
       [this.context.userId, route, key, requestHash, JSON.stringify(body), etag],
     );
-    await this.authorize("automations.write");
+    await this.authorize("campaigns.enroll");
     return { body, status: 201, etag };
   }
 
   async listEnrollments(query: { cursor?: string; limit?: number } = {}): Promise<EnrollmentPage> {
-    await this.authorize("automations.read");
+    await this.authorize("campaigns.read");
     const limit = Math.min(Math.max(1, Number(query.limit) || 20), 100);
     const binding = cursorBinding(this.context, "marketing:enrollments", "organization", { limit });
     const after = decodeCursor(query.cursor, binding);
@@ -380,13 +380,13 @@ export class AutomationService {
       nextCursor: hasMore ? encodeCursor(items.at(-1)!.id, binding) : null,
     };
     validateSchema("PageEnrollment", body, true);
-    await this.authorize("automations.read");
+    await this.authorize("campaigns.read");
     return body;
   }
 
   async cancelEnrollment(id: string, headers: { key: string | undefined }): Promise<CancelMutation> {
     assertUuid(id);
-    await this.authorize("automations.write");
+    await this.authorize("campaigns.enroll");
     const key =
       String(headers.key ?? "").slice(0, 255) ||
       (() => {
@@ -397,7 +397,7 @@ export class AutomationService {
     await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
       `${this.context.organizationId}:${this.context.userId}:${route}:${key}`,
     ]);
-    await this.authorize("automations.write");
+    await this.authorize("campaigns.enroll");
     const existing = await this.client.query<ReceiptRow>(
       `SELECT request_hash,response_body,status_code,response_etag FROM app.idempotency_record
        WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
@@ -408,10 +408,10 @@ export class AutomationService {
       if (receipt.request_hash !== requestHash)
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       validateSchema("Enrollment", receipt.response_body, true);
-      await this.authorize("automations.write");
+      await this.authorize("campaigns.enroll");
       return {
         body: receipt.response_body as Schemas["Enrollment"],
-        status: 200,
+        status: 201,
         etag: receipt.response_etag,
       };
     }
@@ -430,15 +430,15 @@ export class AutomationService {
       );
     const body = enrollmentModel(updated.rows[0]);
     const etag = enrollmentEtag(body.version);
-    await this.authorize("automations.write");
+    await this.authorize("campaigns.enroll");
     await this.client.query(
       `INSERT INTO app.idempotency_record
        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
-       VALUES(app.current_tenant(),$1,$2,$3,$4,$5,200,$6,'infinity'::timestamptz)`,
+       VALUES(app.current_tenant(),$1,$2,$3,$4,$5,201,$6,'infinity'::timestamptz)`,
       [this.context.userId, route, key, requestHash, JSON.stringify(body), etag],
     );
-    await this.authorize("automations.write");
-    return { body, status: 200, etag };
+    await this.authorize("campaigns.enroll");
+    return { body, status: 201, etag };
   }
 
   private async assertPublishedVersion(versionId: string) {
@@ -454,11 +454,12 @@ export class AutomationService {
   }
 
   private async assertLead(leadId: string) {
+    assertUuid(leadId);
     const result = await this.client.query(
-      `SELECT 1 FROM app.contact WHERE tenant_id=app.current_tenant() AND id=$1 LIMIT 1`,
+      `SELECT 1 FROM app.lead WHERE tenant_id=app.current_tenant() AND id=$1 AND archived_at IS NULL LIMIT 1`,
       [leadId],
     );
     if (!result.rowCount)
-      throw new AccessError(422, "lead_not_found", "Lead does not exist or is out of scope.");
+      throw new AccessError(422, "lead_not_found", "Lead does not exist, is archived or is out of scope.");
   }
 }
