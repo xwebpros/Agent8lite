@@ -105,8 +105,8 @@ Pushed through `7da55cd`.
 - `9371e6a` feat(R04): staff principal CRUD, grant lifecycle and production identity guard — SECURITY DEFINER functions for cross-principal reads/writes bypassing restrictive RLS guard. Migration 0033: read/write functions, trigger WHEN clause, audit INSERT policy. StaffPrincipalService with list/read/create/update/deactivate. Unrestricted-access lifecycle constraint (all 8 staff codes requires second active administrator). Production identity guard in withStaffTransactionEx (fails fast before DB connect without configured provider). Pre-existing provisioning test fixed. Control tests: 57/57, TypeScript clean.
 
 **Known remaining R04 items:**
-- Invitation system with verified-email matching and one-use hashed expiry.
-- Fresh authentication requirement for financial/staff/high-impact role commands.
+- ~~Invitation system~~ — DONE (`9161785`): POST create (202, duplicate 409, permission 403, invalid-role 422) + POST accept (invalid-token 422). Synthetic token via X-Synthetic-Invitation-Token header.
+- Fresh authentication requirement for financial/staff/high-impact role commands (M6+ scope).
 
 ---
 
@@ -118,11 +118,21 @@ Pushed through `7da55cd`.
 - `15cca51` feat(R05): implement platform staff endpoints — health-summary, configuration, plans CRUD (create + optimistic-concurrency PATCH), audit-events. Migration 0034 grants INSERT/UPDATE on app.plan to estate_control. 9 new control tests (66 total control tests green).
 
 **Known remaining R05 items:**
-- Role/office/business-profile deletion endpoints (not in OpenAPI contract — only GET/POST/PATCH).
-- Pending invitation listing and revocation.
-- Member self-service (leave organization, profile update).
-- Delegation query endpoint ("what can I delegate?").
+- Role/office/business-profile deletion endpoints (not in OpenAPI contract — only GET/POST/PATCH defined).
+- Pending invitation listing/revocation (not in contract — only POST create and POST accept exist).
+- Delegation query (no contract endpoint exists).
 - Durable provisioning bootstrap verification.
+
+**R04 update:** Invitation system is complete (POST create + POST accept + duplicate/permission/validation guards). Fresh-auth for financial/staff commands remains M6+ scope.
+
+**Security fix — `2aab7eb`:** `listMembers` query added explicit `tenant_id=app.current_tenant()` filter. The RLS `membership_select` PERMISSIVE policy allowed `user_id=current_actor()` across tenants, leaking cross-tenant member IDs to the organization owner. Integration test confirms fix.
+
+**Test results (2026-10-13):**
+- Control tests: 66/66 pass (disposable database, 4 suites)
+- Integration tests: 63/63 pass across 7 suites (admin-api, crm-api, invitation-api, deals-configuration-api, database-isolation, outbox, runtime-role)
+- 30 additional integration suites require `TEST_DATABASE_URL` with a disposable acceptance database (by design)
+- Contract validation: 173 operations, 174 schemas — PASS
+- TypeScript: PASS
 
 ---
 
