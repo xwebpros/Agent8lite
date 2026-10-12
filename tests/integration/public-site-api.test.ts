@@ -278,7 +278,7 @@ describe("ADR-052 public site — analytics and unsubscribe", () => {
       occurredAt: new Date().toISOString(),
       consentPolicyVersion: "v1",
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     const body = await res.json();
     assertContract("SubmissionReceipt", body);
   });
@@ -299,14 +299,14 @@ describe("ADR-052 public site — analytics and unsubscribe", () => {
   it("unsubscribeMessage accepts a valid token format", async () => {
     const token = Buffer.from("example-hmac-token").toString("base64url");
     const res = await post("/v1/public/message-unsubscriptions", { token });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     const body = await res.json();
     assertContract("SubmissionReceipt", body);
   });
 
   it("oneClickUnsubscribe accepts One-Click body", async () => {
     const res = await post("/v1/public/one-click-unsubscribe", { "List-Unsubscribe": "One-Click" });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     const body = await res.json();
     assertContract("SubmissionReceipt", body);
   });

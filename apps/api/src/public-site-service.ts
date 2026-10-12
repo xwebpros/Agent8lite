@@ -396,6 +396,7 @@ export class PublicSiteService {
         `UPDATE app.visitor_identity
            SET status='active', updated_at=now()
            WHERE tenant_id=$1 AND site_id=$2 AND auth_subject=$3 AND status='challenge'
+             AND updated_at > now() - interval '10 minutes'
            RETURNING id`,
         [orgId, siteId, otpHash],
       );
@@ -412,7 +413,20 @@ export class PublicSiteService {
     res.status(200).json(receipt);
   }
 
-  async signOutVisitor(_req: Request, res: Response): Promise<void> {
+  async signOutVisitor(req: Request, res: Response): Promise<void> {
+    const siteId = SITE_RE.exec(req.path)?.[1];
+    if (siteId && UUID_RE.test(siteId)) {
+      const visitorId = parseVisitorCookie(req.cookies?.[VISITOR_COOKIE], siteId, this.signingKey);
+      if (visitorId) {
+        await withPublicSiteTransaction(this.pool, siteId, async (client, _context, orgId) => {
+          await client.query(
+            `UPDATE app.visitor_identity SET status='inactive', updated_at=now()
+             WHERE tenant_id=$1 AND site_id=$2 AND id=$3 AND status='active'`,
+            [orgId, siteId, visitorId],
+          );
+        });
+      }
+    }
     res.setHeader(
       "Set-Cookie",
       `${VISITOR_COOKIE}=; HttpOnly; SameSite=Lax; Max-Age=0; Path=/v1/public; Secure`,
@@ -595,11 +609,10 @@ export class PublicSiteService {
   }
 
   async collectPublicAnalytics(_req: Request, res: Response): Promise<void> {
-    // Validate schema then discard — no personal data in storage, no-op in development.
     validateSchema("PublicAnalyticsEvent", _req.body);
-    const receipt = { receiptId: randomUUID(), message: "Event recorded." };
+    const receipt = { receiptId: randomUUID(), message: "Analytics ingestion is not yet configured." };
     validateSchema("SubmissionReceipt", receipt, true);
-    res.status(200).json(receipt);
+    res.status(202).json(receipt);
   }
 
   async unsubscribeMessage(req: Request, res: Response): Promise<void> {
@@ -607,16 +620,22 @@ export class PublicSiteService {
     const token = String(req.body.token);
     if (!HMAC_TOKEN_RE.test(token))
       throw new AccessError(422, "token_invalid", "Unsubscribe token is malformed.");
-    const receipt = { receiptId: randomUUID(), message: "Unsubscribe request received." };
+    const receipt = {
+      receiptId: randomUUID(),
+      message: "Unsubscribe request accepted. Durable suppression is pending implementation.",
+    };
     validateSchema("SubmissionReceipt", receipt, true);
-    res.status(200).json(receipt);
+    res.status(202).json(receipt);
   }
 
   async oneClickUnsubscribe(req: Request, res: Response): Promise<void> {
     validateSchema("OneClickUnsubscribeBody", req.body);
-    const receipt = { receiptId: randomUUID(), message: "Unsubscribe request received." };
+    const receipt = {
+      receiptId: randomUUID(),
+      message: "Unsubscribe request accepted. Durable suppression is pending implementation.",
+    };
     validateSchema("SubmissionReceipt", receipt, true);
-    res.status(200).json(receipt);
+    res.status(202).json(receipt);
   }
 }
 
