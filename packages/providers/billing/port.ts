@@ -48,10 +48,15 @@ export interface BillingWebhookEvent {
   readonly commandId: string;
   readonly providerReference: string;
 }
+export interface HostedPortalSession {
+  readonly url: string;
+  readonly expiresAt: string;
+}
 /** A provider acceptance is not an entitlement or provisioning decision. */
 export interface BillingProvider {
   preview(input: BillingPreviewInput): Promise<ProviderBillingPreview>;
   confirm(command: BillingCommand): Promise<BillingAcceptance>;
   readCurrentState(tenantId: string, commandId: string): Promise<AuthoritativeBillingState | null>;
   verifyWebhook(rawBody: string, signature: string, now?: Date): BillingWebhookEvent;
+  createPortalSession(tenantId: string): Promise<HostedPortalSession>;
 }

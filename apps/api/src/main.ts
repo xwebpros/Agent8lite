@@ -585,6 +585,7 @@ class ApiController {
         "campaign-versions": "campaignVersionId",
         "message-designs": "messageDesignId",
         "contact-merges": "mergeId",
+        "audit-events": "auditEventId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
@@ -642,6 +643,42 @@ class ApiController {
             } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
             if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
             return response;
+          }
+          if (resource === "audit-events") {
+            if (req.method !== "GET" || id || action)
+              throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (req.body !== undefined)
+              throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+            const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
+            const cursor = req.query.cursor as string | undefined;
+            let whereClause = "WHERE tenant_id=$1";
+            const params: (string | number)[] = [session.organizationId, limit + 1];
+            if (cursor) {
+              assertUuid(cursor);
+              whereClause += ` AND (created_at,id)<(SELECT created_at,id FROM app.audit_event WHERE tenant_id=$1 AND id=$${params.length + 1})`;
+              params.push(cursor);
+            }
+            const rows = await client.query(
+              `SELECT id,actor_ref,action,resource_type,resource_id,trace_id,created_at FROM app.audit_event ${whereClause} ORDER BY created_at DESC,id DESC LIMIT $2`,
+              params,
+            );
+            const hasMore = rows.rows.length > limit;
+            const items = rows.rows.slice(0, limit).map((r) => ({
+              id: r.id,
+              actorRef: r.actor_ref,
+              action: r.action,
+              resourceType: r.resource_type,
+              resourceId: r.resource_id,
+              traceId: r.trace_id,
+              createdAt: r.created_at.toISOString(),
+            }));
+            const body = {
+              items,
+              nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null,
+              hasMore,
+            };
+            if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+            return { body, status: 200 };
           }
           if (resource === "message-designs") {
             localAccess(req);
@@ -1008,6 +1045,8 @@ class ApiController {
                   return billing.preview(req.body, req.headers["idempotency-key"] as string);
                 if (resource === "billing" && req.method === "POST" && id === "change-confirmations")
                   return billing.confirm(req.body);
+                if (resource === "billing" && req.method === "POST" && id === "customer-portal")
+                  return billing.openPortal();
                 if (req.method === "POST" && resource === "member-invitations" && !id)
                   return admin.invite(req.body);
                 if (req.method === "POST" && resource === "tickets" && !id) return support.create(req.body);

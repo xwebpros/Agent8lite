@@ -7,6 +7,7 @@ import type {
   BillingPreviewInput,
   BillingProvider,
   BillingWebhookEvent,
+  HostedPortalSession,
   ProviderBillingPreview,
 } from "./port";
 
@@ -124,6 +125,14 @@ export class MockBillingProvider implements BillingProvider {
   async readCurrentState(tenantId: string, commandId: string) {
     const state = this.commands.get(`${tenantId}:${commandId}`)?.authoritative;
     return state ? structuredClone(state) : null;
+  }
+  async createPortalSession(tenantId: string): Promise<HostedPortalSession> {
+    if (!uuid.test(tenantId)) throw new Error("INVALID_BILLING_REFERENCE");
+    const expires = new Date((this.options.clock?.() ?? new Date()).getTime() + 30 * 60 * 1000);
+    return {
+      url: `http://127.0.0.1:3001/dev/billing/portal?tenant=${tenantId}`,
+      expiresAt: expires.toISOString(),
+    };
   }
   verifyWebhook(
     rawBody: string,
