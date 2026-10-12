@@ -112,15 +112,13 @@ Pushed through `7da55cd`.
 
 ## R05 Administration member CRUD — in progress (Claude Code)
 
-**Implemented (uncommitted):**
-- `AdminService.listMembers` — paginated member listing with cursor, `members.read` permission, returns `PageMember` schema.
-- `AdminService.updateMember` — role change, status change (active/disabled), office reassignment via `MemberPatch`. Enforces `members.manage`, delegation assertion, owner-only owner-role assignment, self-disable denial, final-owner protection. Optimistic concurrency via If-Match/ETag.
-- Routes wired in `main.ts`: `GET /v1/orgs/{orgId}/members` and `PATCH /v1/orgs/{orgId}/members/{memberId}`.
-- TypeScript clean.
+**Committed:**
+- `933f1f3` feat(R05): implement member list and update endpoints — `AdminService.listMembers` (paginated, `members.read`), `AdminService.updateMember` (role change, status change, office reassignment, delegation assertion, owner-only owner-role, self-disable denial, final-owner protection, optimistic concurrency).
+- `af55a12` test(R05/R06): add member management and deal CRUD integration tests — 4 member tests + 5 deal tests, all passing.
+- `15cca51` feat(R05): implement platform staff endpoints — health-summary, configuration, plans CRUD (create + optimistic-concurrency PATCH), audit-events. Migration 0034 grants INSERT/UPDATE on app.plan to estate_control. 9 new control tests (66 total control tests green).
 
 **Known remaining R05 items:**
-- Role deletion endpoint.
-- Office/business-profile deletion endpoints.
+- Role/office/business-profile deletion endpoints (not in OpenAPI contract — only GET/POST/PATCH).
 - Pending invitation listing and revocation.
 - Member self-service (leave organization, profile update).
 - Delegation query endpoint ("what can I delegate?").
