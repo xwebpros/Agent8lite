@@ -12,6 +12,10 @@ import catalog from "../contracts/permission-catalog.json";
 
 export const staffSessionCookie = "estate_staff_session";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+
+const SESSION_DURATION_HOURS = 8;
+const ROTATION_THRESHOLD_HOURS = 4;
+
 export type StaffSession = VerifiedStaffContext & {
   readonly csrfToken: string;
   readonly expiresAt: string;
@@ -20,13 +24,34 @@ export type StaffSession = VerifiedStaffContext & {
   readonly intent: StaffTransactionIntent;
 };
 export type StaffTransactionIntent = "provisioning" | "identity" | "context-mutation" | "support-read";
+
+type StaffProvenance = "synthetic-local" | "oidc-verified";
+const VALID_PROVENANCES: readonly StaffProvenance[] = ["synthetic-local", "oidc-verified"];
+
+export interface StaffIssuerConfig {
+  readonly trustedIssuers: readonly string[];
+  readonly trustedSubjects?: readonly string[];
+}
+
+function resolveProvenance(issuer: string): StaffProvenance {
+  return issuer === "urn:estate:synthetic" ? "synthetic-local" : "oidc-verified";
+}
+
 export class StaffSessionIssuer implements StaffSessionIssuerPort {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly config: StaffIssuerConfig = {
+      trustedIssuers: ["urn:estate:synthetic"],
+      trustedSubjects: ["staff-administrator", "staff-support"],
+    },
+  ) {}
+
   async issueVerifiedIdentity(identity: VerifiedOidcIdentity) {
-    requireSyntheticStaffMode();
+    const provenance = resolveProvenance(identity.issuer);
+    if (provenance === "synthetic-local") requireSyntheticStaffMode();
     if (
-      identity.issuer !== "urn:estate:synthetic" ||
-      !["staff-administrator", "staff-support"].includes(identity.subject) ||
+      !this.config.trustedIssuers.includes(identity.issuer) ||
+      (this.config.trustedSubjects?.length && !this.config.trustedSubjects.includes(identity.subject)) ||
       identity.emailVerified !== true ||
       !Number.isFinite(identity.authenticatedAt) ||
       identity.authenticatedAt > Date.now() / 1000 + 30 ||
@@ -58,17 +83,16 @@ export class StaffSessionIssuer implements StaffSessionIssuerPort {
       ).rows[0];
       const opaqueToken = randomBytes(32).toString("hex"),
         csrfToken = randomBytes(32).toString("hex");
-      // One timestamp determines both values; INSERT-only issuer never reads or returns session rows.
       await client.query(
-        "INSERT INTO app.staff_session(token_hash,staff_user_id,csrf_token,provenance,created_at,expires_at)VALUES($1,$2,$3,'synthetic-local',$4,$4::timestamptz+interval '8 hours')",
-        [hash(opaqueToken), identityRow.rows[0].id, csrfToken, stamp.created],
+        "INSERT INTO app.staff_session(token_hash,staff_user_id,csrf_token,provenance,created_at,expires_at)VALUES($1,$2,$3,$4,$5,$5::timestamptz+interval '8 hours')",
+        [hash(opaqueToken), identityRow.rows[0].id, csrfToken, provenance, stamp.created],
       );
-      requireSyntheticStaffMode();
+      if (provenance === "synthetic-local") requireSyntheticStaffMode();
       await client.query("COMMIT");
       return {
         opaqueToken,
         csrfToken,
-        expiresAt: new Date(new Date(stamp.created).getTime() + 8 * 60 * 60 * 1000).toISOString(),
+        expiresAt: new Date(new Date(stamp.created).getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000).toISOString(),
       };
     } catch (error) {
       await client.query("ROLLBACK");
@@ -79,13 +103,12 @@ export class StaffSessionIssuer implements StaffSessionIssuerPort {
   }
 }
 
-/** Current source authority is reloaded even when a caller retained an older typed context. */
 export async function assertStaffPermission(
   client: PoolClient,
   context: VerifiedStaffContext,
   permission = "",
 ) {
-  requireSyntheticStaffMode();
+  if (context.provenance === "synthetic-local") requireSyntheticStaffMode();
   const result = await client.query(
     `SELECT app.control_authorized($1)AND app.current_actor()=$2::uuid AND current_setting('app.staff_session_hash',true)=$3
     AND EXISTS(SELECT 1 FROM app.staff_principal WHERE id=$4 AND user_id=$2 AND row_version=$5)AS allowed`,
@@ -95,13 +118,27 @@ export async function assertStaffPermission(
     throw new AccessError(403, "staff_permission_required", "Current staff authority required.");
 }
 
+export interface StaffTransactionResult<T> {
+  result: T;
+  rotatedToken?: { opaqueToken: string; csrfToken: string; expiresAt: string };
+}
+
 export async function withStaffTransaction<T>(
   pool: Pool,
   token: string | undefined,
   operation: (client: PoolClient, session: StaffSession) => Promise<T>,
   options: { readonly logout?: boolean; readonly intent?: StaffTransactionIntent } = {},
-) {
-  requireSyntheticStaffMode();
+): Promise<T> {
+  const { result } = await withStaffTransactionEx(pool, token, operation, options);
+  return result;
+}
+
+export async function withStaffTransactionEx<T>(
+  pool: Pool,
+  token: string | undefined,
+  operation: (client: PoolClient, session: StaffSession) => Promise<T>,
+  options: { readonly logout?: boolean; readonly intent?: StaffTransactionIntent } = {},
+): Promise<StaffTransactionResult<T>> {
   if (!token || !/^[0-9a-f]{64}$/.test(token))
     throw new AccessError(401, "staff_authentication_required", "Staff sign in required.");
   const tokenHash = hash(token),
@@ -110,11 +147,13 @@ export async function withStaffTransaction<T>(
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.staff_session_hash',$1,true)", [tokenHash]);
     const initial = await client.query(
-      "SELECT staff_user_id FROM app.staff_session WHERE token_hash=$1 AND provenance='synthetic-local'AND expires_at>clock_timestamp()",
-      [tokenHash],
+      `SELECT staff_user_id,provenance,created_at FROM app.staff_session WHERE token_hash=$1 AND provenance=ANY($2) AND expires_at>clock_timestamp()`,
+      [tokenHash, VALID_PROVENANCES],
     );
     if (initial.rowCount !== 1)
       throw new AccessError(401, "staff_session_expired", "Staff session expired. Sign in again.");
+    const provenance = initial.rows[0].provenance as StaffProvenance;
+    if (provenance === "synthetic-local") requireSyntheticStaffMode();
     await client.query("SELECT set_config('app.actor_id',$1,true)", [initial.rows[0].staff_user_id]);
     const principal = await client.query(
       "SELECT id,user_id,row_version,permission_codes FROM app.staff_principal WHERE user_id=$1 AND active FOR SHARE",
@@ -152,26 +191,51 @@ export async function withStaffTransaction<T>(
       principalVersion: String(principal.rows[0].row_version),
       permissionCodes: codes,
       sessionHash: tokenHash,
-      provenance: "synthetic-local",
+      provenance,
       csrfToken: current.rows[0].csrf_token,
       expiresAt: new Date(current.rows[0].expires_at).toISOString(),
       selectedTenantId: current.rows[0].selected_tenant_id,
       selectedGrantId: current.rows[0].selected_grant_id,
       intent: options.logout ? "context-mutation" : (options.intent ?? "provisioning"),
     };
-    // An unchanged tuple can satisfy a WHERE evaluated before a row-lock wait.
-    // Recompute DB-clock identity eligibility after both locks before invoking commands.
     await assertStaffPermission(client, session);
     const result = await operation(client, session);
     await assertStaffPermission(client, session);
-    if (options.logout)
+
+    let rotatedToken: StaffTransactionResult<T>["rotatedToken"];
+    if (options.logout) {
       await client.query("DELETE FROM app.staff_session WHERE token_hash=$1 AND staff_user_id=$2", [
         session.sessionHash,
         session.userId,
       ]);
-    requireSyntheticStaffMode();
+    } else {
+      const createdAt = new Date(initial.rows[0].created_at).getTime();
+      const elapsed = (Date.now() - createdAt) / (1000 * 60 * 60);
+      if (elapsed >= ROTATION_THRESHOLD_HOURS) {
+        const newToken = randomBytes(32).toString("hex");
+        const newCsrf = randomBytes(32).toString("hex");
+        const newHash = hash(newToken);
+        const stamp = (
+          await client.query("SELECT clock_timestamp() now")
+        ).rows[0];
+        await client.query(
+          `INSERT INTO app.staff_session(token_hash,staff_user_id,csrf_token,provenance,created_at,expires_at)VALUES($1,$2,$3,$4,$5,$5::timestamptz+interval '8 hours')`,
+          [newHash, session.userId, newCsrf, provenance, stamp.now],
+        );
+        await client.query("DELETE FROM app.staff_session WHERE token_hash=$1 AND staff_user_id=$2", [
+          tokenHash, session.userId,
+        ]);
+        rotatedToken = {
+          opaqueToken: newToken,
+          csrfToken: newCsrf,
+          expiresAt: new Date(new Date(stamp.now).getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000).toISOString(),
+        };
+      }
+    }
+
+    if (provenance === "synthetic-local") requireSyntheticStaffMode();
     await client.query("COMMIT");
-    return result;
+    return { result, rotatedToken };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -182,7 +246,7 @@ export async function withStaffTransaction<T>(
 export const staffSessionResponse = (session: StaffSession): SyntheticStaffSessionResponse => ({
   staffUserId: session.userId,
   permissions: session.permissionCodes,
-  synthetic: true,
+  synthetic: session.provenance === "synthetic-local",
   supportContext: null,
 });
 export function verifyStaffCsrf(session: StaffSession, value: string | undefined) {

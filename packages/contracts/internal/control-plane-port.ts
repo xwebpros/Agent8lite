@@ -21,7 +21,7 @@ export interface SyntheticSupportSelection {
 export interface SyntheticStaffSessionResponse {
   readonly staffUserId: string;
   readonly permissions: readonly string[];
-  readonly synthetic: true;
+  readonly synthetic: boolean;
   readonly supportContext: null | {
     readonly organizationId: string;
     readonly accessGrantId: string;
@@ -37,7 +37,7 @@ export interface VerifiedStaffContext {
   readonly principalVersion: string;
   readonly permissionCodes: readonly string[];
   readonly sessionHash: string;
-  readonly provenance: "synthetic-local";
+  readonly provenance: "synthetic-local" | "oidc-verified";
 }
 export interface BootstrapPolicy {
   readonly version: "synthetic-provisioning-v1";
@@ -46,7 +46,7 @@ export interface BootstrapPolicy {
   readonly ownerIdentityVersion: string;
   readonly planId: string;
   readonly enabledCapabilities: readonly ("crm" | "billing")[];
-  readonly provenance: "synthetic-local";
+  readonly provenance: "synthetic-local" | "oidc-verified";
 }
 /** Unknown production onboarding/commercial binding denies enqueue/execution. */
 export interface BootstrapPolicyResolver {
@@ -102,7 +102,7 @@ export interface SupportReadContext {
   readonly grantVersion: string;
   readonly expiresAt: string;
   readonly permissionCodes: readonly string[];
-  readonly provenance: "synthetic-local";
+  readonly provenance: "synthetic-local" | "oidc-verified";
 }
 /** Current authorized metadata; this reference alone never authorizes customer access. */
 export interface SupportGrantReference {
