@@ -954,7 +954,7 @@ class ApiController {
           }
           if (resource === "automations") {
             localAccess(req);
-            const automations = new AutomationService(client, context);
+            const automations = new AutomationService(client, context, traceId);
             let response: ApiCommandResponse;
             if (req.method === "GET" && id && !action) {
               response = { body: await automations.getAutomation(id), status: 200, etag: undefined };
@@ -977,7 +977,7 @@ class ApiController {
           }
           if (resource === "enrollments") {
             localAccess(req);
-            const automations = new AutomationService(client, context);
+            const automations = new AutomationService(client, context, traceId);
             let response: ApiCommandResponse;
             if (req.method === "POST" && !id && !action) {
               const result = await automations.enrollLead(req.body, {

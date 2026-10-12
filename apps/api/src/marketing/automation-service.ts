@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { components } from "../../../../packages/contracts/generated/api";
 import { requireEntitlement } from "../../../../packages/auth/entitlements";
@@ -91,7 +91,37 @@ export class AutomationService {
   constructor(
     private readonly client: PoolClient,
     readonly context: TenantContext,
+    private readonly traceId: string = "",
   ) {}
+
+  private async audit(action: string, resourceType: string, resourceId: string, version: number) {
+    await this.client.query(
+      `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        this.context.organizationId,
+        this.context.userId,
+        action,
+        resourceType,
+        resourceId,
+        this.traceId,
+        JSON.stringify({ resourceVersion: version }),
+      ],
+    );
+  }
+
+  private async outbox(eventType: string, aggregateId: string, payload: Record<string, unknown>) {
+    await this.client.query(
+      `INSERT INTO app.outbox(tenant_id,id,event_type,aggregate_id,payload,initiating_actor_id) VALUES($1,$2,$3,$4,$5,$6)`,
+      [
+        this.context.organizationId,
+        randomUUID(),
+        eventType,
+        aggregateId,
+        JSON.stringify(payload),
+        this.context.userId,
+      ],
+    );
+  }
 
   private async authorize(permission: Permission) {
     if (requirePermission(this.context, permission) !== "organization")
@@ -218,7 +248,8 @@ export class AutomationService {
        VALUES(app.current_tenant(),$1,$2,$3,$4,$5,201,$6,'infinity'::timestamptz)`,
       [this.context.userId, route, key, requestHash, JSON.stringify(body), etag],
     );
-    await this.authorize("automations.write");
+    await this.audit("automation_rule.created", "automation_rule", row.id, body.version);
+    await this.outbox("automation.created", row.id, { automationId: row.id, version: body.version });
     return { body, status: 201, etag };
   }
 
@@ -296,7 +327,8 @@ export class AutomationService {
        VALUES(app.current_tenant(),$1,$2,$3,$4,$5,200,$6,'infinity'::timestamptz)`,
       [this.context.userId, route, key, requestHash, JSON.stringify(body), etag],
     );
-    await this.authorize("automations.write");
+    await this.audit("automation_rule.updated", "automation_rule", id, body.version);
+    await this.outbox("automation.updated", id, { automationId: id, version: body.version });
     return { body, status: 200, etag };
   }
 
@@ -356,7 +388,12 @@ export class AutomationService {
        VALUES(app.current_tenant(),$1,$2,$3,$4,$5,201,$6,'infinity'::timestamptz)`,
       [this.context.userId, route, key, requestHash, JSON.stringify(body), etag],
     );
-    await this.authorize("campaigns.enroll");
+    await this.audit("enrollment.created", "enrollment", row.id, body.version);
+    await this.outbox("enrollment.created", row.id, {
+      enrollmentId: row.id,
+      leadId: input.leadId,
+      campaignVersionId: input.campaignVersionId,
+    });
     return { body, status: 201, etag };
   }
 
@@ -437,7 +474,8 @@ export class AutomationService {
        VALUES(app.current_tenant(),$1,$2,$3,$4,$5,201,$6,'infinity'::timestamptz)`,
       [this.context.userId, route, key, requestHash, JSON.stringify(body), etag],
     );
-    await this.authorize("campaigns.enroll");
+    await this.audit("enrollment.cancelled", "enrollment", id, body.version);
+    await this.outbox("enrollment.cancelled", id, { enrollmentId: id, leadId: body.leadId });
     return { body, status: 201, etag };
   }
 
