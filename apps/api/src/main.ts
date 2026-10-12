@@ -587,6 +587,7 @@ class ApiController {
         "contact-merges": "mergeId",
         "audit-events": "auditEventId",
         "broadcast-confirmations": "confirmationId",
+        "push-subscriptions": "pushDeviceId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
@@ -680,6 +681,75 @@ class ApiController {
             };
             if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
             return { body, status: 200 };
+          }
+          if (resource === "push-subscriptions") {
+            if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (req.method === "GET" && !id) {
+              requirePermission(context, spec["x-permission"]);
+              const rows = await client.query(
+                `SELECT id,device_label,topics,state,row_version FROM app.push_subscription
+                 WHERE tenant_id=$1 AND member_id=$2 ORDER BY created_at DESC LIMIT 100`,
+                [context.organizationId, context.memberId],
+              );
+              const body = {
+                items: rows.rows.map((r) => ({
+                  id: r.id,
+                  deviceLabel: r.device_label,
+                  topics: r.topics,
+                  state: r.state,
+                  version: Number(r.row_version),
+                })),
+                nextCursor: null,
+                hasMore: false,
+              };
+              if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+              return { body, status: 200 };
+            }
+            if (req.method === "POST" && !id) {
+              requirePermission(context, spec["x-permission"]);
+              validateSchema("PushSubscriptionWrite", req.body);
+              const endpointHash = createHash("sha256").update(req.body.endpoint).digest("hex");
+              const encrypted = JSON.stringify({ endpoint: req.body.endpoint, keys: req.body.keys });
+              const row = await client.query(
+                `INSERT INTO app.push_subscription(tenant_id,member_id,endpoint_hash,encrypted_subscription,device_label,topics,state)
+                 VALUES($1,$2,$3,$4,$5,$6,'active')
+                 ON CONFLICT(tenant_id,member_id,endpoint_hash)
+                 DO UPDATE SET encrypted_subscription=EXCLUDED.encrypted_subscription,
+                   device_label=EXCLUDED.device_label,topics=EXCLUDED.topics,
+                   state='active',row_version=app.push_subscription.row_version+1,updated_at=now()
+                 RETURNING id,device_label,topics,state,row_version`,
+                [
+                  context.organizationId,
+                  context.memberId,
+                  endpointHash,
+                  encrypted,
+                  (req.body.deviceLabel || "Device").slice(0, 120),
+                  JSON.stringify(req.body.topics),
+                ],
+              );
+              const body = {
+                id: row.rows[0].id,
+                deviceLabel: row.rows[0].device_label,
+                topics: row.rows[0].topics,
+                state: row.rows[0].state,
+                version: Number(row.rows[0].row_version),
+              };
+              if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+              return { body, status: 201, etag: `"${row.rows[0].row_version}"` };
+            }
+            if (req.method === "DELETE" && id) {
+              requirePermission(context, spec["x-permission"]);
+              assertUuid(id);
+              const deleted = await client.query(
+                `UPDATE app.push_subscription SET state='revoked',row_version=row_version+1,updated_at=now()
+                 WHERE tenant_id=$1 AND member_id=$2 AND id=$3 AND state='active' RETURNING id`,
+                [context.organizationId, context.memberId, id],
+              );
+              if (!deleted.rowCount)
+                throw new AccessError(404, "push_device_unavailable", "Device not found or already revoked.");
+              return { body: null, status: 204 };
+            }
+            throw new AccessError(404, "route_unavailable", "Route unavailable.");
           }
           if (resource === "message-designs") {
             localAccess(req);
