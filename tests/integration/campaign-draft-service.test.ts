@@ -5,6 +5,7 @@ import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CampaignDraftService,
+  type CampaignArchiveMutation,
   type CampaignMutation,
   type CampaignWrite,
 } from "../../apps/api/src/marketing";
@@ -510,8 +511,6 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
     const fixture = await create(),
       id = fixture.response.body.id;
     const paths: { path: string; method: string; body?: unknown }[] = [
-      { path: `${campaignPath()}/${id}/publish`, method: "POST", body: {} },
-      { path: `${campaignPath()}/${id}/archive`, method: "POST", body: {} },
       {
         path: `/v1/orgs/${ownerHttp.orgId}/campaign-versions/${randomUUID()}/publish`,
         method: "POST",
@@ -1164,5 +1163,74 @@ describe("actual0016 native campaign draft service", () => {
     } finally {
       for (const client of clients) client.release();
     }
+  });
+});
+
+describe("ADR-059 archiveCampaign", () => {
+  async function archive(
+    id: string,
+    identity: VerifiedIdentityContext = ownerA,
+    key = randomUUID(),
+  ): Promise<CampaignArchiveMutation> {
+    const result = await use(identity, (service) => service.archive(id, { key }));
+    expect(result.status).toBe(202);
+    assertContract("Job", result.body);
+    return result;
+  }
+
+  it("archives a draft campaign and returns a 202 Job", async () => {
+    const { response } = await create();
+    const result = await archive(response.body.id);
+    expect(result.body.state).toBe("succeeded");
+    const row = (
+      await admin.query("SELECT state FROM app.campaign WHERE id=$1", [response.body.id])
+    ).rows[0];
+    expect(row.state).toBe("archived");
+  });
+
+  it("archive is idempotent for the same key", async () => {
+    const { response } = await create();
+    const key = randomUUID();
+    const first = await archive(response.body.id, ownerA, key);
+    const second = await archive(response.body.id, ownerA, key);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.etag).toBe(first.etag);
+  });
+
+  it("rejects a second key after archive with a different key", async () => {
+    const { response } = await create();
+    await archive(response.body.id, ownerA, randomUUID());
+    const result2 = await use(ownerA, (service) =>
+      service.archive(response.body.id, { key: randomUUID() }).catch((e) => e),
+    );
+    expect(result2.status).toBe(404);
+  });
+
+  it("returns 403 without campaigns.write permission", async () => {
+    const { response } = await create();
+    const noWrite = await actor("organization", null);
+    await expect(
+      use(noWrite, (service) => service.archive(response.body.id, { key: randomUUID() })),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("enforces tenant isolation — cannot archive another tenant's campaign", async () => {
+    const { response } = await create(ownerA);
+    await expect(
+      withTenantTransaction(runtime, ownerB, (client, context) =>
+        new CampaignDraftService(client, context, randomUUID()).archive(response.body.id, {
+          key: randomUUID(),
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("rejects already-archived campaign (idempotency key conflict path)", async () => {
+    const { response } = await create();
+    await archive(response.body.id);
+    const err = await use(ownerA, (service) =>
+      service.archive(response.body.id, { key: randomUUID() }).catch((e) => e),
+    );
+    expect(err.status).toBe(404);
   });
 });

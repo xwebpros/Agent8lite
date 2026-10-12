@@ -674,14 +674,25 @@ class ApiController {
             } else if (resource === "campaign-versions" && id && !action && req.method === "GET") {
               const body = await workflows.get(id);
               response = { body, status: 200, etag: campaignEtag(body.version) };
+            } else if (resource === "campaign-versions" && id && action === "publish" && req.method === "POST") {
+              response = await workflows.publish(id, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
             } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
             if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
             return response;
           }
           if (resource === "campaigns") {
             localAccess(req);
-            if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
             const campaigns = new CampaignDraftService(client, context, traceId);
+            if (id && action === "archive" && req.method === "POST") {
+              const result = await campaigns.archive(id, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+              if (responseSchema) validateSchema(schemaName(responseSchema), result.body, true);
+              return result as ApiCommandResponse;
+            }
+            if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
             let response: ApiCommandResponse;
             if (req.method === "GET") {
               const body = id ? await campaigns.get(id) : await campaigns.list(req.query);

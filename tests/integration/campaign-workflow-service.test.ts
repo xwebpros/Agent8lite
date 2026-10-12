@@ -535,7 +535,6 @@ describe("registered synthetic immutable workflow HTTP boundary", () => {
     const commands: { path: string; method: string; body?: unknown }[] = [
       { path, method: "PATCH", body: definition() },
       { path, method: "DELETE", body: {} },
-      { path: path + "/publish", method: "POST", body: {} },
       {
         path: `/v1/orgs/${fixtures.orgA}/enrollments`,
         method: "POST",
@@ -1587,5 +1586,84 @@ describe("actual0017–0019 immutable native workflow draft service", () => {
     } finally {
       for (const client of clients) client.release();
     }
+  });
+});
+
+describe("ADR-059 publishCampaign", () => {
+  const publishGrants: PermissionGrant[] = [
+    { code: "campaigns.read", scope: "organization" },
+    { code: "campaigns.write", scope: "organization" },
+    { code: "campaigns.publish", scope: "organization" },
+  ];
+
+  async function publishActor() {
+    return actor(publishGrants);
+  }
+
+  async function publish(versionId: string, identity: VerifiedIdentityContext = ownerA, key = randomUUID()) {
+    const result = await use(identity, (service) => service.publish(versionId, { key }));
+    expect(result.status).toBe(201);
+    assertContract("CampaignVersion", result.body);
+    expect(result.body.state).toBe("published");
+    return result;
+  }
+
+  it("publishes a draft version and transitions parent campaign to active", async () => {
+    const campaign = await parent();
+    const { response } = await create(campaign.body.id);
+    const publishId = await publishActor();
+    const result = await publish(response.body.id, publishId);
+    expect(result.body.id).toBe(response.body.id);
+    const row = (
+      await admin.query("SELECT state FROM app.campaign WHERE id=$1", [campaign.body.id])
+    ).rows[0];
+    expect(row.state).toBe("active");
+    const vrow = (
+      await admin.query("SELECT state,published_at FROM app.campaign_version WHERE id=$1", [response.body.id])
+    ).rows[0];
+    expect(vrow.state).toBe("published");
+    expect(vrow.published_at).not.toBeNull();
+  });
+
+  it("publish is idempotent for the same key", async () => {
+    const campaign = await parent();
+    const { response } = await create(campaign.body.id);
+    const publishId = await publishActor();
+    const key = randomUUID();
+    const first = await publish(response.body.id, publishId, key);
+    const second = await publish(response.body.id, publishId, key);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.etag).toBe(first.etag);
+  });
+
+  it("returns 403 without campaigns.publish permission", async () => {
+    const campaign = await parent();
+    const { response } = await create(campaign.body.id);
+    const noPublish = await actor(campaignGrants);
+    await expect(
+      use(noPublish, (service) => service.publish(response.body.id, { key: randomUUID() })),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("returns 409 if version is already published (different key)", async () => {
+    const campaign = await parent();
+    const { response } = await create(campaign.body.id);
+    const publishId = await publishActor();
+    await publish(response.body.id, publishId);
+    await expect(
+      use(publishId, (service) => service.publish(response.body.id, { key: randomUUID() })),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("enforces tenant isolation — cannot publish another tenant's campaign version", async () => {
+    const campaign = await parent(ownerA);
+    const { response } = await create(campaign.body.id, definition(), randomUUID(), ownerA);
+    await expect(
+      withTenantTransaction(runtime, ownerB, (client, context) =>
+        new CampaignWorkflowService(client, context, randomUUID()).publish(response.body.id, {
+          key: randomUUID(),
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

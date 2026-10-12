@@ -8,6 +8,7 @@ import {
 } from "../../../../packages/db/tenant-transaction";
 import { validateSchema } from "../contract-validation";
 import { assertUuid, CrmService, stable } from "../crm-service";
+import { jobModel } from "../admin-service";
 import { cursorBinding, decodeCursor, encodeCursor } from "../cursors";
 import { appendCampaignDraftEvent } from "./events";
 import {
@@ -26,9 +27,11 @@ import { CampaignDraftRepository } from "./repository";
 
 type Permission = "campaigns.read" | "campaigns.write";
 export type CampaignMutation = { body: Campaign; status: 200 | 201; etag: string };
+export type CampaignArchiveMutation = { body: Schemas["Job"]; status: 202; etag: string };
+type Schemas = import("../../../../packages/contracts/generated/api").components["schemas"];
 type ReceiptRow = {
   request_hash: string;
-  response_body: Campaign;
+  response_body: unknown;
   status_code: number;
   response_etag: string;
 };
@@ -146,7 +149,7 @@ export class CampaignDraftService {
       if (receipt.request_hash !== requestHash)
         throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
       validateSchema("Campaign", receipt.response_body, true);
-      const historical = receipt.response_body;
+      const historical = receipt.response_body as Campaign;
       if (
         receipt.status_code !== status ||
         historical.state !== "draft" ||
@@ -173,6 +176,57 @@ export class CampaignDraftService {
     );
     await this.authorize("campaigns.write");
     return { body, status, etag };
+  }
+
+  /** ADR-059: archive a campaign (any non-archived state). Returns 202 Job. Idempotent. */
+  async archive(id: string, headers: CampaignCommandHeaders): Promise<CampaignArchiveMutation> {
+    assertUuid(id);
+    await this.authorize("campaigns.write");
+    const key = campaignKey(headers.key);
+    const route = `marketing:campaign:archive:${id}`;
+    const requestHash = createHash("sha256").update(id).digest("hex");
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${this.context.organizationId}:${this.context.userId}:${route}:${key}`,
+    ]);
+    await this.authorize("campaigns.write");
+    const existing = await this.client.query<ReceiptRow>(
+      `SELECT request_hash,response_body,status_code,response_etag FROM app.idempotency_record
+       WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+      [this.context.userId, route, key],
+    );
+    if (existing.rowCount) {
+      const receipt = existing.rows[0];
+      if (receipt.request_hash !== requestHash)
+        throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
+      validateSchema("Job", receipt.response_body, true);
+      await this.authorize("campaigns.write");
+      return { body: receipt.response_body as Schemas["Job"], status: 202, etag: receipt.response_etag };
+    }
+    const archived = await this.client.query(
+      `SELECT * FROM app.archive_campaign($1)`,
+      [id],
+    );
+    if (!archived.rowCount || !archived.rows[0]?.id)
+      throw new AccessError(404, "resource_unavailable", "Campaign unavailable or already archived.");
+    const row = archived.rows[0];
+    const etag = campaignEtag(Number(row.row_version));
+    const jobRow = await this.client.query(
+      `INSERT INTO app.integration_job(tenant_id,kind,state,requesting_member_id)
+       VALUES(app.current_tenant(),'marketing.campaign.archived','succeeded',$1) RETURNING *`,
+      [this.context.memberId],
+    );
+    const job = jobModel(jobRow.rows[0]);
+    validateSchema("Job", job, true);
+    await this.audit.audit("campaign.archived", "campaign", id, Number(row.row_version));
+    await this.authorize("campaigns.write");
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+       (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
+       VALUES(app.current_tenant(),$1,$2,$3,$4,$5,202,$6,'infinity'::timestamptz)`,
+      [this.context.userId, route, key, requestHash, JSON.stringify(job), etag],
+    );
+    await this.authorize("campaigns.write");
+    return { body: job, status: 202, etag };
   }
 
   async create(body: CampaignWrite, headers: CampaignCommandHeaders): Promise<CampaignMutation> {
