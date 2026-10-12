@@ -28,12 +28,6 @@ async function sessionTransaction<T>(
 }
 
 export async function readSession(pool: Pool, token: string | undefined): Promise<ServerSession> {
-  if (!["development", "test"].includes(process.env.APP_ENV ?? "") || process.env.DEV_AUTH_ENABLED !== "true")
-    throw new AccessError(
-      401,
-      "identity_provider_unconfigured",
-      "An approved identity provider is required.",
-    );
   if (!token || !/^[a-f0-9]{64}$/.test(token))
     throw new AccessError(401, "authentication_required", "Sign in required.");
   const tokenHash = hashToken(token);
@@ -52,7 +46,31 @@ export async function readSession(pool: Pool, token: string | undefined): Promis
   });
 }
 
+export async function createSession(pool: Pool, userId: string, organizationId: string) {
+  const token = randomBytes(32).toString("hex");
+  const tokenHash = hashToken(token);
+  const csrfToken = randomBytes(32).toString("hex");
+  await sessionTransaction(pool, tokenHash, async (client) => {
+    await client.query("SELECT set_config('app.actor_id',$1,true),set_config('app.tenant_id',$2,true)", [
+      userId,
+      organizationId,
+    ]);
+    const member = await client.query(
+      "SELECT id FROM app.membership WHERE user_id=$1 AND tenant_id=$2 AND status='active'",
+      [userId, organizationId],
+    );
+    if (!member.rowCount) throw new AccessError(403, "membership_required", "Active membership required.");
+    await client.query(
+      "INSERT INTO app.login_session(token_hash,user_id,active_org_id,csrf_token,expires_at) VALUES($1,$2,$3,$4,now()+interval '8 hours')",
+      [tokenHash, userId, organizationId, csrfToken],
+    );
+  });
+  return { token, csrfToken };
+}
+
 export async function createSyntheticSession(pool: Pool, userId: string, organizationId: string) {
+  if (!["development", "test"].includes(process.env.APP_ENV ?? "") || process.env.DEV_AUTH_ENABLED !== "true")
+    throw new AccessError(401, "synthetic_identity_disabled", "Synthetic identity is disabled.");
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
   const csrfToken = randomBytes(32).toString("hex");
