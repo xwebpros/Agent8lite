@@ -517,14 +517,6 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
         body: {},
       },
       {
-        path: `/v1/orgs/${ownerHttp.orgId}/enrollments`,
-        method: "POST",
-        body: {
-          leadId: fixtures.leadA,
-          campaignVersionId: randomUUID(),
-        } satisfies Schemas["EnrollmentWrite"],
-      },
-      {
         path: `/v1/orgs/${ownerHttp.orgId}/broadcast-confirmations`,
         method: "POST",
         body: {

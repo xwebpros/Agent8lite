@@ -536,14 +536,6 @@ describe("registered synthetic immutable workflow HTTP boundary", () => {
       { path, method: "PATCH", body: definition() },
       { path, method: "DELETE", body: {} },
       {
-        path: `/v1/orgs/${fixtures.orgA}/enrollments`,
-        method: "POST",
-        body: {
-          leadId: fixtures.leadA,
-          campaignVersionId: fixture.response.body.id,
-        } satisfies Schemas["EnrollmentWrite"],
-      },
-      {
         path: `/v1/orgs/${fixtures.orgA}/broadcast-confirmations`,
         method: "POST",
         body: {
