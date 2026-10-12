@@ -102,9 +102,29 @@ Pushed through `7da55cd`.
 - `ce652de` feat(auth): support production OIDC staff sessions with token rotation — StaffSessionIssuer parameterized with `trustedIssuers`/`trustedSubjects`, provenance resolved per-session (`synthetic-local` | `oidc-verified`), `assertStaffPermission` gates on provenance instead of global synthetic mode check. Token rotation at 4-hour midpoint with atomic swap via `withStaffTransactionEx`. `VerifiedStaffContext.provenance` and related types widened to support both modes.
 - `4adf2f5` fix(test): update scoring expectations to match trigger-based scoring — `scoreVersion` changed from `"synthetic-native-inquiry-v1"` to `"v1"` to match PostgreSQL trigger output.
 
+- `9371e6a` feat(R04): staff principal CRUD, grant lifecycle and production identity guard — SECURITY DEFINER functions for cross-principal reads/writes bypassing restrictive RLS guard. Migration 0033: read/write functions, trigger WHEN clause, audit INSERT policy. StaffPrincipalService with list/read/create/update/deactivate. Unrestricted-access lifecycle constraint (all 8 staff codes requires second active administrator). Production identity guard in withStaffTransactionEx (fails fast before DB connect without configured provider). Pre-existing provisioning test fixed. Control tests: 57/57, TypeScript clean.
+
 **Known remaining R04 items:**
-- Staff principal CRUD API (control plane, R05/R10 overlap).
-- Staff grant lifecycle constraints (creator cannot self-approve unrestricted access).
+- Invitation system with verified-email matching and one-use hashed expiry.
+- Fresh authentication requirement for financial/staff/high-impact role commands.
+
+---
+
+## R05 Administration member CRUD — in progress (Claude Code)
+
+**Implemented (uncommitted):**
+- `AdminService.listMembers` — paginated member listing with cursor, `members.read` permission, returns `PageMember` schema.
+- `AdminService.updateMember` — role change, status change (active/disabled), office reassignment via `MemberPatch`. Enforces `members.manage`, delegation assertion, owner-only owner-role assignment, self-disable denial, final-owner protection. Optimistic concurrency via If-Match/ETag.
+- Routes wired in `main.ts`: `GET /v1/orgs/{orgId}/members` and `PATCH /v1/orgs/{orgId}/members/{memberId}`.
+- TypeScript clean.
+
+**Known remaining R05 items:**
+- Role deletion endpoint.
+- Office/business-profile deletion endpoints.
+- Pending invitation listing and revocation.
+- Member self-service (leave organization, profile update).
+- Delegation query endpoint ("what can I delegate?").
+- Durable provisioning bootstrap verification.
 
 ---
 

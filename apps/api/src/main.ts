@@ -1125,6 +1125,8 @@ class ApiController {
               body = id
                 ? await admin.get(resource as "offices" | "business-profiles", id)
                 : await admin.list(resource as "offices" | "business-profiles", req.query);
+            else if (resource === "members" && !action)
+              body = await admin.listMembers(req.query);
             else if (resource === "leads" && id && action === "notes") body = await crm.notes(id);
             else if (resource === "leads" && id && action === "activity") body = await crm.activity(id);
             // ADR-049: contact duplicate candidates and merge result
@@ -1308,6 +1310,8 @@ class ApiController {
                     id,
                     revision(req),
                   );
+                if (req.method === "PATCH" && resource === "members" && id && !action)
+                  return admin.updateMember(id, req.body, revision(req));
                 if (req.method === "POST" && !id) return crm.create(resource, req.body);
                 if (req.method === "PATCH" && id && !action)
                   return crm.update(resource, id, req.body, revision(req));
