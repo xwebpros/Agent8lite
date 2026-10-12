@@ -1,4 +1,22 @@
-# Implementation status — 2026-10-12
+# Implementation status — 2026-10-13
+
+## Latest verification run — `df798d9` (2026-10-13)
+
+| Suite | Result |
+|---|---|
+| Unit tests | 2,534 passed (79 files) |
+| Integration tests | 158 passed (16 files, 0 failures) |
+| CMS tests | 153 passed (2 files) |
+| MLS tests | 490 passed (13 files) |
+| Recovery tests | 11 passed |
+| Redis acceptance | 1 passed (Memurai 4.1.2 on loopback) |
+| Control/provisioning | 44 passed (2 files) |
+| Runtime role + isolation | 17 passed (2 files) |
+| Contract validation | 173 operations, 174 schemas — PASS |
+| TypeScript typecheck | PASS |
+| Biome lint (source) | PASS (`.local/` build artifacts excluded) |
+
+Session boundary probe now passes in production mode (previously crashed). All 8 synthetic-session-boundary tests pass including production OIDC readiness.
 
 ## R02 Contract operations — continued (Claude Code)
 
