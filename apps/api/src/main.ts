@@ -252,6 +252,12 @@ class ApiController {
         return;
       }
       if (req.path.startsWith("/v1/public/")) {
+        const isMutation = req.method !== "GET" && req.method !== "HEAD";
+        rate(
+          requestRates,
+          `public:${req.socket.remoteAddress ?? "unknown"}:${isMutation ? "mutation" : "read"}`,
+          isMutation ? 60 : 200,
+        );
         const handled = await tryPublicSiteRoute(req, res, runtimePool, traceId, {
           signingKey:
             process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production",
