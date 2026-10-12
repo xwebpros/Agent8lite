@@ -78,6 +78,18 @@ Pushed through `7da55cd`.
 
 **Committed:**
 - `189ae17` test: add audit-events and billing-portal integration tests — verifies listAuditEvents pagination/cursor and billing portal 201/403.
+- `d7fa712` feat(R05): add role list/detail endpoints and fix resourceId routing — added `mls-feeds` (feedId), `integrations` (integrationId) to resourceId map. Roles now support GET list and GET detail via AdminService.
+- `4230977` fix(routing): handle compound resource paths — extended URL regex to 5 segments, added compound resource remapping for `ai/jobs`, `local-presence/entities|profiles`, `reports/query`. Added `aiJobId` resourceId.
+
+**R02 route audit (2026-10-13):**
+Of 173 contract operations, 159 route correctly. The following 14 are documented gaps:
+- 3 `ai/jobs` operations — compound routing now resolves paths; no AI service implemented yet (M4+ scope)
+- 2 `local-presence` operations — compound routing resolves; no local-presence service yet
+- 1 `reports/query` — compound routing resolves; no reporting service yet
+- 4 `mls-feeds` operations — resourceId now mapped; no MLS feed service yet (M6+ scope)
+- 3 `integrations` operations — resourceId now mapped; no integration service yet (M6+ scope)
+- 1 `webhooks/{provider}/{connectionId}` — separate path prefix, explicitly deferred per contract ("Proposed contract only")
+All CMS/staff/public/CRM/billing/admin paths route correctly.
 
 ---
 
