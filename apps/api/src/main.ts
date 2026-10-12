@@ -77,9 +77,10 @@ const oidc = syntheticEnabled
       mode: process.env.APP_ENV === "test" ? "test" : "development",
     })
   : null;
-const productionOidc = !syntheticEnabled && process.env.OIDC_ISSUER && process.env.OIDC_CLIENT_ID
-  ? { issuer: process.env.OIDC_ISSUER, clientId: process.env.OIDC_CLIENT_ID }
-  : null;
+const productionOidc =
+  !syntheticEnabled && process.env.OIDC_ISSUER && process.env.OIDC_CLIENT_ID
+    ? { issuer: process.env.OIDC_ISSUER, clientId: process.env.OIDC_CLIENT_ID }
+    : null;
 let productionVerifier: OidcTokenVerifier | null = null;
 const pendingOidcStates = new Map<string, { nonce: string; verifier: string; expires: number }>();
 const loopback = (address: string | undefined) =>
@@ -267,7 +268,11 @@ class ApiController {
         const state = randomBytes(32).toString("base64url");
         const nonce = randomBytes(32).toString("base64url");
         const redirectUri = req.body?.redirectUri;
-        if (!redirectUri || typeof redirectUri !== "string" || !allowedOrigins.has(new URL(redirectUri).origin))
+        if (
+          !redirectUri ||
+          typeof redirectUri !== "string" ||
+          !allowedOrigins.has(new URL(redirectUri).origin)
+        )
           throw new AccessError(422, "redirect_uri_invalid", "A permitted redirect URI is required.");
         const codeChallenge = createHash("sha256").update(verifier).digest("base64url");
         const params = new URLSearchParams({
@@ -290,7 +295,11 @@ class ApiController {
         origin(req);
         const { code, state, redirectUri } = req.body ?? {};
         if (!code || !state || !redirectUri)
-          throw new AccessError(422, "callback_parameters_missing", "Code, state and redirectUri are required.");
+          throw new AccessError(
+            422,
+            "callback_parameters_missing",
+            "Code, state and redirectUri are required.",
+          );
         const pending = pendingOidcStates.get(state);
         if (!pending) throw new AccessError(401, "oidc_state_invalid", "State expired or invalid.");
         pendingOidcStates.delete(state);
@@ -298,7 +307,10 @@ class ApiController {
           throw new AccessError(401, "oidc_state_expired", "Authentication attempt expired.");
         const discovery = await discoverOidcIssuer(productionOidc.issuer);
         if (!productionVerifier)
-          productionVerifier = new OidcTokenVerifier({ issuer: discovery.issuer, jwksUri: discovery.jwksUri });
+          productionVerifier = new OidcTokenVerifier({
+            issuer: discovery.issuer,
+            jwksUri: discovery.jwksUri,
+          });
         const tokenResponse = await fetch(discovery.tokenEndpoint, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -312,7 +324,11 @@ class ApiController {
           signal: AbortSignal.timeout(10_000),
         });
         if (!tokenResponse.ok)
-          throw new AccessError(401, "oidc_token_exchange_failed", "Identity provider rejected the token exchange.");
+          throw new AccessError(
+            401,
+            "oidc_token_exchange_failed",
+            "Identity provider rejected the token exchange.",
+          );
         const tokens = (await tokenResponse.json()) as { id_token?: string };
         if (!tokens.id_token)
           throw new AccessError(401, "oidc_no_id_token", "Identity provider did not return an ID token.");
