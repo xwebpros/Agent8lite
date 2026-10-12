@@ -404,3 +404,15 @@ describe("M2 — explicit billing commands, durable jobs and authoritative recon
     expect((await owner.read(path(), "BillingOverview")).body.status).toBe("mock_active");
   });
 });
+
+describe("billing portal", () => {
+  it("opens a portal session", async () => {
+    const result = await owner.command(path("customer-portal"), {}, "HostedFlow", 201);
+    expect(result.body.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/dev\/billing\/portal/);
+    expect(new Date(result.body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("rejects without billing.manage", async () => {
+    await assertProblem(await agent.raw("POST", path("customer-portal"), {}), 403);
+  });
+});

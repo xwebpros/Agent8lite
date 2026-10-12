@@ -281,3 +281,36 @@ describe("M2 — original administration contracts and scoped synthetic invitati
     await assertProblem(await owner.request(`/v1/orgs/${owner.orgId}/jobs/${accepted.id}`), 404);
   });
 });
+
+describe("audit events", () => {
+  it("lists audit events with pagination", async () => {
+    const result = await owner.read(`/v1/orgs/${owner.orgId}/audit-events`, "PageAuditRecord");
+    expect(result.body.items).toBeDefined();
+    expect(Array.isArray(result.body.items)).toBe(true);
+    expect(typeof result.body.hasMore).toBe("boolean");
+    if (result.body.items.length) {
+      const item = result.body.items[0];
+      expect(item.id).toBeDefined();
+      expect(item.actorRef).toBeDefined();
+      expect(item.action).toBeDefined();
+      expect(item.resourceType).toBeDefined();
+      expect(item.traceId).toBeDefined();
+      expect(item.createdAt).toBeDefined();
+    }
+  });
+
+  it("supports cursor pagination", async () => {
+    const page1 = await owner.read(`/v1/orgs/${owner.orgId}/audit-events?limit=2`, "PageAuditRecord");
+    if (page1.body.hasMore && page1.body.nextCursor) {
+      const page2 = await owner.read(
+        `/v1/orgs/${owner.orgId}/audit-events?limit=2&cursor=${page1.body.nextCursor}`,
+        "PageAuditRecord",
+      );
+      expect(page2.body.items).toBeDefined();
+      const ids1 = new Set(page1.body.items.map((i: { id: string }) => i.id));
+      for (const item of page2.body.items) {
+        expect(ids1.has(item.id)).toBe(false);
+      }
+    }
+  });
+});
