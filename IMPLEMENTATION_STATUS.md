@@ -1,5 +1,13 @@
 # Implementation status — 2026-10-13
 
+## Owner maintenance hold — keep services stopped during ZIP creation
+
+On 2026-10-13 the owner requested repository cleanup, then explicitly instructed that all project servers and databases remain stopped until the ZIP finishes. Honor this newer instruction before routine implementation authorization: do not start web/API/worker/PostgreSQL/Redis, run migrations/seeding, or run service-dependent acceptance during this hold. Wait for the owner's ZIP-complete/resume instruction. Independent file work and checks that do not start project services can continue.
+
+Cleanup preserved 29 artifact targets outside the repository at `C:/Users/Monar/Agent8lite-archive/cleanup-20261013-015110/`, removed 11 identified disposable output targets, and retained database files, private uploads, provider evidence/configuration, dependencies, the canonical blueprint and other owners' edits. Original development processes and a separate synthetic probe API were stopped; PostgreSQL remains stopped. The dedicated Memurai Redis-compatible service was stopped with its CLI's `SHUTDOWN SAVE` and its listener was verified absent. See `docs/runbooks/repository-cleanup.md` for the inventory, archive/restore map and bounded verification; this housekeeping does not advance milestone acceptance.
+
+Cleanup verification: 422/422 archived reference hashes and all 31 original blueprint manifest files match; bootstrap tests 77/77, exact/generated contracts (173 operations/174 schemas), root/web TypeScript, scoped bootstrap Biome, PowerShell AST and diff whitespace checks pass. Next route types were regenerated without a build/server. Database integration, migrations, seeding, production build and browser acceptance were not run. At the final service check, no project server process/listener or PostgreSQL PID file remained, and Memurai reported Stopped. Fresh ignored scratch work from another owner was preserved.
+
 ## Windows source-package bootstrap — 2026-10-13 (Codex)
 
 The owner requested a click-to-run installer for recipients of a source ZIP. Added `Start-Agent8lite.cmd`, `scripts/bootstrap/` and `docs/runbooks/bootstrap-windows.md`; README and ADR-011 describe its scope. CI adds the bootstrap boundary suite; that workflow change has not been executed remotely. No application contract, dependency pin, lockfile, database migration or live-provider activation changed for this slice.

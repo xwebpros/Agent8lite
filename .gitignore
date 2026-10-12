@@ -11,3 +11,7 @@ test-results/
 playwright-report/
 coverage/
 *.tsbuildinfo
+
+# Original audit evidence stays local in the canonical blueprint bundle.
+# Exclude it from commits and recipient source packages.
+blueprint/reference/Agent-Elite-Audit-2026-10-10.zip
