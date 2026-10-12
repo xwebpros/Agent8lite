@@ -282,6 +282,32 @@ describe("M2 — original administration contracts and scoped synthetic invitati
   });
 });
 
+describe("role listing and detail", () => {
+  it("lists roles with contract-valid structure", async () => {
+    const result = await owner.read(`/v1/orgs/${owner.orgId}/roles`, "PageRole");
+    expect(result.body.items.length).toBeGreaterThan(0);
+    expect(typeof result.body.hasMore).toBe("boolean");
+    const first = result.body.items[0];
+    expect(first.id).toBeDefined();
+    expect(first.name).toBeDefined();
+    expect(Array.isArray(first.permissions)).toBe(true);
+    expect(first.version).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns a single role by id", async () => {
+    const list = await owner.read(`/v1/orgs/${owner.orgId}/roles?limit=1`, "PageRole");
+    const roleId = list.body.items[0].id;
+    const detail = await owner.read(`/v1/orgs/${owner.orgId}/roles/${roleId}`, "Role");
+    expect(detail.body.id).toBe(roleId);
+    expect(detail.body.name).toBeDefined();
+    expect(detail.body.version).toBeGreaterThanOrEqual(1);
+  });
+
+  it("rejects role detail for unknown id", async () => {
+    await assertProblem(await owner.request(`/v1/orgs/${owner.orgId}/roles/${randomUUID()}`), 404);
+  });
+});
+
 describe("audit events", () => {
   it("lists audit events with pagination", async () => {
     const result = await owner.read(`/v1/orgs/${owner.orgId}/audit-events`, "PageAuditRecord");

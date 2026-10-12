@@ -121,34 +121,42 @@ export class AdminService {
     );
     return { body: organization(updated.rows[0]), status: 200, etag: `"${updated.rows[0].row_version}"` };
   }
-  async list(resource: "offices" | "business-profiles", query: Record<string, unknown>) {
-    requirePermission(this.context, resource === "offices" ? "offices.read" : "profiles.read");
+  async list(resource: "offices" | "business-profiles" | "roles", query: Record<string, unknown>) {
+    requirePermission(
+      this.context,
+      resource === "offices" ? "offices.read" : resource === "roles" ? "roles.read" : "profiles.read",
+    );
     const limit = query.limit === undefined ? 25 : Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new AccessError(422, "limit_invalid", "Limit must be between 1 and 100.");
     const binding = cursorBinding(this.context, resource, "organization", {});
     const cursor = decodeCursor(query.cursor, binding);
     if (cursor) assertUuid(cursor);
-    const table = resource === "offices" ? "office" : "business_profile";
+    const table = resource === "offices" ? "office" : resource === "roles" ? "role_definition" : "business_profile";
     const result = await this.client.query(
       `SELECT * FROM app.${table} WHERE ($1::uuid IS NULL OR id>$1::uuid) ORDER BY id LIMIT $2`,
       [cursor, limit + 1],
     );
     const hasMore = result.rows.length > limit;
     const rows = result.rows.slice(0, limit);
+    const mapper = resource === "roles" ? role : resource === "offices" ? officeModel : profileModel;
     return {
-      items: rows.map((row) => (resource === "offices" ? officeModel(row) : profileModel(row))),
+      items: rows.map((row) => mapper(row)),
       nextCursor: hasMore ? encodeCursor(rows.at(-1)!.id, binding) : null,
       hasMore,
     };
   }
-  async get(resource: "offices" | "business-profiles", id: string) {
-    requirePermission(this.context, resource === "offices" ? "offices.read" : "profiles.read");
+  async get(resource: "offices" | "business-profiles" | "roles", id: string) {
+    requirePermission(
+      this.context,
+      resource === "offices" ? "offices.read" : resource === "roles" ? "roles.read" : "profiles.read",
+    );
     assertUuid(id);
-    const table = resource === "offices" ? "office" : "business_profile";
+    const table = resource === "offices" ? "office" : resource === "roles" ? "role_definition" : "business_profile";
     const rows = await this.client.query(`SELECT * FROM app.${table} WHERE id=$1`, [id]);
     if (!rows.rowCount) throw new AccessError(404, "resource_unavailable", "Resource unavailable.");
-    return (resource === "offices" ? officeModel : profileModel)(rows.rows[0]);
+    const mapper = resource === "roles" ? role : resource === "offices" ? officeModel : profileModel;
+    return mapper(rows.rows[0]);
   }
   async write(
     resource: "offices" | "business-profiles" | "roles",

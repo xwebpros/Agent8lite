@@ -706,6 +706,8 @@ class ApiController {
         "audit-events": "auditEventId",
         "broadcast-confirmations": "confirmationId",
         "push-subscriptions": "pushDeviceId",
+        "mls-feeds": "feedId",
+        integrations: "integrationId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
@@ -1121,10 +1123,10 @@ class ApiController {
             else if (resource === "jobs" && id) body = await admin.job(id);
             else if (resource === "tickets" && !action)
               body = id ? await support.get(id) : await support.list(req.query);
-            else if (["offices", "business-profiles"].includes(resource) && !action)
+            else if (["offices", "business-profiles", "roles"].includes(resource) && !action)
               body = id
-                ? await admin.get(resource as "offices" | "business-profiles", id)
-                : await admin.list(resource as "offices" | "business-profiles", req.query);
+                ? await admin.get(resource as "offices" | "business-profiles" | "roles", id)
+                : await admin.list(resource as "offices" | "business-profiles" | "roles", req.query);
             else if (resource === "members" && !action)
               body = await admin.listMembers(req.query);
             else if (resource === "leads" && id && action === "notes") body = await crm.notes(id);
