@@ -273,7 +273,11 @@ class ApiController {
       const session = await readSession(runtimePool, req.cookies?.[sessionCookie]);
       localAccess(req);
       const reading = ["GET", "HEAD"].includes(req.method);
-      rate(requestRates, `${session.userId}:${reading ? "read" : "mutation"}`, reading ? 300 : 120);
+      rate(
+        requestRates,
+        `${session.userId}:${reading ? "read" : "mutation"}`,
+        reading ? (syntheticEnabled ? 10000 : 300) : syntheticEnabled ? 5000 : 120,
+      );
       if (req.method !== "GET" && req.method !== "HEAD") {
         origin(req);
         verifyCsrf(session, req.headers["x-csrf-token"] as string | undefined);

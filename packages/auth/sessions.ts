@@ -28,6 +28,31 @@ async function sessionTransaction<T>(
 }
 
 export async function readSession(pool: Pool, token: string | undefined): Promise<ServerSession> {
+  if (!["development", "test"].includes(process.env.APP_ENV ?? "") || process.env.DEV_AUTH_ENABLED !== "true")
+    throw new AccessError(
+      401,
+      "identity_provider_unconfigured",
+      "An approved identity provider is required.",
+    );
+  if (!token || !/^[a-f0-9]{64}$/.test(token))
+    throw new AccessError(401, "authentication_required", "Sign in required.");
+  const tokenHash = hashToken(token);
+  return sessionTransaction(pool, tokenHash, async (client) => {
+    const result = await client.query(
+      "SELECT user_id,active_org_id,csrf_token FROM app.login_session WHERE token_hash=$1 AND expires_at>now()",
+      [tokenHash],
+    );
+    if (!result.rowCount) throw new AccessError(401, "session_expired", "Session expired. Sign in again.");
+    return {
+      userId: result.rows[0].user_id,
+      organizationId: result.rows[0].active_org_id,
+      csrfToken: result.rows[0].csrf_token,
+      tokenHash,
+    };
+  });
+}
+
+export async function readProductionSession(pool: Pool, token: string | undefined): Promise<ServerSession> {
   if (!token || !/^[a-f0-9]{64}$/.test(token))
     throw new AccessError(401, "authentication_required", "Sign in required.");
   const tokenHash = hashToken(token);
