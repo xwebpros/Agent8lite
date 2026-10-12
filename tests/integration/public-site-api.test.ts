@@ -65,26 +65,27 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const id of entries)
-    await admin.query("DELETE FROM app.form_entry WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, id]);
-  for (const id of contacts) {
-    await admin.query("DELETE FROM app.contact_channel WHERE tenant_id=$1 AND contact_id=$2", [
-      fixtures.orgA,
-      id,
-    ]);
-    await admin.query("DELETE FROM app.contact WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, id]);
-  }
-  for (const id of visitors)
-    await admin.query("DELETE FROM app.visitor_identity WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, id]);
-  await admin.query("DELETE FROM app.form_schema WHERE tenant_id=$1 AND id=$2", [
-    fixtures.orgA,
-    formSchemaId,
-  ]);
-  await admin.query("DELETE FROM app.site WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, siteId]);
-  await admin.query("DELETE FROM app.business_profile WHERE tenant_id=$1 AND id=$2", [
-    fixtures.orgA,
-    businessProfileId,
-  ]);
+  // Cleanup is best-effort; the disposable DB is dropped by the runner on exit.
+  const cleanup = async () => {
+    for (const id of entries)
+      await admin.query("DELETE FROM app.form_entry WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, id]);
+    for (const id of visitors)
+      await admin.query("DELETE FROM app.visitor_identity WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, id]);
+    for (const id of contacts) {
+      await admin.query(
+        `DELETE FROM app.activity_event WHERE tenant_id=$1 AND lead_id IN
+         (SELECT id FROM app.lead WHERE tenant_id=$1 AND contact_id=$2)`,
+        [fixtures.orgA, id],
+      );
+      await admin.query("DELETE FROM app.lead WHERE tenant_id=$1 AND contact_id=$2", [fixtures.orgA, id]);
+      await admin.query("DELETE FROM app.contact_channel WHERE tenant_id=$1 AND contact_id=$2", [fixtures.orgA, id]);
+      await admin.query("DELETE FROM app.contact WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, id]);
+    }
+    await admin.query("DELETE FROM app.form_schema WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, formSchemaId]);
+    await admin.query("DELETE FROM app.site WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, siteId]);
+    await admin.query("DELETE FROM app.business_profile WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, businessProfileId]);
+  };
+  await cleanup().catch(() => {});
   await admin.end();
 });
 
