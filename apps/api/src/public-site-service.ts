@@ -5,6 +5,7 @@ import { AccessError, type TenantContext } from "../../../packages/db/tenant-tra
 import { NativeCaptureService } from "./native-capture-service";
 import { assertNativeMockMode, NativeMockReadService } from "./mls";
 import { validateSchema } from "./contract-validation";
+import { findOrCreateContact } from "./contact-upsert-port";
 
 const VISITOR_COOKIE = "estate_visitor_session";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -107,30 +108,7 @@ async function findOrCreatePublicContact(
   displayName: string,
   phone?: string,
 ): Promise<string> {
-  const normalizedEmail = email.trim().toLowerCase();
-  const existing = await client.query(
-    "SELECT contact_id FROM app.contact_channel WHERE tenant_id=$1 AND kind='email' AND normalized_value=$2 AND active=true LIMIT 1",
-    [context.organizationId, normalizedEmail],
-  );
-  if (existing.rowCount) return existing.rows[0].contact_id;
-  const contact = await client.query(
-    "INSERT INTO app.contact(tenant_id,display_name,created_by_member_id) VALUES($1,$2,$3) RETURNING id",
-    [context.organizationId, (displayName.trim() || "Public Visitor").slice(0, 120), context.memberId],
-  );
-  const contactId: string = contact.rows[0].id;
-  await client.query(
-    "INSERT INTO app.contact_channel(tenant_id,contact_id,kind,normalized_value,is_primary) VALUES($1,$2,'email',$3,true)",
-    [context.organizationId, contactId, normalizedEmail],
-  );
-  if (phone) {
-    const normalizedPhone = phone.trim().replace(/[\s().-]/g, "");
-    if (/^\+?[0-9]{7,15}$/.test(normalizedPhone))
-      await client.query(
-        "INSERT INTO app.contact_channel(tenant_id,contact_id,kind,normalized_value,is_primary) VALUES($1,$2,'phone',$3,false) ON CONFLICT DO NOTHING",
-        [context.organizationId, contactId, normalizedPhone],
-      );
-  }
-  return contactId;
+  return findOrCreateContact(client, context.organizationId, context.memberId, email, displayName, phone);
 }
 
 async function getDefaultSource(client: PoolClient, organizationId: string): Promise<string> {
