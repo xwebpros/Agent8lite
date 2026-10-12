@@ -53,6 +53,8 @@ For macOS, Linux, Windows ARM or a manual setup, use `docs/runbooks/local-develo
 
 Include the root launcher, all `scripts/bootstrap/` files, application/package source, migrations, `compose.yaml`, lockfile/workspace/root configuration and `.env.example`. Exclude `node_modules`, `.local`, `.git`, `.pnpm-store`, build/test outputs, private environment files, credentials, agreements and raw audit/customer/MLS exports. The launcher creates new fictional sample data; it does not transfer the sender's current database.
 
+Use a source-only ZIP from an exact committed checkpoint, with only explicitly selected recipient documentation added. Do not compress the entire development folder: installed dependency trees can exceed File Explorer's extraction path limits and local state can contain private data. Inspect the final ZIP for excluded directories, verify required bootstrap files and test extraction before sharing. The recipient can use a short writable extraction folder such as `C:\Users\YourName\A8` and open the contained project folder before running the launcher. The bootstrapper installs the omitted dependencies and creates new fictional data; it does not clone this machine's existing records, uploads or configuration.
+
 ## Verification
 
 Run without installing or starting anything:

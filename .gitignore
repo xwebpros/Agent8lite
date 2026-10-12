@@ -11,6 +11,8 @@ test-results/
 playwright-report/
 coverage/
 *.tsbuildinfo
+output/
+tmp/
 
 # Original audit evidence stays local in the canonical blueprint bundle.
 # Exclude it from commits and recipient source packages.

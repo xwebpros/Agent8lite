@@ -21,13 +21,26 @@ export async function migrate() {
         if (applied.rows[0].sha256 !== hash) throw new Error(`Applied migration changed: ${name}`);
         continue;
       }
-      // SQL files own their transaction; record is added before their final COMMIT.
+      // Keep the source checksum unchanged and commit DDL with its receipt.
       const escaped = name.replaceAll("'", "''");
-      const tracked = source.replace(
-        /COMMIT;/i,
-        `INSERT INTO public.estate_migration(name,sha256) VALUES ('${escaped}','${hash}'); COMMIT;`,
-      );
-      await client.query(tracked);
+      const receipt = `INSERT INTO public.estate_migration(name,sha256) VALUES ('${escaped}','${hash}');`;
+      const begins = [...source.matchAll(/^[\t ]*BEGIN[\t ]*;[\t ]*(?:--[^\r\n]*)?$/gim)];
+      const commits = [...source.matchAll(/^[\t ]*COMMIT[\t ]*;[\t ]*(?:--[^\r\n]*)?$/gim)];
+      let tracked: string;
+      if (begins.length === 0 && commits.length === 0) {
+        tracked = `BEGIN;\n${source}\n${receipt}\nCOMMIT;`;
+      } else if (begins.length === 1 && commits.length === 1 && begins[0].index < commits[0].index) {
+        const commitIndex = commits[0].index;
+        tracked = `${source.slice(0, commitIndex)}${receipt}\n${source.slice(commitIndex)}`;
+      } else {
+        throw new Error(`Migration requires one complete outer transaction or no transaction: ${name}`);
+      }
+      try {
+        await client.query(tracked);
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw error;
+      }
       console.log(`Applied ${name}`);
     }
     console.log("PostgreSQL/PostGIS migrations are current.");

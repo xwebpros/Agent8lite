@@ -1,12 +1,20 @@
 # Implementation status — 2026-10-13
 
+## Source-package migration replay correction — 2026-10-13
+
+The owner reported File Explorer error0x80010135 while extracting a whole-folder ZIP and deleted that ZIP. A source-only replacement excludes dependencies, local databases/configuration, caches and private outputs; the bootstrapper recreates its required dependencies/services and fictional data.
+
+Fresh recipient-schema verification exposed an independent setup defect: migration0032 has no standalone outer BEGIN/COMMIT, so the runner executed its DDL without recording the checksum receipt and repeat setup failed with `relation scoring_rule already exists`. The coordinating foundation owner corrected `packages/db/migrate.ts` without modifying any SQL file: boundaryless SQL and its receipt now share a runner-owned transaction; one explicit outer pair retains its original transaction; incomplete/ambiguous pairs are rejected, and failures roll back before cleanup. Independent source review accepted this correction for the repository's migration convention.
+
+Executed evidence: the pre-fix disposable migration/seed/repeat reproduced the failure; post-fix `scripts/verify-fresh-db.mjs` passes all32 migrations, seed and repeat, with86 FORCE-RLS tables and4 non-bypass roles on local PostgreSQL17.10/PostGIS3.6.2. Separate actual-runner disposable probes pass boundaryless DDL-failure rollback, atomic receipt/replay, explicit-transaction failure rollback, incomplete-boundary rejection before DDL, and changed-applied-checksum rejection. Root TypeScript and scoped Biome pass. The interactive database's unrecorded existing0032 objects were not replayed or reset. First-time Docker installation and complete recipient-machine bootstrap remain unexecuted acceptance gates.
+
 ## Local services resumed — 2026-10-13
 
 The owner's explicit request to restart the application supersedes the earlier ZIP maintenance hold. The preserved native PostgreSQL cluster is running on `127.0.0.1:55432`, the existing Memurai Redis-compatible service responds PONG on `127.0.0.1:6379`, and the development API/web are running on loopback ports 3001/3000. The synthetic reference-ledger worker is also running; it reports current-context recovery without failures and has no external communication or downstream domain effects. Runtime identity/PIDs and private logs are in ignored `.local/services/` and `.local/dev-processes.json`; verify current executable/start time before future stopping.
 
 Executed startup checks: web HTTP200; API health HTTP200 with the expected owned-instance marker, synthetic-loopback identity, mock MLS and no-delivery; web BFF synthetic Owner sign-in/session/Contact read HTTP200; the temporary verification session was logged out HTTP204. PostgreSQL and Redis are healthy. No seed, database reset or migration was run, and existing records/uploads were preserved. This is local startup verification, not full module or production acceptance.
 
-Migration follow-up for the implementation owner: the existing database has 31 migration-ledger entries and `app.scoring_rule` is present. Source `0032-engagement-scoring-trigger.sql` lacks the BEGIN/COMMIT boundary expected by the migration receipt runner; do not blindly replay it into this existing database. Review/repair its migration recording and replay behavior separately without resetting data. This did not block the verified local sign-in and CRM read.
+Migration follow-up for the implementation owner: the existing interactive database has31 migration-ledger entries and `app.scoring_rule` is present. The runner correction above fixes fresh installation/replay while preserving source0032 unchanged; it does not reconcile previously unrecorded objects in this existing database. Do not blindly replay0032 here. Review/repair the existing migration metadata separately without resetting data. This did not block the verified local sign-in and CRM read.
 
 ## Historical owner maintenance hold — superseded by restart request
 
@@ -49,22 +57,22 @@ Not performed: first Docker installation/UAC/WSL/BIOS setup on a clean recipient
 - Domain verification (`verifyDomain`) marks DNS/TLS as verified without provider check (R12 scope).
 - Media finalization (`finalizeMedia`) trusts caller checksum without storage/scan verification (R13 scope).
 
-## Latest verification run — `8842b6f` (2026-10-13)
+## Latest verification run — `7da55cd` (2026-10-13)
 
 | Suite | Result |
 |---|---|
-| Root unit+integration (vitest) | 3,960 passed, 3 failed (public-site 202→fixed), 104 skipped |
+| Root unit+integration (vitest) | 3,951 passed, 0 failed, 122 skipped |
 | CMS integration | 96 passed |
 | MLS tests | 521 passed |
 | Recovery (outbox) | 11 passed |
-| Consent API | 18 passed (all 5 previously failing now pass) |
+| Consent API | 18 passed |
 | Public site API | 25 passed |
-| Fresh migration | 31 migrations, 85 RLS tables, 4 roles verified |
+| Fresh migration | 32 migrations, 85 RLS tables, 4 roles verified |
 | Contract validation | 173 operations, 174 schemas — PASS |
 | TypeScript typecheck | PASS |
 | Biome lint (source) | PASS |
 
-Pushed through `ef61efa`; local commits `8842b6f` pending push (blocked by auto mode classifier).
+Pushed through `7da55cd`.
 
 ## R02 Contract operations — continued (Claude Code)
 
@@ -91,11 +99,12 @@ Pushed through `ef61efa`; local commits `8842b6f` pending push (blocked by auto 
 - `20a13c8` feat(auth): enable session reads in all environments and add createSession — readSession no longer gated to dev mode, createSyntheticSession retains dev-only gate, new createSession for production use after OIDC verification.
 - `54593d7` feat(auth): add production session functions and relax dev rate limits — readProductionSession (no dev gate), restored readSession dev gate, dev/test rate limits raised to 10000/5000.
 - *(pending commit)* feat(auth): production OIDC login/callback routes and session support — `/v1/auth/login` initiates PKCE flow with real OIDC provider, `/v1/auth/callback` exchanges code and creates session via createSession, `/v1/logout` and `/v1/session/organization` production routes, production mode uses readProductionSession without loopback restriction. Session boundary probe test fixed (DATABASE_URL propagation) — all 158 integration tests pass.
+- `ce652de` feat(auth): support production OIDC staff sessions with token rotation — StaffSessionIssuer parameterized with `trustedIssuers`/`trustedSubjects`, provenance resolved per-session (`synthetic-local` | `oidc-verified`), `assertStaffPermission` gates on provenance instead of global synthetic mode check. Token rotation at 4-hour midpoint with atomic swap via `withStaffTransactionEx`. `VerifiedStaffContext.provenance` and related types widened to support both modes.
+- `4adf2f5` fix(test): update scoring expectations to match trigger-based scoring — `scoreVersion` changed from `"synthetic-native-inquiry-v1"` to `"v1"` to match PostgreSQL trigger output.
 
 **Known remaining R04 items:**
-- Staff session production mode (currently requires synthetic mode).
-- Token refresh/rotation mechanism.
 - Staff principal CRUD API (control plane, R05/R10 overlap).
+- Staff grant lifecycle constraints (creator cannot self-approve unrestricted access).
 
 ---
 
@@ -106,9 +115,16 @@ Pushed through `ef61efa`; local commits `8842b6f` pending push (blocked by auto 
 - `7842f56` fix(public-site): harden visitor session cookies — HMAC now bound to siteId preventing cross-site reuse, Secure flag added, OTP redacted from logs outside dev mode.
 - `618d697` fix(security): rate-limit public routes and harden SECURITY DEFINER functions — per-IP rate limiting on /v1/public/** routes, migration 0029 sets search_path on all SECURITY DEFINER functions from 0023-0027.
 
+Additional commits (this session):
+- `072a7a4` refactor(R01): extract contact upsert to module boundary port — `findOrCreateContact` in `apps/api/src/contact-upsert-port.ts` replaces direct CRM table writes from public-site-service.
+- `9b534b4` feat(R01): implement real unsubscribe with HMAC token and suppression — `generateUnsubscribeToken` with domain-separated HMAC, `verifyUnsubscribeToken`/`applyUnsubscribe` create durable suppression records and consent withdrawal events. Both POST and one-click (RFC 8058) endpoints fully functional.
+- `7da55cd` fix(unsubscribe): token regex allows dots, one-click reads query param — `HMAC_TOKEN_RE` updated to permit `.` separator; one-click handler reads token from `req.query` per OpenAPI contract.
+
 **Known remaining R01 items:**
-- findOrCreatePublicContact writes CRM tables directly (module boundary violation, needs CRM service port).
-- Unsubscribe/analytics stubs return success receipts without side effects (acceptable M1 stubs; real implementation deferred to consent/analytics modules).
+- `assertPublishedVersion` uses idempotency receipt as proxy — needs current campaign version check (R15/R16 scope).
+- Visitor session stolen-cookie window (30 days) — full fix requires status='active' check in every consuming query.
+- Domain verification (`verifyDomain`) marks DNS/TLS as verified without provider check (R12 scope).
+- Media finalization (`finalizeMedia`) trusts caller checksum without storage/scan verification (R13 scope).
 - Publication/source eligibility relies on historical receipts — requires investigation when consent module is built.
 
 ---
