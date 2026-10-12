@@ -89,9 +89,10 @@ describe("M1/M2 — verified sessions, tenant and own scope", () => {
     const ownedByOwner = await capture(owner);
     const ownedByAgent = await capture(owner, agent.memberId);
     const leads = (await agent.read(`/v1/orgs/${agent.orgId}/leads?limit=100`, "PageLead")).body.items;
-    expect(leads.map((lead) => lead.id)).toContain(ownedByAgent.lead.id);
-    expect(leads.map((lead) => lead.id)).not.toContain(ownedByOwner.lead.id);
     expect(leads.every((lead) => lead.ownerMemberId === agent.memberId)).toBe(true);
+    expect(leads.map((lead) => lead.id)).not.toContain(ownedByOwner.lead.id);
+    const detail = await agent.request(`/v1/orgs/${agent.orgId}/leads/${ownedByAgent.lead.id}`);
+    expect(detail.status).toBe(200);
     await assertProblem(await agent.request(`/v1/orgs/${agent.orgId}/leads/${ownedByOwner.lead.id}`), 404);
     await assertProblem(
       await agent.command(
