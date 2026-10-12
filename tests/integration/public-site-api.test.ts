@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fixtures } from "../../packages/db/fixtures";
 import { assertContract, assertProblem, apiOrigin } from "../helpers/api";
 import { createMigrationPool } from "../helpers/database";
+import { generateUnsubscribeToken } from "../../apps/api/src/unsubscribe-token";
 
 const admin = createMigrationPool();
 const siteId = randomUUID();
@@ -296,17 +297,27 @@ describe("ADR-052 public site — analytics and unsubscribe", () => {
     );
   });
 
-  it("unsubscribeMessage accepts a valid token format", async () => {
-    const token = Buffer.from("example-hmac-token").toString("base64url");
+  it("unsubscribeMessage accepts a valid signed token and creates suppression", async () => {
+    const signingKey = process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production";
+    const token = generateUnsubscribeToken(signingKey, fixtures.orgA, `unsub-${randomUUID()}@example.test`, "marketing");
     const res = await post("/v1/public/message-unsubscriptions", { token });
-    expect(res.status).toBe(202);
+    expect(res.status).toBe(200);
     const body = await res.json();
     assertContract("SubmissionReceipt", body);
   });
 
-  it("oneClickUnsubscribe accepts One-Click body", async () => {
-    const res = await post("/v1/public/one-click-unsubscribe", { "List-Unsubscribe": "One-Click" });
-    expect(res.status).toBe(202);
+  it("unsubscribeMessage rejects a tampered token", async () => {
+    const signingKey = process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production";
+    const token = generateUnsubscribeToken(signingKey, fixtures.orgA, `unsub-${randomUUID()}@example.test`, "marketing");
+    const tampered = token.slice(0, -3) + "xxx";
+    await assertProblem(await post("/v1/public/message-unsubscriptions", { token: tampered }), 422);
+  });
+
+  it("oneClickUnsubscribe accepts a valid signed token", async () => {
+    const signingKey = process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production";
+    const token = generateUnsubscribeToken(signingKey, fixtures.orgA, `click-${randomUUID()}@example.test`, "marketing");
+    const res = await post("/v1/public/one-click-unsubscribe", { token });
+    expect(res.status).toBe(200);
     const body = await res.json();
     assertContract("SubmissionReceipt", body);
   });

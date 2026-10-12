@@ -593,27 +593,97 @@ export class PublicSiteService {
     res.status(202).json(receipt);
   }
 
+  private verifyUnsubscribeToken(token: string): { tenantId: string; email: string; purpose: string } {
+    const dotIndex = token.lastIndexOf(".");
+    if (dotIndex < 1) throw new AccessError(422, "token_invalid", "Unsubscribe token is malformed.");
+    const payload = token.slice(0, dotIndex);
+    const signature = token.slice(dotIndex + 1);
+    const expected = createHmac("sha256", this.signingKey)
+      .update(`unsubscribe:${payload}`)
+      .digest("base64url");
+    if (
+      signature.length !== expected.length ||
+      !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+    )
+      throw new AccessError(422, "token_invalid", "Unsubscribe token verification failed.");
+    try {
+      const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+      if (
+        !data ||
+        typeof data.t !== "string" ||
+        !UUID_RE.test(data.t) ||
+        typeof data.e !== "string" ||
+        !EMAIL_RE.test(data.e) ||
+        typeof data.p !== "string" ||
+        !data.p
+      )
+        throw new Error();
+      return { tenantId: data.t, email: data.e.toLowerCase(), purpose: data.p };
+    } catch {
+      throw new AccessError(422, "token_invalid", "Unsubscribe token payload is invalid.");
+    }
+  }
+
+  private async applyUnsubscribe(tenantId: string, email: string, purpose: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.tenant_id',$1,true)", [tenantId]);
+      await client.query(
+        `INSERT INTO app.suppression(tenant_id,channel_kind,normalized_destination,purpose,reason)
+         VALUES($1,'email',$2,$3,'unsubscribe_link')
+         ON CONFLICT(tenant_id,channel_kind,normalized_destination,purpose)
+         DO UPDATE SET expires_at=NULL,row_version=app.suppression.row_version+1,updated_at=clock_timestamp()`,
+        [tenantId, email, purpose],
+      );
+      const channel = await client.query(
+        "SELECT id FROM app.contact_channel WHERE tenant_id=$1 AND kind='email' AND normalized_value=$2 AND active=true LIMIT 1",
+        [tenantId, email],
+      );
+      if (channel.rowCount) {
+        await client.query(
+          `INSERT INTO app.consent_event(tenant_id,contact_channel_id,purpose,action,policy_version,evidence_ref,occurred_at)
+           VALUES($1,$2,$3,'withdraw','unsubscribe-link-v1',$4,clock_timestamp())`,
+          [tenantId, channel.rows[0].id, purpose, `unsubscribe:${randomUUID()}`],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async unsubscribeMessage(req: Request, res: Response): Promise<void> {
     validateSchema("UnsubscribeRequest", req.body);
     const token = String(req.body.token);
     if (!HMAC_TOKEN_RE.test(token))
       throw new AccessError(422, "token_invalid", "Unsubscribe token is malformed.");
+    const { tenantId, email, purpose } = this.verifyUnsubscribeToken(token);
+    await this.applyUnsubscribe(tenantId, email, purpose);
     const receipt = {
       receiptId: randomUUID(),
-      message: "Unsubscribe request accepted. Durable suppression is pending implementation.",
+      message: "You have been unsubscribed successfully.",
     };
     validateSchema("SubmissionReceipt", receipt, true);
-    res.status(202).json(receipt);
+    res.status(200).json(receipt);
   }
 
   async oneClickUnsubscribe(req: Request, res: Response): Promise<void> {
     validateSchema("OneClickUnsubscribeBody", req.body);
+    const token = String(req.body.token ?? req.body.List_Unsubscribe ?? "");
+    if (!HMAC_TOKEN_RE.test(token))
+      throw new AccessError(422, "token_invalid", "Unsubscribe token is malformed.");
+    const { tenantId, email, purpose } = this.verifyUnsubscribeToken(token);
+    await this.applyUnsubscribe(tenantId, email, purpose);
     const receipt = {
       receiptId: randomUUID(),
-      message: "Unsubscribe request accepted. Durable suppression is pending implementation.",
+      message: "You have been unsubscribed successfully.",
     };
     validateSchema("SubmissionReceipt", receipt, true);
-    res.status(202).json(receipt);
+    res.status(200).json(receipt);
   }
 }
 
