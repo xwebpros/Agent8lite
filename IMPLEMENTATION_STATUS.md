@@ -139,16 +139,16 @@ All CMS/staff/public/CRM/billing/admin paths route correctly.
 
 **Security fix — `2aab7eb`:** `listMembers` query added explicit `tenant_id=app.current_tenant()` filter. The RLS `membership_select` PERMISSIVE policy allowed `user_id=current_actor()` across tenants, leaking cross-tenant member IDs to the organization owner. Integration test confirms fix.
 
-**Test results (2026-10-13, latest `8d24603`):**
+**Test results (2026-10-13, latest `e375eed`):**
 - Control tests: 66/66 pass (disposable database, 4 suites)
-- Integration tests: 188/188 pass across 26 suites (admin-api, audit-events-api, billing-api, contact-filter-api, crm-api, crm-configuration-api, data-transfer-api, database-isolation, deal-crud-api, deals-configuration-api, http-boundary, invitation-api, lead-filter-api, lead-notes-activity-api, lead-tags-api, member-management-api, offices-profiles-api, outbox, profile-reference, push-subscriptions-api, routing-capture-api, runtime-role, scoring-api, session-profile-api, support-api, synthetic-session-boundary)
+- Integration tests: 200/200 pass across 27 suites (admin-api, audit-events-api, billing-api, contact-filter-api, crm-api, crm-configuration-api, data-transfer-api, database-isolation, deal-crud-api, deal-filter-api, deals-configuration-api, http-boundary, invitation-api, lead-filter-api, lead-notes-activity-api, lead-tags-api, member-management-api, offices-profiles-api, outbox, profile-reference, push-subscriptions-api, routing-capture-api, runtime-role, scoring-api, session-profile-api, support-api, task-filter-api)
 - Unit tests: 2,534/2,534 pass (79 suites)
 - Package tests: 737/737 pass (15 suites)
-- 26 additional integration suites require `TEST_DATABASE_URL`/`TEST_MIGRATION_DATABASE_URL`/`TEST_API_ORIGIN` with a disposable acceptance database (by design — these are the deep module-level acceptance tests)
+- 25 additional integration suites require `TEST_DATABASE_URL`/`TEST_MIGRATION_DATABASE_URL`/`TEST_API_ORIGIN` with a disposable acceptance database (by design — these are the deep module-level acceptance tests)
 - Contract validation: 173 operations, 174 schemas — PASS
 - TypeScript: PASS
 - Dev login rate limit raised to 200/min (syntheticEnabled) to support concurrent test suites
-- New suites this session: audit-events-api (4), push-subscriptions-api (6), session-profile-api (5), contact-filter-api (6), lead-filter-api (8) — all 6 LeadFilter fields (q, ownerMemberId, tagIds, stageId, sourceId, intent) implemented and tested for contacts and leads
+- New suites this session: audit-events-api (4), push-subscriptions-api (6), session-profile-api (5), contact-filter-api (6), lead-filter-api (8), task-filter-api (7), deal-filter-api (5) — all 6 LeadFilter fields (q, ownerMemberId, tagIds, stageId, sourceId, intent) implemented and tested for contacts, leads, tasks and deals
 
 ---
 

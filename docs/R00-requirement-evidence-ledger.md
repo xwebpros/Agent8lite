@@ -1,7 +1,7 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Updated:** 2026-10-13 at commit `f2faa29` — 178+ integration tests across 24 suites.
+**Updated:** 2026-10-13 at commit `e375eed` — 200 integration tests across 27 suites.
 **Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
@@ -190,7 +190,7 @@
 | Category | Count | Suites |
 |----------|-------|--------|
 | Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 178+ | 24 |
+| Integration (shared DB) | 200 | 27 |
 | Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
 | Unit | 2,534 | 79 |
 | Package | 737 | 15 |
