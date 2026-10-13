@@ -1,7 +1,9 @@
 # ADR-052: Public site service — visitor sessions, forms, listings and organizer
 
-**Status:** accepted  
-**Date:** 2026-10-11  
+**Status:** accepted
+
+**Date:** 2026-10-11
+
 **Milestone:** M3 (website builder forms), M5 (public listing search and organizer)
 
 ## Context

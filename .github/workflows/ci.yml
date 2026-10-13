@@ -54,7 +54,6 @@ jobs:
       REDIS_URL: redis://127.0.0.1:56379
       MLS_PROVIDER: mock
       DELIVERY_PROVIDER: no-delivery
-      IDX_TEST_SERVICE_CONTAINER: ${{ job.services.idx-postgres.id }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -88,6 +87,8 @@ jobs:
       - name: Await synthetic servers
         run: node scripts/wait-ready.mjs
       - run: pnpm test:isolated
+        env:
+          IDX_TEST_SERVICE_CONTAINER: ${{ job.services.idx-postgres.id }}
       - name: BullMQ transport with dedicated synthetic Redis
         run: pnpm exec vitest run --config tests/recovery/redis-service.vitest.config.mts
         env:

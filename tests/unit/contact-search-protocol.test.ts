@@ -423,7 +423,7 @@ describe("read-only bounded contact transport", () => {
   it("transports the supported intent, stage and source filters as a bounded read-only query", async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("{}"));
     vi.stubGlobal("fetch", fetcher);
-    const filter = { intent: "buyer", stageId: org, sourceId: org, tagIds: [org] };
+    const filter: Schema<"LeadFilter"> = { intent: "buyer", stageId: org, sourceId: org, tagIds: [org] };
     await contactSearchRequest(org, filter);
     expect(fetcher).toHaveBeenCalledTimes(1);
     const [url, options] = fetcher.mock.calls[0];

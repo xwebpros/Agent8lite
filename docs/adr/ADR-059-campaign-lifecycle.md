@@ -1,7 +1,9 @@
 # ADR-059: Campaign Lifecycle — publishCampaign and archiveCampaign
 
-**Status:** Accepted  
-**Date:** 2026-10-12  
+**Status:** Accepted
+
+**Date:** 2026-10-12
+
 **Workstream:** W01 Foundation (coordinator)
 
 ## Context

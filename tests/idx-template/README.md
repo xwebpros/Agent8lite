@@ -84,4 +84,6 @@ Ubuntu GitHub Actions uses the workflow's separate `idx-postgres` service with `
 
 The CI ownership parser and negative fixtures are verified locally. Actual Ubuntu container acceptance is pending the remote workflow run; Windows native acceptance does not substitute for that result.
 
+The service container ID belongs in the acceptance **step's** environment. GitHub's `job` context is unavailable in a job-level `env` mapping; see the official [context availability table](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability). Do not move this value above the step or substitute a guessed service name/port for actual container ownership.
+
 This verifies synthetic behavior. Source screenshot comparison, responsive keyboard/accessibility review, live MLS licensing/activation, physical mobile PWA checks and production release acceptance remain separate gates.
