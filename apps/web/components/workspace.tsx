@@ -5576,6 +5576,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   online={online}
                   working={busy}
                   leads={data.leads}
+                  sources={data.sources}
                   leadLabel={nameFor}
                   runCommand={command}
                   onDirty={setDirty}
