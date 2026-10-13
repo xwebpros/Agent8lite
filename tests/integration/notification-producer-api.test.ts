@@ -7,12 +7,15 @@ const admin = createMigrationPool();
 let owner: ApiSession;
 let agent: ApiSession;
 let sourceId: string;
+let stages: Schemas["PipelineStage"][];
 
 beforeAll(async () => {
   owner = await new ApiSession().signIn("owner");
   agent = await new ApiSession().signIn("agent");
   const sources = await owner.read(`/v1/orgs/${owner.orgId}/lead-sources`, "PageLeadSource");
   sourceId = sources.body.items[0].id;
+  const stageList = await owner.read(`/v1/orgs/${owner.orgId}/pipeline-stages`, "PagePipelineStage");
+  stages = stageList.body.items;
 });
 afterAll(async () => {
   await admin.end();
@@ -118,5 +121,32 @@ describe("notification producer", () => {
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
     expect(notification!.title).toContain("Synthetic notification task");
+  });
+
+  it("creates a notification when a lead's stage is changed by another member", async () => {
+    const contact = await createContact(owner);
+    const lead = await createLead(owner, contact.id, agent.memberId);
+
+    expect(stages.length).toBeGreaterThanOrEqual(2);
+    const targetStage = stages.find((s) => s.id !== lead.stageId) ?? stages[1];
+
+    const before = await listNotifications(agent);
+    const beforeCount = before.length;
+
+    const transition = await owner.command(
+      `/v1/orgs/${owner.orgId}/leads/${lead.id}/stage-transitions`,
+      { toStageId: targetStage.id } satisfies Schemas["StageTransition"],
+      { revision: `"${lead.version}"` },
+    );
+    expect(transition.status).toBe(201);
+
+    const after = await listNotifications(agent);
+    expect(after.length).toBeGreaterThan(beforeCount);
+    const notification = after.find(
+      (n: Schemas["Notification"]) => n.kind === "lead.stage_changed",
+    );
+    expect(notification).toBeDefined();
+    assertContract("Notification", notification);
+    expect(notification!.title).toContain("stage");
   });
 });
