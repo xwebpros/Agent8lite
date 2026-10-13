@@ -362,7 +362,7 @@ export class CrmService {
       validateSchema("LeadFilter", filter);
     }
     const supportedFilters: Record<string, string[]> = {
-      contacts: ["q", "ownerMemberId", "tagIds"],
+      contacts: ["q", "ownerMemberId", "tagIds", "stageId", "sourceId", "intent"],
       leads: ["q", "ownerMemberId", "stageId", "sourceId", "intent", "tagIds"],
       tasks: ["q", "ownerMemberId"],
     };
@@ -529,6 +529,25 @@ export class CrmService {
       params.push(filter.ownerMemberId);
       where.push(
         `((r.created_by_member_id=$${params.length} AND NOT EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL)) OR EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL AND l.owner_member_id=$${params.length}))`,
+      );
+    }
+    const leadFilters: string[] = [];
+    if (filter.stageId) {
+      params.push(filter.stageId);
+      leadFilters.push(`l.stage_id=$${params.length}`);
+    }
+    if (filter.sourceId) {
+      params.push(filter.sourceId);
+      leadFilters.push(`l.source_id=$${params.length}`);
+    }
+    if (filter.intent) {
+      params.push(filter.intent);
+      leadFilters.push(`l.intent=$${params.length}`);
+    }
+    if (leadFilters.length) {
+      const leadScope2 = requirePermission(context, "crm.leads.read");
+      where.push(
+        `EXISTS(SELECT 1 FROM app.lead l WHERE l.tenant_id=app.current_tenant() AND l.contact_id=r.id AND l.archived_at IS NULL AND ${current.scopeSql("leads", leadScope2, "$1").replaceAll("r.owner_member_id", "l.owner_member_id")} AND ${leadFilters.join(" AND ")})`,
       );
     }
     if (filter.tagIds?.length) {
