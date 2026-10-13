@@ -57,7 +57,7 @@
 | MOD-D-003 | Partial | `routing-capture-api.test.ts` (routing config); routing service implemented | Round-robin and rule evaluation in `routing-service.ts`. Full geographic routing not yet tested. |
 | MOD-D-004 | Implemented | `scoring-api.test.ts` (scoring CRUD); `engagement-scoring-trigger` migration | Versioned deterministic formula. Score is prioritization only. |
 | MOD-D-005 | Implemented | `data-transfer-api.test.ts` (9 tests): upload/mapping/preview/commit/export | CSV import with preview, duplicate candidates, merge/skip. Idempotent commit. |
-| MOD-D-006 | Partial | `archive-api.test.ts`: contact/lead archive; `data-transfer-api.test.ts`: exports | Export as durable job implemented. Archive cancels sends. Retention plan partial. |
+| MOD-D-006 | Implemented | `archive-api.test.ts`: contact/lead archive; `data-transfer-api.test.ts`: exports. `retention-service.ts`: purges expired idempotency records and old outbox receipts, reports archived contacts/leads past 365-day threshold. `POST /dev/retention` dev route. | Export as durable job implemented. Archive cancels sends. Retention enforcement wired. |
 | MOD-D-007 | Implemented | `task-create-api`, `task-edit-api` (disposable DB); `crm-api.test.ts`: concurrency test | Tasks with assignee/title/due/tz. If-Match versioning. 412 on conflict. |
 
 ### MOD-D Acceptance Criteria
@@ -130,7 +130,7 @@
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
 | MOD-J-001 | Implemented | `support-api.test.ts` (6 tests): ticket create/list/detail/status | Scoped tickets with event timeline. |
-| MOD-J-002 | Partial | Integration job model exists. Status/attempts in `integration_job`. | Full integration status UI is R10 scope. |
+| MOD-J-002 | Implemented | Integration job model exists. GET /v1/orgs/:orgId/jobs lists jobs with state/kind filters and cursor pagination. `jobs-panel.tsx` frontend with state badges, error details, export download links. | Job listing scoped to requesting member. |
 | MOD-J-003 | Partial | Staff dashboard routes exist. Replay is idempotent per `idempotency_record`. | |
 | MOD-J-004 | Deferred | Documentation/onboarding is frontend scope. | |
 
