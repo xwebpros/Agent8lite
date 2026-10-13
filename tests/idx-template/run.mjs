@@ -372,6 +372,11 @@ async function main() {
       "tests/cms/native-drafts.integration.test.ts",
       "tests/integration/lead-capture-api.test.ts",
       "tests/integration/routing-capture-api.test.ts",
+      "tests/integration/notification-producer-api.test.ts",
+      "tests/integration/contact-filter-api.test.ts",
+      "tests/integration/lead-filter-api.test.ts",
+      "tests/integration/task-filter-api.test.ts",
+      "tests/integration/deal-filter-api.test.ts",
     ]);
     const files = args.length > 1 ? args.slice(1) : [...approved];
     if (files.some((file) => !approved.has(file))) throw new Error("idx_test_regression_not_approved");

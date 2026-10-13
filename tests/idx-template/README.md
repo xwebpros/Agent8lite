@@ -72,7 +72,7 @@ $env:ISOLATED_TEST_REPORT = '.local\verification\idx-http.json'
 node tests/idx-template/run.mjs tests/idx-template/http.integration.test.ts
 ```
 
-The bounded regression mode runs the existing native CMS draft/publication suite and the legacy lead/routing capture API suites against new databases on this same verified cluster:
+The bounded regression mode runs the existing native CMS draft/publication suite, legacy lead/routing capture APIs, and the foundation notification producer and contact/lead/task/deal filter suites against new databases on this same verified cluster:
 
 ```powershell
 node tests/idx-template/run.mjs --regression
