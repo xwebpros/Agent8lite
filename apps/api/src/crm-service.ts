@@ -1706,6 +1706,16 @@ export class CrmService {
           }),
         ],
       );
+      if (effectiveOwner && effectiveOwner !== context.memberId) {
+        await this.client.query(
+          `SELECT app.create_notification($1,$2,'lead.assigned',$3)`,
+          [
+            context.organizationId,
+            effectiveOwner,
+            JSON.stringify({ title: "A lead was assigned to you", href: "/pipeline" }),
+          ],
+        );
+      }
     }
     await this.client.query(
       `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff,created_at,updated_at)
@@ -1944,6 +1954,16 @@ export class CrmService {
         stageTransitionJson({ resourceVersion: lead.version }),
       ],
     );
+    if (lead.ownerMemberId && lead.ownerMemberId !== context.memberId) {
+      await this.client.query(
+        `SELECT app.create_notification($1,$2,'lead.stage_changed',$3)`,
+        [
+          context.organizationId,
+          lead.ownerMemberId,
+          JSON.stringify({ title: "A lead's pipeline stage was updated", href: "/pipeline" }),
+        ],
+      );
+    }
     await this.client.query(
       `INSERT INTO app.idempotency_record
        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
@@ -2184,6 +2204,16 @@ export class CrmService {
        VALUES($1,$2,'task.created','task',$3,$4,'{"resourceVersion":1}',$5,$5)`,
       [context.organizationId, context.userId, task.id, traceId, timestamp],
     );
+    if (input.assigneeMemberId && input.assigneeMemberId !== context.memberId) {
+      await this.client.query(
+        `SELECT app.create_notification($1,$2,'task.assigned',$3)`,
+        [
+          context.organizationId,
+          input.assigneeMemberId,
+          JSON.stringify({ title: `Task assigned: ${input.title.slice(0, 120)}`, href: "/tasks" }),
+        ],
+      );
+    }
     await this.client.query(
       `INSERT INTO app.idempotency_record
        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,response_ref,expires_at,created_at,updated_at)
