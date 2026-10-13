@@ -4,12 +4,24 @@ import type { components } from "../../../../packages/contracts/generated/api";
 
 export type TemplateContent = components["schemas"]["IdxTemplateContent"];
 const SiteContext = createContext<TemplateContent | null>(null);
+const OriginContext = createContext("");
+export function useTemplateOrigin() {
+  return useContext(OriginContext);
+}
 export function useTemplateSite() {
   const site = useContext(SiteContext);
   if (!site) throw new Error("Published template context is required.");
   return site;
 }
-export function PublishedSiteProvider({ site, children }: { site: TemplateContent; children: ReactNode }) {
+export function PublishedSiteProvider({
+  site,
+  children,
+  origin = "",
+}: {
+  site: TemplateContent;
+  children: ReactNode;
+  origin?: string;
+}) {
   const [expired, setExpired] = useState(false);
   useEffect(() => {
     const expire = () =>
@@ -49,5 +61,9 @@ export function PublishedSiteProvider({ site, children }: { site: TemplateConten
         </button>
       </div>
     );
-  return <SiteContext.Provider value={site}>{children}</SiteContext.Provider>;
+  return (
+    <OriginContext.Provider value={origin}>
+      <SiteContext.Provider value={site}>{children}</SiteContext.Provider>
+    </OriginContext.Provider>
+  );
 }

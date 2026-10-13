@@ -7,6 +7,7 @@
     "Active source JSX utility classes retained; imports adapted to native generated API, Next navigation and published CMS context.",
     "Provider calls, private browser persistence, original CRM/admin, source analytics and direct email removed.",
     "Unsupported optional capabilities keep source panel geometry with explicit unavailable states.",
+    "build-gated-pages.mjs retains actual source JSX/section identifiers for all account, organizer, saved-home, community and legal pages; original effects/policies are never activated.",
     "CSS compiled and scoped to data-idx-template; Leaflet loaded only in client and external tiles remain disabled."
   ],
   "files": [
@@ -32,31 +33,31 @@
       "path": "pages/LocationPage.tsx",
       "sha256": "108d297f36d2d56a916d845517eb841e0c54939a15ce23708f72d284e961a782",
       "bytes": 7328,
-      "active": false
+      "active": true
     },
     {
       "path": "pages/SavedHomes.tsx",
       "sha256": "4352ddae64d9a231fefca869bd152aa5f585af4a91a28131ee854d4a3e036a2d",
       "bytes": 7084,
-      "active": false
+      "active": true
     },
     {
       "path": "pages/Organizer.tsx",
       "sha256": "4b47f3a518c78613cdc26482ab504a9f12892d15b5e9ac027e93c8ca5688d990",
       "bytes": 15103,
-      "active": false
+      "active": true
     },
     {
       "path": "pages/Account.tsx",
       "sha256": "c9ef774bdd760842fc93bab1dec08e22cd1859a6b69625b268f1af508142bc8a",
       "bytes": 7409,
-      "active": false
+      "active": true
     },
     {
       "path": "pages/Terms.tsx",
       "sha256": "2c81e305f8bea1193d468771fed525a560757c3d477d563c49df79a1d5e91c0e",
       "bytes": 8165,
-      "active": false
+      "active": true
     },
     {
       "path": "components/Layout.tsx",

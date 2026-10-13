@@ -10,7 +10,15 @@ import Organizer from "./pages/Organizer";
 import Account from "./pages/Account";
 import Terms from "./pages/Terms";
 import "./template.css";
-export default function IdxTemplateApp({ site, path = [] }: { site: TemplateContent; path?: string[] }) {
+export default function IdxTemplateApp({
+  site,
+  path = [],
+  origin,
+}: {
+  site: TemplateContent;
+  path?: string[];
+  origin: string;
+}) {
   const [client] = useState(
     () =>
       new QueryClient({
@@ -40,7 +48,7 @@ export default function IdxTemplateApp({ site, path = [] }: { site: TemplateCont
   );
   return (
     <QueryClientProvider client={client}>
-      <PublishedSiteProvider site={site}>
+      <PublishedSiteProvider site={site} origin={origin}>
         <div data-idx-template className="idx-template">
           {page}
         </div>

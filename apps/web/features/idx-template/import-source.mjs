@@ -49,6 +49,13 @@ const active = new Set([
   "lib/map-state.ts",
   "lib/location-seo.ts",
 ]);
+const gated = new Set([
+  "pages/Account.tsx",
+  "pages/Organizer.tsx",
+  "pages/SavedHomes.tsx",
+  "pages/LocationPage.tsx",
+  "pages/Terms.tsx",
+]);
 const manifest = {
   repository: "djmichaelmartin-cmd/Las-Vegas-Live-IDX",
   branch: "Full_Web_App_phase_1",
@@ -58,6 +65,7 @@ const manifest = {
     "Active source JSX utility classes retained; imports adapted to native generated API, Next navigation and published CMS context.",
     "Provider calls, private browser persistence, original CRM/admin, source analytics and direct email removed.",
     "Unsupported optional capabilities keep source panel geometry with explicit unavailable states.",
+    "build-gated-pages.mjs retains actual source JSX/section identifiers for all account, organizer, saved-home, community and legal pages; original effects/policies are never activated.",
     "CSS compiled and scoped to data-idx-template; Leaflet loaded only in client and external tiles remain disabled.",
   ],
   files: [],
@@ -73,7 +81,7 @@ for (const relative of files) {
     path: relative,
     sha256: createHash("sha256").update(input).digest("hex"),
     bytes: input.length,
-    active: active.has(relative),
+    active: active.has(relative) || gated.has(relative),
   });
   if (!active.has(relative)) continue;
   let code = input
@@ -220,8 +228,18 @@ for (const relative of files) {
       '{site.capabilities.map && site.dataMode === "mock" ? `${mappableCount} mapped synthetic properties · no external tiles` : "Map capability unavailable · list remains usable"}',
     );
   }
+  if (relative === "lib/location-seo.ts") {
+    code = code
+      .replace("origin: string)", 'origin: string, basePath = "")')
+      .replace(
+        "new URL(locationPagePath(location.slug), origin)",
+        "new URL(basePath + locationPagePath(location.slug), origin)",
+      )
+      .replace('new URL("/", origin)', 'new URL(basePath || "/", origin)');
+  }
   const output = path.join(target, relative);
   await mkdir(path.dirname(output), { recursive: true });
   await writeFile(output, '"use client";\n\n' + code);
 }
 await writeFile(path.join(target, "source-parity.json"), JSON.stringify(manifest, null, 2) + "\n");
+await import("./build-gated-pages.mjs");

@@ -6,8 +6,8 @@ export function locationPagePath(slug: string) {
   return `/communities/${slug}`;
 }
 
-export function locationStructuredData(location: LocationSeoInput, origin: string) {
-  const pageUrl = new URL(locationPagePath(location.slug), origin).href;
+export function locationStructuredData(location: LocationSeoInput, origin: string, basePath = "") {
+  const pageUrl = new URL(basePath + locationPagePath(location.slug), origin).href;
   return {
     "@context": "https://schema.org",
     "@graph": [
@@ -21,7 +21,7 @@ export function locationStructuredData(location: LocationSeoInput, origin: strin
       {
         "@type": "BreadcrumbList",
         itemListElement: [
-          { "@type": "ListItem", position: 1, name: "Home", item: new URL("/", origin).href },
+          { "@type": "ListItem", position: 1, name: "Home", item: new URL(basePath || "/", origin).href },
           { "@type": "ListItem", position: 2, name: location.displayName, item: pageUrl },
         ],
       },

@@ -47,6 +47,14 @@ for (const file of files) {
   )
     throw new Error(`Legacy provider or private persistence in active source: ${file}`);
 }
+for (const page of ["Organizer", "Terms", "LocationPage"]) {
+  const original = await readFile(path.join(base, `provenance/original/pages/${page}.tsx.txt`), "utf8");
+  const adapted = await readFile(path.join(base, `pages/${page}.tsx`), "utf8");
+  for (const match of original.matchAll(/aria-labelledby="([^"]+)"/g)) {
+    if (!adapted.includes(`aria-labelledby="${match[1]}"`))
+      throw new Error(`Source section was lost: ${page}/${match[1]}`);
+  }
+}
 const css = await readFile(path.join(base, "template.css"), "utf8");
 postcss.parse(css).walkRules((rule) => {
   if (rule.parent.type === "atrule" && /keyframes$/.test(rule.parent.name)) return;

@@ -96,7 +96,9 @@ export function PropertyInquiryForm({ listingKey, listingId }: { listingKey: str
       setReceipt(result);
       setUnknown(false);
     } catch (cause) {
-      const uncertain = !(cause instanceof TemplateApiError) || cause.status >= 500 || cause.status === 408;
+      // A later access/policy denial cannot establish whether an earlier uncertain request committed.
+      const uncertain =
+        unknown || !(cause instanceof TemplateApiError) || cause.status >= 500 || cause.status === 408;
       setUnknown(uncertain);
       if (!uncertain) command.current = null;
       setError(
@@ -169,7 +171,7 @@ export function PropertyInquiryForm({ listingKey, listingId }: { listingKey: str
         <label className="block space-y-1.5 text-sm font-medium">
           Message <span className="text-destructive">*</span>
           <textarea
-            className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm md:text-sm"
+            className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
             value={form.message}
             onChange={(event) => update("message", event.target.value)}
             rows={4}
@@ -186,7 +188,7 @@ export function PropertyInquiryForm({ listingKey, listingId }: { listingKey: str
       <button
         type="submit"
         disabled={pending}
-        className="inline-flex min-h-9 items-center justify-center rounded-md border border-primary bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        className="inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-primary-border bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover-elevate active-elevate-2"
       >
         {pending ? "Sending inquiry..." : unknown ? "Reconcile the same inquiry" : "Send inquiry"}
       </button>

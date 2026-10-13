@@ -29,7 +29,8 @@ export default async function TemplatePage({ params }: Props) {
   try {
     const { siteId, path } = await params;
     const site = await content(siteId);
-    return <IdxTemplateApp site={site} path={path} />;
+    const origin = idxTemplateWebOrigin((await headers()).get("host"));
+    return <IdxTemplateApp site={site} path={path} origin={origin} />;
   } catch {
     return (
       <main style={{ padding: "4rem 1.5rem", maxWidth: "48rem", margin: "auto" }}>

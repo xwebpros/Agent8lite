@@ -40,8 +40,10 @@ ast.walkDecls((declaration) => {
 await writeFile(
   path.join(base, "template.css"),
   "/* Generated from owner source920d148 by build-styles.mjs. Scoped to this template; no external fonts/tiles. */\n" +
-    '@font-face { font-family:"DM Sans"; font-style:normal; font-weight:100 900; font-display:swap; src:url("/fonts/idx-template/dm-sans-latin-variable.woff2") format("woff2"); }\n' +
-    '@font-face { font-family:"Playfair Display"; font-style:normal; font-weight:400 900; font-display:swap; src:url("/fonts/idx-template/playfair-display-latin-variable.woff2") format("woff2"); }\n' +
+    '@font-face { font-family:"DM Sans"; font-style:normal; font-weight:100 1000; font-display:swap; src:url("/fonts/idx-template/dm-sans-variable.ttf") format("truetype"); }\n' +
+    '@font-face { font-family:"DM Sans"; font-style:italic; font-weight:100 1000; font-display:swap; src:url("/fonts/idx-template/dm-sans-italic-variable.ttf") format("truetype"); }\n' +
+    '@font-face { font-family:"Playfair Display"; font-style:normal; font-weight:400 900; font-display:swap; src:url("/fonts/idx-template/playfair-display-variable.ttf") format("truetype"); }\n' +
+    '@font-face { font-family:"Playfair Display"; font-style:italic; font-weight:400 900; font-display:swap; src:url("/fonts/idx-template/playfair-display-italic-variable.ttf") format("truetype"); }\n' +
     ast.toString() +
     '\n[data-idx-template] { font-family: "DM Sans", sans-serif; font-size:16px; line-height:1.5; background:hsl(var(--background)); color:hsl(var(--foreground)); min-height:100dvh; --font-sans:"DM Sans",sans-serif; --font-serif:"Playfair Display",serif; }\n[data-idx-template] h1,[data-idx-template] h2,[data-idx-template] h3,[data-idx-template] h4 { font-family:var(--font-serif); letter-spacing:-.025em; }\n[data-idx-template] a:hover { text-decoration:none; }\n[data-idx-template] .leaflet-container { background:linear-gradient(90deg,transparent 99%,#d6d1c5 99%),linear-gradient(transparent 99%,#d6d1c5 99%),#efede4; background-size:40px 40px; }\n',
 );
