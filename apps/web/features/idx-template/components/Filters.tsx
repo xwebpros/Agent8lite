@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ListListingsParams, ListListingsSort } from "../api";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 
@@ -12,6 +12,15 @@ interface FiltersProps {
 
 export function Filters({ initialFilters, onFilterChange, isLoading }: FiltersProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeFilters = () => {
+    setIsOpen(false);
+    triggerRef.current?.focus();
+  };
+  useEffect(() => {
+    if (isOpen) panelRef.current?.querySelector<HTMLElement>("button, input, select")?.focus();
+  }, [isOpen]);
   const [localFilters, setLocalFilters] = useState<ListListingsParams>(initialFilters);
 
   // Sync when initialFilters change from outside (like URL changes)
@@ -21,17 +30,17 @@ export function Filters({ initialFilters, onFilterChange, isLoading }: FiltersPr
 
   const handleApply = () => {
     onFilterChange({ ...localFilters, page: 1 });
-    setIsOpen(false);
+    closeFilters();
   };
 
   const handleClear = () => {
     const cleared = { sort: ListListingsSort.newest, page: 1 };
     setLocalFilters(cleared);
     onFilterChange(cleared);
-    setIsOpen(false);
+    closeFilters();
   };
 
-  const updateFilter = (key: keyof ListListingsParams, value: any) => {
+  const updateFilter = <K extends keyof ListListingsParams>(key: K, value: ListListingsParams[K]) => {
     setLocalFilters((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -71,8 +80,10 @@ export function Filters({ initialFilters, onFilterChange, isLoading }: FiltersPr
 
           <button
             type="button"
+            ref={triggerRef}
+            aria-label="Filters"
             aria-expanded={isOpen}
-            aria-controls="property-filters"
+            aria-controls={isOpen ? "property-filters" : undefined}
             onClick={() => setIsOpen(!isOpen)}
             className="flex items-center gap-2 h-11 px-4 py-2 bg-card border border-border rounded-md text-sm font-medium hover:bg-muted transition-colors"
           >
@@ -85,14 +96,25 @@ export function Filters({ initialFilters, onFilterChange, isLoading }: FiltersPr
       {isOpen && (
         <div
           id="property-filters"
+          ref={panelRef}
+          role="region"
+          aria-labelledby="property-filters-heading"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closeFilters();
+            }
+          }}
           className="mt-4 p-5 bg-card border border-border rounded-lg shadow-sm animate-in fade-in slide-in-from-top-2 duration-200"
         >
           <div className="flex items-center justify-between mb-5">
-            <h3 className="font-serif font-medium text-lg">Filter Properties</h3>
+            <h3 id="property-filters-heading" className="font-serif font-medium text-lg">
+              Filter Properties
+            </h3>
             <button
               type="button"
               aria-label="Close filters"
-              onClick={() => setIsOpen(false)}
+              onClick={closeFilters}
               className="h-9 w-9 inline-flex items-center justify-center text-muted-foreground hover:text-foreground rounded-full hover:bg-muted"
             >
               <X className="w-5 h-5" />
@@ -107,7 +129,9 @@ export function Filters({ initialFilters, onFilterChange, isLoading }: FiltersPr
                   aria-label="Listing status"
                   className="w-full px-3 py-2 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   value={localFilters.status || "Active"}
-                  onChange={(e) => updateFilter("status", e.target.value || undefined)}
+                  onChange={(e) =>
+                    updateFilter("status", (e.target.value || undefined) as ListListingsParams["status"])
+                  }
                 >
                   <option value="Active">Active</option>
                   <option value="ActiveUnderContract">Active Under Contract</option>
@@ -117,7 +141,12 @@ export function Filters({ initialFilters, onFilterChange, isLoading }: FiltersPr
                   aria-label="Property type"
                   className="w-full px-3 py-2 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   value={localFilters.propertyType || ""}
-                  onChange={(e) => updateFilter("propertyType", e.target.value || undefined)}
+                  onChange={(e) =>
+                    updateFilter(
+                      "propertyType",
+                      (e.target.value || undefined) as ListListingsParams["propertyType"],
+                    )
+                  }
                 >
                   <option value="">Any Property Type</option>
                   <option value="Residential">Residential</option>
@@ -130,7 +159,12 @@ export function Filters({ initialFilters, onFilterChange, isLoading }: FiltersPr
                   aria-label="Property subtype"
                   className="w-full px-3 py-2 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   value={localFilters.propertySubType || ""}
-                  onChange={(e) => updateFilter("propertySubType", e.target.value || undefined)}
+                  onChange={(e) =>
+                    updateFilter(
+                      "propertySubType",
+                      (e.target.value || undefined) as ListListingsParams["propertySubType"],
+                    )
+                  }
                 >
                   <option value="">Any Property Subtype</option>
                   <option value="SingleFamilyResidence">Single Family</option>

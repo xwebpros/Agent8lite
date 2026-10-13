@@ -1210,6 +1210,12 @@
   [data-idx-template] .min-h-9 {
     min-height: calc(var(--spacing) * 9);
   }
+  [data-idx-template] .min-h-10 {
+    min-height: calc(var(--spacing) * 10);
+  }
+  [data-idx-template] .min-h-11 {
+    min-height: calc(var(--spacing) * 11);
+  }
   [data-idx-template] .min-h-80 {
     min-height: calc(var(--spacing) * 80);
   }
@@ -1260,6 +1266,9 @@
   }
   [data-idx-template] .w-9 {
     width: calc(var(--spacing) * 9);
+  }
+  [data-idx-template] .w-10 {
+    width: calc(var(--spacing) * 10);
   }
   [data-idx-template] .w-12 {
     width: calc(var(--spacing) * 12);
@@ -1872,6 +1881,9 @@
   [data-idx-template] .pr-16 {
     padding-right: calc(var(--spacing) * 16);
   }
+  [data-idx-template] .pb-6 {
+    padding-bottom: calc(var(--spacing) * 6);
+  }
   [data-idx-template] .pl-10 {
     padding-left: calc(var(--spacing) * 10);
   }
@@ -2343,6 +2355,18 @@
       --tw-ring-color: hsl(var(--ring));
     }
   }
+  [data-idx-template] .focus-visible\:outline {
+    &:focus-visible {
+      outline-style: var(--tw-outline-style);
+      outline-width: 1px;
+    }
+  }
+  [data-idx-template] .focus-visible\:outline-2 {
+    &:focus-visible {
+      outline-style: var(--tw-outline-style);
+      outline-width: 2px;
+    }
+  }
   [data-idx-template] .focus-visible\:outline-none {
     &:focus-visible {
       --tw-outline-style: none;
@@ -2690,6 +2714,11 @@
   [data-idx-template] .md\:aspect-\[16\/10\] {
     @media (width >= 48rem) {
       aspect-ratio: 16 / 10;
+    }
+  }
+  [data-idx-template] .md\:h-9 {
+    @media (width >= 48rem) {
+      height: calc(var(--spacing) * 9);
     }
   }
   [data-idx-template] .md\:w-auto {
@@ -3344,6 +3373,11 @@
   inherits: false;
   initial-value: 1;
 }
+@property --tw-outline-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -3420,6 +3454,7 @@
       --tw-scale-x: 1;
       --tw-scale-y: 1;
       --tw-scale-z: 1;
+      --tw-outline-style: solid;
       --tw-animation-delay: 0s;
       --tw-animation-direction: normal;
       --tw-animation-duration: initial;
@@ -3815,12 +3850,12 @@
   border-radius: 5px;
 }
 [data-idx-template] .leaflet-control-layers-toggle {
-  background-image: url(images/layers.png);
+  background-image: url(/idx-template-leaflet/layers.png);
   width: 36px;
   height: 36px;
 }
 [data-idx-template] .leaflet-retina .leaflet-control-layers-toggle {
-  background-image: url(images/layers-2x.png);
+  background-image: url(/idx-template-leaflet/layers-2x.png);
   background-size: 26px 26px;
 }
 [data-idx-template] .leaflet-touch .leaflet-control-layers-toggle {
@@ -3864,7 +3899,7 @@
 /* Default icon URLs */
 [data-idx-template] .leaflet-default-icon-path {
   /* used only in path-guessing heuristic, see L.Icon.Default */
-  background-image: url(images/marker-icon.png);
+  background-image: url(/idx-template-leaflet/marker-icon.png);
 }
 
 /* attribution and scale controls */
@@ -4141,4 +4176,16 @@
     linear-gradient(90deg, transparent 99%, #d6d1c5 99%), linear-gradient(transparent 99%, #d6d1c5 99%),
     #efede4;
   background-size: 40px 40px;
+}
+@media (max-width: 767px) {
+  [data-idx-template] input:not([type="checkbox"]):not([type="radio"]),
+  [data-idx-template] select,
+  [data-idx-template] textarea {
+    font-size: 16px;
+  }
+  [data-idx-template] button:not(.leaflet-control-zoom-in):not(.leaflet-control-zoom-out),
+  [data-idx-template] input:not([type="checkbox"]):not([type="radio"]),
+  [data-idx-template] select {
+    min-height: 44px;
+  }
 }

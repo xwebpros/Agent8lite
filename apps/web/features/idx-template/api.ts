@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { components, operations } from "../../../../packages/contracts/generated/api";
 import { useTemplateSite } from "./context";
+import { templateRequest } from "./request";
+export { templateRequest, TemplateApiError } from "./request";
 
 export type Listing = components["schemas"]["IdxTemplateListing"];
 export type ListListingsParams = NonNullable<operations["searchIdxTemplateListings"]["parameters"]["query"]>;
@@ -13,26 +15,6 @@ export const ListListingsSort = {
   "price-desc": "price-desc",
 } as const;
 export type SavedSearchCriteria = ListListingsParams;
-export class TemplateApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-export async function templateRequest<T>(siteId: string, path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api/idx-template/${encodeURIComponent(siteId)}/${path}`, {
-    ...init,
-    credentials: "same-origin",
-    cache: "no-store",
-    redirect: "error",
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok)
-    throw new TemplateApiError(response.status, body?.detail || "This operation could not be completed.");
-  return body as T;
-}
 function useExpiry(expiresAt: string | undefined) {
   const [expired, setExpired] = useState(false);
   useEffect(() => {

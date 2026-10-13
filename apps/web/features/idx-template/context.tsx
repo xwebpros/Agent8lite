@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { components } from "../../../../packages/contracts/generated/api";
+import { useInquiryRegistry } from "./inquiry-session";
 
 export type TemplateContent = components["schemas"]["IdxTemplateContent"];
 const SiteContext = createContext<TemplateContent | null>(null);
@@ -22,6 +23,7 @@ export function PublishedSiteProvider({
   children: ReactNode;
   origin?: string;
 }) {
+  const registry = useInquiryRegistry();
   const [expired, setExpired] = useState(false);
   useEffect(() => {
     const expire = () =>
@@ -37,10 +39,12 @@ export function PublishedSiteProvider({
     );
     const offline = () => setExpired(true);
     window.addEventListener("offline", offline);
+    window.addEventListener("online", expire);
     document.addEventListener("visibilitychange", expire);
     return () => {
       clearTimeout(timer);
       window.removeEventListener("offline", offline);
+      window.removeEventListener("online", expire);
       document.removeEventListener("visibilitychange", expire);
     };
   }, [site.expiresAt]);
@@ -55,7 +59,13 @@ export function PublishedSiteProvider({
         <button
           type="button"
           className="mt-6 rounded bg-primary px-5 py-3 text-primary-foreground"
-          onClick={() => window.location.reload()}
+          onClick={() => {
+            if (registry.all().some((controller) => controller.hasUnresolvedCommand)) {
+              for (const controller of registry.all()) controller.explainNavigationGuard();
+              return;
+            }
+            window.location.reload();
+          }}
         >
           Reload site
         </button>

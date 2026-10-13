@@ -8,7 +8,9 @@
     "Provider calls, private browser persistence, original CRM/admin, source analytics and direct email removed.",
     "Unsupported optional capabilities keep source panel geometry with explicit unavailable states.",
     "build-gated-pages.mjs retains actual source JSX/section identifiers for all account, organizer, saved-home, community and legal pages; original effects/policies are never activated.",
-    "CSS compiled and scoped to data-idx-template; Leaflet loaded only in client and external tiles remain disabled."
+    "CSS compiled and scoped to data-idx-template; Leaflet loaded only in client and external tiles remain disabled.",
+    "Leaflet's unchanged licensed images are self-hosted with byte hashes; generated CSS URLs are absolute public paths.",
+    "Inquiry controls preserve source panels while adding stable tab-memory command recovery, labeled errors and 44px mobile targets; filter panel gains mobile name, Escape and focus return."
   ],
   "files": [
     {

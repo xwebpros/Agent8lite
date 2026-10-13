@@ -34,6 +34,9 @@ const files = [
   "lib/events.ts",
   "lib/seo.ts",
   "api.ts",
+  "request.ts",
+  "inquiry-recovery.ts",
+  "inquiry-session.tsx",
   "context.tsx",
   "navigation.tsx",
   "template-app.tsx",
@@ -65,7 +68,19 @@ postcss.parse(css).walkRules((rule) => {
 postcss.parse(css).walkDecls((declaration) => {
   if (/url\s*\(\s*["']?https?:\/\//.test(declaration.value))
     throw new Error("Template CSS cannot request external fonts or tiles.");
+  if (/url\s*\(\s*["']?images\//.test(declaration.value))
+    throw new Error("Leaflet images must use self-hosted absolute public URLs.");
 });
+const assets = JSON.parse(
+  await readFile(path.resolve(base, "../../public/idx-template-leaflet/provenance.json"), "utf8"),
+);
+if (assets.package !== "leaflet" || assets.version !== "1.9.4" || assets.files.length !== 5)
+  throw new Error("Unexpected Leaflet provenance.");
+for (const asset of [...assets.files, assets.license]) {
+  const bytes = await readFile(path.resolve(base, "../../public/idx-template-leaflet", asset.file));
+  if (bytes.length !== asset.bytes || createHash("sha256").update(bytes).digest("hex") !== asset.sha256)
+    throw new Error(`Leaflet asset mismatch: ${asset.file}`);
+}
 console.log(
   JSON.stringify({
     originalFiles: manifest.files.length,

@@ -67,6 +67,8 @@ const manifest = {
     "Unsupported optional capabilities keep source panel geometry with explicit unavailable states.",
     "build-gated-pages.mjs retains actual source JSX/section identifiers for all account, organizer, saved-home, community and legal pages; original effects/policies are never activated.",
     "CSS compiled and scoped to data-idx-template; Leaflet loaded only in client and external tiles remain disabled.",
+    "Leaflet's unchanged licensed images are self-hosted with byte hashes; generated CSS URLs are absolute public paths.",
+    "Inquiry controls preserve source panels while adding stable tab-memory command recovery, labeled errors and 44px mobile targets; filter panel gains mobile name, Escape and focus return.",
   ],
   files: [],
 };
@@ -156,6 +158,39 @@ for (const relative of files) {
         "    } else { setFeaturedWineListings([]); }\n  }, [wineListingSignature]);",
       );
     code = code.replace("<SaveSearchButton filters={filters} />", "<SaveSearchButton filters={filters} />");
+  }
+  if (relative === "components/Filters.tsx") {
+    code = code.replace("useState, useEffect", "useState, useEffect, useRef");
+    code = code
+      .replaceAll("setIsOpen(false);", "closeFilters();")
+      .replace("onClick={() => setIsOpen(false)}", "onClick={closeFilters}");
+    code = code.replace(
+      "const [isOpen, setIsOpen] = useState(false);",
+      'const [isOpen, setIsOpen] = useState(false);\n  const triggerRef = useRef<HTMLButtonElement>(null);\n  const panelRef = useRef<HTMLDivElement>(null);\n  const closeFilters = () => { setIsOpen(false); triggerRef.current?.focus(); };\n  useEffect(() => { if (isOpen) panelRef.current?.querySelector<HTMLElement>("button, input, select")?.focus(); }, [isOpen]);',
+    );
+    code = code.replace(
+      "const updateFilter = (key: keyof ListListingsParams, value: any)",
+      "const updateFilter = <K extends keyof ListListingsParams>(key: K, value: ListListingsParams[K])",
+    );
+    for (const field of ["status", "propertyType", "propertySubType"])
+      code = code.replace(
+        `updateFilter("${field}", e.target.value || undefined)`,
+        `updateFilter("${field}", (e.target.value || undefined) as ListListingsParams["${field}"])`,
+      );
+    code = code
+      .replace(
+        "aria-expanded={isOpen}",
+        'ref={triggerRef}\n            aria-label="Filters"\n            aria-expanded={isOpen}',
+      )
+      .replace('aria-controls="property-filters"', 'aria-controls={isOpen ? "property-filters" : undefined}')
+      .replace(
+        '<div id="property-filters" className=',
+        '<div id="property-filters" ref={panelRef} role="region" aria-labelledby="property-filters-heading" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); closeFilters(); } }} className=',
+      )
+      .replace(
+        '<h3 className="font-serif font-medium text-lg">Filter Properties',
+        '<h3 id="property-filters-heading" className="font-serif font-medium text-lg">Filter Properties',
+      );
   }
   if (relative === "pages/ListingDetail.tsx") {
     code = code.replace("recordMyListingView, ", "");

@@ -9,9 +9,10 @@ export function FavoriteButton({ listingKey }: { listingKey: string }) {
       disabled
       title="Native visitor favorites are unavailable in this template release."
       aria-label={`Save property ${listingKey}: unavailable`}
-      className="rounded-full bg-background/95 p-2 text-muted-foreground shadow-sm"
+      aria-pressed={false}
+      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary"
     >
-      <Heart className="size-5" />
+      <Heart className="h-5 w-5" />
       <span className="sr-only">
         {site.capabilities.favorites
           ? "Visitor sign-in required; unavailable in this release"
