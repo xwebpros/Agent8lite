@@ -43,6 +43,7 @@ import PushSettings from "./push-settings";
 import VerifiedMetrics from "./verified-metrics";
 import SupportPanel from "./support-panel";
 import BillingPanel from "./billing-panel";
+import JobsPanel from "./jobs-panel";
 import DataTransfer from "./data-transfer";
 import InvitationsPanel from "./invitations-panel";
 import type { InvitationTransfer } from "./invitations-panel";
@@ -810,6 +811,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     "account",
     "billing",
     "support",
+    "jobs",
     "data",
     "workspace",
     "invitations",
@@ -5866,6 +5868,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       label: "Support",
                       allowed: permission("support.read") || permission("support.write"),
                     },
+                    {
+                      id: "jobs",
+                      label: "Jobs",
+                      allowed: permission("jobs.read"),
+                    },
                   ]
                     .filter((item) => item.allowed)
                     .map((item) => (
@@ -6030,6 +6037,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   onDirty={setDirty}
                   setWorking={setBusy}
                   ticketId={query.get("ticket")}
+                />
+              )}
+              {view === "settings" && settingsPanel === "jobs" && (
+                <JobsPanel
+                  key={session.activeOrgId}
+                  session={session}
+                  online={online}
                 />
               )}
               {view === "settings" && settingsPanel === "billing" && (
