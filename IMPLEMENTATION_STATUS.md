@@ -11,7 +11,22 @@
 
 **Bug fix:** Added `enrollments: "enrollmentId"` to resourceId map in `main.ts` so contract validation matches the OpenAPI path for enrollment cancel operations.
 
-**Test evidence:** 283/283 integration tests (shared DB, 38 suites), 737/737 package tests, TypeScript clean.
+**Test evidence:** 298/298 integration tests (shared DB, 39 suites), 737/737 package tests, TypeScript clean.
+
+---
+
+## Campaign/automation CRUD and resource listing tests — 2026-10-13
+
+**Committed:**
+- `3461235` feat: add campaign/automation CRUD and resource listing tests, fix automationId path
+
+**New tests:** 17 shared-DB integration tests across 2 suites:
+- `resource-listing-api.test.ts` (9 tests): automations, campaigns, notifications, audit events listing with pagination and query validation
+- `campaign-automation-crud-api.test.ts` (8 tests): campaign create/get/list, version create with workflow nodes/edges, automation create/list/get/update
+
+**Bug fix:** Added `automationId` to resourceId map in `main.ts` so contract validation matches the OpenAPI path for automation GET/PATCH operations.
+
+**Test evidence:** 298/298 integration tests (shared DB, 39 suites), TypeScript clean.
 
 ---
 

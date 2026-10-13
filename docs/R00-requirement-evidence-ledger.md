@@ -1,7 +1,7 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Updated:** 2026-10-13 at commit `af47e21` — 283 integration tests across 38 suites.
+**Updated:** 2026-10-13 at commit `3461235` — 298 integration tests across 39 suites.
 **Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
@@ -84,7 +84,7 @@
 
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
-| MOD-E-001–003 | Implemented | `campaign-draft-service.test.ts`, `campaign-workflow-service.test.ts`: campaign versioning, draft CRUD, workflow publish. `broadcast-preview-api.test.ts`: audience preview with consent eligibility. | Campaign drafts, message designs and workflow versions implemented. |
+| MOD-E-001–003 | Implemented | `campaign-draft-service.test.ts`, `campaign-workflow-service.test.ts`: campaign versioning, draft CRUD, workflow publish. `broadcast-preview-api.test.ts`: audience preview with consent eligibility. `campaign-automation-crud-api.test.ts` (8 tests, shared DB): campaign create/get/list, version create with nodes/edges, automation create/list/get/update. `resource-listing-api.test.ts` (9 tests): automations/campaigns/notifications/audit-events listing. | Campaign drafts, message designs and workflow versions implemented. Full CRUD verified via shared-DB integration tests. |
 | MOD-E-004 | Implemented | `automation-service.ts`: automation CRUD + enrollment. `automation-workspace.tsx`: frontend list/create/toggle/enroll/cancel. `enrollments-api.test.ts` (5 tests): enroll/list/cancel/double-cancel/fabricated-lead. `action-worker.ts`: scheduled-action dispatch worker claims pending actions, checks consent, records synthetic delivery attempts. `POST /dev/dispatch-actions` dev route. | Worker uses `FOR UPDATE SKIP LOCKED` for safe concurrent processing. Enrollment CRUD verified via shared-DB integration tests. |
 | MOD-E-005 | Implemented | `dispatch-service.ts`: no-delivery transport adapter. `POST /dev/dispatch-broadcasts` dev route. Consent eligibility checked per lead. Synthetic delivery results recorded in `integration_job.safe_result`. | No real messages sent. Live send gated on provider. |
 | MOD-E-006 | Implemented | Broadcast confirmation `POST /v1/orgs/:orgId/broadcast-confirmations` now requires `Idempotency-Key` header, uses advisory lock and `idempotency_record` for replay. All other campaign/automation mutations already had idempotency. | |
@@ -199,7 +199,7 @@
 | Category | Count | Suites |
 |----------|-------|--------|
 | Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 283 | 38 |
+| Integration (shared DB) | 298 | 39 |
 | Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
 | Unit | 2,534 | 79 |
 | Package | 737 | 15 |
