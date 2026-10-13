@@ -38,6 +38,7 @@ import { api, ApiError } from "../lib/api";
 import type { Schema } from "../lib/api";
 import SettingsAdmin from "./settings-admin";
 import LeadTimeline from "./lead-timeline";
+import PushSettings from "./push-settings";
 import VerifiedMetrics from "./verified-metrics";
 import SupportPanel from "./support-panel";
 import BillingPanel from "./billing-panel";
@@ -5926,14 +5927,21 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       <strong>App update</strong>
                       <Badge>{waiting ? "Ready" : "No waiting update"}</Badge>
                     </div>
-                    <div className="settings-fact">
-                      <strong>Push notifications</strong>
-                      <Badge>Unavailable</Badge>
-                    </div>
-                    <p className="muted">
-                      Push opt-in will be available after encrypted member-scoped device subscriptions and
-                      no-delivery provider tests are implemented.
-                    </p>
+                    {session.activeOrgId && permission("self.push.write") && (
+                      <PushSettings
+                        organizationId={session.activeOrgId}
+                        csrf={csrf}
+                        online={online && !changingOrganization}
+                        working={busy}
+                        setWorking={setBusy}
+                      />
+                    )}
+                    {(!session.activeOrgId || !permission("self.push.write")) && (
+                      <div className="settings-fact">
+                        <strong>Push notifications</strong>
+                        <Badge>Unavailable</Badge>
+                      </div>
+                    )}
                     <Button variant="secondary" disabled={!online || busy} onClick={() => void logout()}>
                       <LogOut size={17} />
                       Sign out
