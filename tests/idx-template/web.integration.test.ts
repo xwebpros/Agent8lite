@@ -85,6 +85,13 @@ afterAll(async () => {
 });
 
 describe("actual production Next SSR and same-origin IDX bridge", () => {
+  it("reads the configured example at server runtime rather than freezing it during build", async () => {
+    const response = await fetch(`${web.origin}/templates/las-vegas-idx`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(await response.text()).toContain(`/templates/las-vegas-idx/${fixture.siteId}`);
+  });
+
   it("server-renders the published source copy and SEO without the private draft", async () => {
     const response = await fetch(`${web.origin}/templates/las-vegas-idx/${fixture.siteId}`);
     expect(response.status).toBe(200);

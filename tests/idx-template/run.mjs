@@ -293,7 +293,7 @@ async function runDisposableSuite(file, config = "tests/idx-template/vitest.conf
       });
     });
     let ready = false;
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + 60_000;
     while (Date.now() < deadline && api.exitCode === null && !apiError) {
       try {
         const response = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1000) });
@@ -390,7 +390,7 @@ async function main() {
   )
     throw new Error("idx_test_owned_suite_required");
   const migrations = await fs.readdir(path.join(root, "packages", "db", "migrations"));
-  if (!migrations.some((name) => /^0035-.*idx.*\.sql$/.test(name)))
+  if (!migrations.some((name) => /^0036-.*idx.*\.sql$/.test(name)))
     throw new Error("idx_test_reviewed_migration_required");
   for (const file of files) await runDisposableSuite(file);
 }

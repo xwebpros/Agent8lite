@@ -1,4 +1,5 @@
 import Link from "next/link";
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Las Vegas IDX templates", robots: { index: false, follow: false } };
 export default function TemplateGallery() {
   const example = process.env.IDX_TEMPLATE_EXAMPLE_SITE_ID;
