@@ -405,6 +405,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     contactMergePending ||
     Boolean(invitationTransfer);
   const [taskFilter, setTaskFilter] = useState("open");
+  const [pipelineIntentFilter, setPipelineIntentFilter] = useState("");
+  const [pipelineSourceFilter, setPipelineSourceFilter] = useState("");
   const [scope, setScope] = useState<"own" | "authorized">("own");
   const [cursors, setCursors] = useState({
     contacts: null as string | null,
@@ -5621,9 +5623,38 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 contactVisible &&
                 !changingOrganization &&
                 !stagePending && (
+                  <>
+                  <div className="pipeline-filters" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
+                      Intent
+                      <select value={pipelineIntentFilter} onChange={(e) => setPipelineIntentFilter(e.target.value)}>
+                        <option value="">All</option>
+                        <option value="buyer">Buyer</option>
+                        <option value="seller">Seller</option>
+                        <option value="both">Both</option>
+                        <option value="unknown">Unknown</option>
+                      </select>
+                    </label>
+                    {data.sources.length > 0 && (
+                      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
+                        Source
+                        <select value={pipelineSourceFilter} onChange={(e) => setPipelineSourceFilter(e.target.value)}>
+                          <option value="">All sources</option>
+                          {data.sources.map((source) => (
+                            <option key={source.id} value={source.id}>{source.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
                   <div className="pipeline-board">
                     {data.stages.map((stage) => {
-                      const leads = data.leads.filter((lead) => lead.stageId === stage.id);
+                      const leads = data.leads.filter(
+                        (lead) =>
+                          lead.stageId === stage.id &&
+                          (!pipelineIntentFilter || lead.intent === pipelineIntentFilter) &&
+                          (!pipelineSourceFilter || lead.sourceId === pipelineSourceFilter),
+                      );
                       return (
                         <section className="pipeline-column" key={stage.id}>
                           <div className="pipeline-column-heading">
@@ -5681,6 +5712,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       </section>
                     )}
                   </div>
+                  </>
                 )}
 
               {view === "tasks" && (

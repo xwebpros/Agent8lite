@@ -149,6 +149,7 @@ All CMS/staff/public/CRM/billing/admin paths route correctly.
 - TypeScript: PASS
 - Dev login rate limit raised to 200/min (syntheticEnabled) to support concurrent test suites
 - New suites this session: audit-events-api (4), push-subscriptions-api (6), session-profile-api (5), contact-filter-api (6), lead-filter-api (8), task-filter-api (7), deal-filter-api (5) — all 6 LeadFilter fields (q, ownerMemberId, tagIds, stageId, sourceId, intent) implemented and tested for contacts, leads, tasks and deals
+- Frontend: contacts search panel now has intent/stage/source filter dropdowns (`contacts-search.tsx`, `contacts-search-controller.ts`). Controller passes all LeadFilter fields through to the API. Stages and sources loaded from workspace data.
 
 ---
 
