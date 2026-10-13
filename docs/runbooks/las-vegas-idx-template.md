@@ -2,6 +2,8 @@
 
 The imported public website comes from `djmichaelmartin-cmd/Las-Vegas-Live-IDX`, `Full_Web_App_phase_1`, commit `920d148ee0ec6465381bf245381afcbdb5540bce`. Agent8lite owns CMS revisions and CRM leads. The source application's Directus, CRM, SMTP, administration and automation backends are excluded. Source history and its deployment are separate.
 
+The integrated runtime source at `0176d36` is pushed to `xwebpros/Agent8lite:Las-Vegas-IDX`. [Full CI run 38349353446](https://github.com/xwebpros/Agent8lite/actions/runs/38349353446) passed all 5,117 isolated cases with zero skips, dedicated Redis recovery and all 12 core workspace desktop/mobile E2E cases. Template-specific visual/public-browser journeys and physical-device acceptance remain required as listed below. The branch has not been merged into main or deployed over the original running local checkout. Use this branch's code and forward migrations together when setting up its templates.
+
 ## Create and view a local site
 
 1. Use the approved Node/pnpm pins and install the committed lockfile with `pnpm install --frozen-lockfile`. Apply forward migrations with the migration identity using `pnpm db:migrate`. Keep runtime/worker credentials separate. Never reset an existing database or change an applied migration checksum. An existing unrecorded0032 schema needs its separately reviewed ledger repair; rerunning or resetting it is not a remedy.
