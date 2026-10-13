@@ -1,0 +1,164 @@
+"use client";
+
+import { Listing } from "../api";
+import { Link } from "../navigation";
+import { Bed, Bath, Square, MapPin } from "lucide-react";
+import { IdxAttribution } from "../components/IdxAttribution";
+import { FavoriteButton } from "../components/FavoriteButton";
+import { CompareButton } from "../components/OrganizerActions";
+
+function formatLocation(listing: Listing) {
+  return [listing.streetAddress, [listing.city, listing.state].filter(Boolean).join(", "), listing.postalCode]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function formatType(listing: Listing) {
+  return [listing.propertyType, listing.propertySubType].filter(Boolean).join(" / ");
+}
+
+export function ListingCard({
+  listing,
+  viewMode = "grid",
+  isHighlighted = false,
+  onSelect,
+}: {
+  listing: Listing;
+  viewMode?: "grid" | "list";
+  isHighlighted?: boolean;
+  onSelect?: (listingKey: string) => void;
+}) {
+  const formatPrice = (price?: number) => {
+    if (!price) return "Price Upon Request";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(price);
+  };
+
+  const hasPhotos = listing.photos && listing.photos.length > 0;
+  const location = formatLocation(listing);
+  const type = formatType(listing);
+  const isList = viewMode === "list";
+
+  return (
+    <div
+      className={`relative group bg-card rounded-lg overflow-hidden border shadow-sm hover:shadow-md transition-all duration-300 ${isList ? "flex flex-col sm:flex-row" : "flex flex-col"} ${isHighlighted ? "border-primary ring-2 ring-primary/20" : "border-border"}`}
+    >
+      <Link
+        href={`/listing/${listing.listingKey}`}
+        onMouseEnter={() => onSelect?.(listing.listingKey)}
+        onFocus={() => onSelect?.(listing.listingKey)}
+        className="flex min-w-0 flex-1 flex-col sm:contents"
+      >
+        <div
+          className={`relative overflow-hidden bg-muted ${isList ? "aspect-[4/3] sm:aspect-auto sm:w-72 sm:shrink-0" : "aspect-[4/3]"}`}
+        >
+          {hasPhotos ? (
+            <img
+              src={listing.photos[0]}
+              alt={location || "Property"}
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              loading="lazy"
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground p-6 text-center bg-accent/50">
+              <span className="font-serif text-4xl text-muted/30 mb-2">V</span>
+              <span className="text-sm font-medium">No Photo Available</span>
+            </div>
+          )}
+
+          {listing.status && (
+            <div className="absolute top-3 left-3 bg-background/90 backdrop-blur-sm px-2.5 py-1 text-xs font-semibold uppercase tracking-wider rounded border border-border/50">
+              {listing.status}
+            </div>
+          )}
+        </div>
+
+        <div className={`p-5 flex flex-col flex-1 ${isList ? "sm:p-6 sm:pr-20" : ""}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="text-2xl font-serif mb-1 text-foreground">{formatPrice(listing.price)}</div>
+            {listing.status && (
+              <span className="shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                {listing.status.replaceAll("UnderContract", " Under Contract")}
+              </span>
+            )}
+          </div>
+
+          <div
+            className={`text-muted-foreground text-sm flex items-start gap-1 mb-3 ${isList ? "min-h-0" : "h-10"}`}
+          >
+            <MapPin className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="line-clamp-2 leading-relaxed">{location || "Location unavailable"}</span>
+          </div>
+
+          {(type || listing.listingId) && (
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {type && <span>{type}</span>}
+              {listing.listingId && <span>MLS #{listing.listingId}</span>}
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 gap-2 py-3 border-y border-border/60 mb-4 mt-auto">
+            <div className="flex flex-col items-center justify-center text-center">
+              <div className="flex items-center gap-1.5 text-foreground mb-1">
+                <Bed className="w-4 h-4 text-muted-foreground" />
+                <span className="font-semibold">{listing.bedrooms ?? "-"}</span>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Beds</span>
+            </div>
+            <div className="flex flex-col items-center justify-center text-center border-l border-border/60">
+              <div className="flex items-center gap-1.5 text-foreground mb-1">
+                <Bath className="w-4 h-4 text-muted-foreground" />
+                <span className="font-semibold">{listing.bathrooms ?? "-"}</span>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Baths</span>
+            </div>
+            <div className="flex flex-col items-center justify-center text-center border-l border-border/60">
+              <div className="flex items-center gap-1.5 text-foreground mb-1">
+                <Square className="w-4 h-4 text-muted-foreground" />
+                <span className="font-semibold">
+                  {listing.livingArea ? listing.livingArea.toLocaleString() : "-"}
+                </span>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Sq Ft</span>
+            </div>
+          </div>
+
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center justify-between gap-6">
+            <IdxAttribution listing={listing} compact />
+            <span className="shrink-0 text-primary group-hover:underline">View Details</span>
+          </div>
+        </div>
+      </Link>
+      <div className="absolute right-3 top-3 z-10">
+        <FavoriteButton listingKey={listing.listingKey} />
+      </div>
+      <div className="absolute bottom-3 right-3 z-10">
+        <CompareButton listingKey={listing.listingKey} />
+      </div>
+    </div>
+  );
+}
+
+export function ListingCardSkeleton() {
+  return (
+    <div className="flex flex-col bg-card rounded-lg overflow-hidden border border-border shadow-sm">
+      <div className="aspect-[4/3] bg-muted animate-pulse"></div>
+      <div className="p-5 flex flex-col flex-1">
+        <div className="h-8 bg-muted animate-pulse rounded w-1/2 mb-2"></div>
+        <div className="h-4 bg-muted animate-pulse rounded w-3/4 mb-4"></div>
+        <div className="h-4 bg-muted animate-pulse rounded w-1/2 mb-6"></div>
+
+        <div className="grid grid-cols-3 gap-2 py-3 border-y border-border/60 mb-4 mt-auto">
+          <div className="h-10 bg-muted animate-pulse rounded"></div>
+          <div className="h-10 bg-muted animate-pulse rounded border-l border-background"></div>
+          <div className="h-10 bg-muted animate-pulse rounded border-l border-background"></div>
+        </div>
+
+        <div className="h-3 bg-muted animate-pulse rounded w-2/3"></div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,115 @@
+import {
+  deleteMySavedSearch,
+  getMyNotificationPreferences,
+  getMyPreferences,
+  getMyRecommendations,
+  listMyListingAlerts,
+  getMyComparison,
+  listMySavedSearches,
+  removeMyComparisonItem,
+  resolveListings,
+  updateMyNotificationPreferences,
+  updateMyPreferences,
+  resetMyPreferences,
+  updateMySavedSearch,
+  type SavedSearchCriteria,
+} from "@workspace/api-client-react";
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
+import { ListingCard } from "@/components/ListingCard";
+import { Layout } from "@/components/Layout";
+
+type SearchRow = Awaited<ReturnType<typeof listMySavedSearches>>["savedSearches"][number];
+type Comparison = Awaited<ReturnType<typeof getMyComparison>>["comparison"];
+
+function summary(criteria: SavedSearchCriteria) {
+  const labels = [criteria.city, criteria.zip, criteria.beds !== undefined ? `${criteria.beds}+ beds` : undefined, criteria.baths !== undefined ? `${criteria.baths}+ baths` : undefined, criteria.minPrice !== undefined ? `$${criteria.minPrice.toLocaleString()}+` : undefined, criteria.pool ? "pool" : undefined].filter(Boolean);
+  return labels.length ? labels.join(" · ") : "All active listings";
+}
+
+function searchUrl(criteria: SavedSearchCriteria) {
+  const params = new URLSearchParams();
+  Object.entries(criteria).forEach(([key, value]) => { if (value !== undefined) params.set(key, String(value)); });
+  params.set("reset", "1");
+  return `/?${params.toString()}`;
+}
+
+export default function Organizer() {
+  const [searches, setSearches] = useState<SearchRow[]>([]);
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [resolved, setResolved] = useState<Map<string, Awaited<ReturnType<typeof resolveListings>>["listings"][number]>>(new Map());
+  const [preferences, setPreferences] = useState<Awaited<ReturnType<typeof getMyNotificationPreferences>>["preferences"]>([]);
+  const [alerts, setAlerts] = useState<Awaited<ReturnType<typeof listMyListingAlerts>>["alerts"]>([]);
+  const [profile, setProfile] = useState<Awaited<ReturnType<typeof getMyPreferences>>["profile"] | null>(null);
+  const [recommendations, setRecommendations] = useState<Awaited<ReturnType<typeof getMyRecommendations>> | null>(null);
+  const [notice, setNotice] = useState("");
+
+  async function load() {
+    const [saved, compare, prefs, alertHistory, preferenceProfile] = await Promise.all([listMySavedSearches(), getMyComparison(), getMyNotificationPreferences(), listMyListingAlerts(), getMyPreferences()]);
+    setSearches(saved.savedSearches); setComparison(compare.comparison); setPreferences(prefs.preferences.length ? prefs.preferences : [
+      { category: "account", channel: "email", frequency: "never", enabled: false, updatedAt: new Date().toISOString() },
+      { category: "saved_search", channel: "email", frequency: "daily", enabled: false, updatedAt: new Date().toISOString() },
+    ]);
+    setAlerts(alertHistory.alerts);
+    setProfile(preferenceProfile.profile);
+    try { setRecommendations(await getMyRecommendations({ page: 1 })); } catch { setRecommendations(null); }
+    if (compare.comparison.items.length) {
+      const body = await resolveListings({ listingKeys: compare.comparison.items.map((item) => item.listingKey) });
+      setResolved(new Map(body.listings.map((listing) => [listing.listingKey, listing])));
+    }
+  }
+  useEffect(() => { void load().catch(() => setNotice("Sign in to manage your property organizer.")); }, []);
+
+  async function renameSearch(search: SearchRow) {
+    const next = window.prompt("New saved-search name", search.name)?.trim();
+    if (!next || next === search.name) return;
+    try { const result = await updateMySavedSearch(search.id, { name: next }); setSearches((current) => current.map((item) => item.id === search.id ? result.savedSearch : item)); } catch { setNotice("Unable to rename this search."); }
+  }
+  async function editCriteria(search: SearchRow) {
+    const entered = window.prompt("Edit supported criteria as JSON", JSON.stringify(search.criteria));
+    if (!entered) return;
+    try {
+      const criteria = JSON.parse(entered) as SavedSearchCriteria;
+      const result = await updateMySavedSearch(search.id, { criteria });
+      setSearches((current) => current.map((item) => item.id === search.id ? result.savedSearch : item));
+    } catch { setNotice("Unable to update these criteria. Use supported search filters only."); }
+  }
+  async function toggleSearch(search: SearchRow) {
+    try {
+      const result = await updateMySavedSearch(search.id, { enabled: !search.enabled });
+      setSearches((current) => current.map((item) => item.id === search.id ? result.savedSearch : item));
+    } catch { setNotice("Unable to change this saved-search state."); }
+  }
+  async function updateAlertSettings(search: SearchRow, field: "alertFrequency" | "alertChannel", value: string) {
+    try { const result = await updateMySavedSearch(search.id, { [field]: value } as Parameters<typeof updateMySavedSearch>[1]); setSearches((current) => current.map((item) => item.id === search.id ? result.savedSearch : item)); } catch { setNotice("Unable to update alert settings."); }
+  }
+  async function removeSearch(id: string) {
+    try { await deleteMySavedSearch(id); setSearches((current) => current.filter((item) => item.id !== id)); } catch { setNotice("Unable to delete this search."); }
+  }
+  async function removeComparison(listingKey: string) {
+    if (!comparison) return;
+    try { await removeMyComparisonItem(comparison.id, listingKey); setComparison((current) => current ? { ...current, items: current.items.filter((item) => item.listingKey !== listingKey) } : current); } catch { setNotice("Unable to remove the property."); }
+  }
+  async function togglePreference(index: number) {
+    const next = preferences.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item);
+    try { await updateMyNotificationPreferences({ preferences: next }); setPreferences(next); } catch { setNotice("Unable to update notification preferences."); }
+  }
+  async function toggleInference() {
+    if (!profile) return;
+    try { const result = await updateMyPreferences({ inferenceEnabled: !profile.inferenceEnabled }); setProfile(result.profile); } catch { setNotice("Unable to update inferred preferences."); }
+  }
+  async function resetPreferences() {
+    try { const result = await resetMyPreferences(); setProfile(result.profile); setRecommendations(null); } catch { setNotice("Unable to reset inferred preferences."); }
+  }
+
+  return <Layout><main className="mx-auto w-full max-w-5xl px-4 py-14 sm:px-6">
+    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs uppercase tracking-[0.2em] text-primary">Property organizer</p><h1 className="mt-3 font-serif text-4xl">Your property workspace</h1><p className="mt-3 text-muted-foreground">Keep searches, comparisons, and alerts organized in one private account.</p></div><div className="flex flex-wrap gap-3"><Link href="/account/favorites" className="rounded border px-4 py-2">Saved homes</Link><Link href="/" className="rounded bg-primary px-4 py-2 text-primary-foreground">Browse listings</Link></div></div>
+    {notice && <p role="status" className="mt-5 rounded border border-primary/30 bg-primary/5 p-3 text-sm">{notice}</p>}
+    <section className="mt-10 rounded-lg border bg-card p-5" aria-labelledby="saved-searches-heading"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="saved-searches-heading" className="font-serif text-2xl">Saved searches</h2><p className="mt-1 text-sm text-muted-foreground">Save the active filters from the search page, then reopen them here.</p></div><Link href="/" className="rounded bg-primary px-3 py-2 text-sm text-primary-foreground">Browse and save</Link></div><div className="mt-4 space-y-2">{searches.length ? searches.map((search) => <div key={search.id} className="flex flex-wrap items-center justify-between gap-3 rounded border p-3"><div><strong>{search.name}</strong><p className="text-sm text-muted-foreground">{summary(search.criteria)}</p><span className="text-xs text-muted-foreground">{search.enabled ? "Enabled" : "Disabled"}</span><div className="mt-2 flex flex-wrap gap-2 text-xs"><label>Frequency <select value={search.alertFrequency} onChange={(event) => void updateAlertSettings(search, "alertFrequency", event.target.value)}><option value="immediate">Immediate</option><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label><label>Channel <select value={search.alertChannel} onChange={(event) => void updateAlertSettings(search, "alertChannel", event.target.value)}><option value="email">Email</option><option value="sms">SMS</option></select></label></div></div><div className="flex flex-wrap gap-3 text-sm"><Link href={searchUrl(search.criteria)} className="text-primary underline">Open</Link><button type="button" onClick={() => void editCriteria(search)} className="underline">Edit criteria</button><button type="button" onClick={() => void renameSearch(search)} className="underline">Rename</button><button type="button" onClick={() => void toggleSearch(search)} className="underline">{search.enabled ? "Disable" : "Enable"}</button><button type="button" onClick={() => void removeSearch(search.id)} className="text-destructive underline">Delete</button></div></div>) : <p className="rounded border border-dashed p-5 text-sm text-muted-foreground">No saved searches yet.</p>}</div></section>
+    <section className="mt-8 rounded-lg border bg-card p-5" aria-labelledby="comparison-heading"><div className="flex items-center justify-between"><h2 id="comparison-heading" className="font-serif text-2xl">Compare properties</h2><span className="text-sm text-muted-foreground">{comparison?.items.length ?? 0} / 4</span></div><div className="mt-4 grid gap-3 sm:grid-cols-2">{comparison?.items.length ? comparison.items.map((item) => { const listing = resolved.get(item.listingKey); return <div key={item.id} className="rounded border p-4"><strong>{listing?.streetAddress || "Property listing"}</strong><p className="text-sm text-muted-foreground">{listing ? `${listing.city || ""} · ${listing.price ? `$${listing.price.toLocaleString()}` : "Price upon request"}` : "Property unavailable in the live feed"}</p><button type="button" onClick={() => void removeComparison(item.listingKey)} className="mt-3 text-sm text-destructive underline">Remove</button></div>; }) : <p className="rounded border border-dashed p-5 text-sm text-muted-foreground">Add properties from listing cards to compare them here.</p>}</div></section>
+    <section className="mt-8 rounded-lg border bg-card p-5" aria-labelledby="recommendations-heading"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="recommendations-heading" className="font-serif text-2xl">Recommended for you</h2><p className="mt-1 text-sm text-muted-foreground">Live listings matched to your saved property activity.</p></div>{profile && <span className="text-xs text-muted-foreground">Profile {profile.version}</span>}</div>{recommendations ? <><div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">{recommendations.reasons.map((reason) => <span key={reason} className="rounded-full bg-primary/10 px-3 py-1 text-primary">{reason}</span>)}</div><div className="mt-5 grid gap-5 md:grid-cols-2">{recommendations.items.slice(0, 4).map((listing) => <ListingCard key={listing.listingKey} listing={listing} />)}</div>{!recommendations.items.length && <p className="mt-4 rounded border border-dashed p-5 text-sm text-muted-foreground">Save a search or favorite a property to get recommendations.</p>}</> : <p className="mt-4 rounded border border-dashed p-5 text-sm text-muted-foreground">Live recommendations are unavailable right now. Your organizer data is still available.</p>}</section>
+    <section className="mt-8 rounded-lg border bg-card p-5" aria-labelledby="inferred-preferences-heading"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="inferred-preferences-heading" className="font-serif text-2xl">Your property preferences</h2><p className="mt-1 text-sm text-muted-foreground">Inferred values are based on saved searches and resolved favorites. They never create communication consent.</p></div><div className="flex gap-3 text-sm"><button type="button" onClick={() => void toggleInference()} className="underline">{profile?.inferenceEnabled === false ? "Enable inference" : "Disable inference"}</button><button type="button" onClick={() => void resetPreferences()} className="text-destructive underline">Reset</button></div></div><div className="mt-4 grid gap-2 sm:grid-cols-2">{profile?.preferences.length ? profile.preferences.map((item) => <div key={item.dimension} className="rounded border p-3"><strong className="capitalize">{item.dimension.replace(/([A-Z])/g, " $1")}</strong><p className="text-sm">{String(item.value)}</p><p className="mt-1 text-xs text-muted-foreground">{item.source} · {Math.round(item.confidence * 100)}% confidence · From {item.evidence[0]?.source.replaceAll("_", " ")}</p></div>) : <p className="rounded border border-dashed p-5 text-sm text-muted-foreground">No preferences inferred yet.</p>}</div></section>
+    <section className="mt-8 rounded-lg border bg-card p-5" aria-labelledby="notification-heading"><h2 id="notification-heading" className="font-serif text-2xl">Notification preferences</h2><p className="mt-2 text-sm text-muted-foreground">These preferences do not create communication consent. Future messages must still satisfy consent and suppression rules.</p><div className="mt-4 space-y-2">{preferences.length ? preferences.map((preference, index) => <label key={`${preference.category}-${preference.channel}`} className="flex items-center justify-between rounded border p-3 text-sm"><span>{preference.category.replaceAll("_", " ")} via {preference.channel}</span><input type="checkbox" checked={preference.enabled} onChange={() => void togglePreference(index)} aria-label={`${preference.category} ${preference.channel}`} /></label>) : <p className="rounded border border-dashed p-5 text-sm text-muted-foreground">No notification preferences configured.</p>}</div></section>
+    <section className="mt-8 rounded-lg border bg-card p-5" aria-labelledby="alerts-heading"><h2 id="alerts-heading" className="font-serif text-2xl">Alert history</h2><div className="mt-4 space-y-2">{alerts.length ? alerts.map((alert) => <div key={alert.id} className="rounded border p-3 text-sm"><strong>{alert.alertType.replaceAll("_", " ")}</strong><span className="ml-2 text-muted-foreground">{alert.listingKey}</span><p className="text-muted-foreground">{alert.deliveryStatus} · {new Date(alert.detectedAt).toLocaleString()}</p></div>) : <p className="rounded border border-dashed p-5 text-sm text-muted-foreground">No listing alerts yet.</p>}</div></section>
+  </main></Layout>;
+}

@@ -134,8 +134,24 @@ function BlockFields({
   switch (block.type) {
     case "hero": {
       const action = props.action as Link | undefined;
+      const brand = props.brand as
+        | { displayName: string; initial: string; agentDisplayName: string }
+        | undefined;
       return (
         <>
+          <TextField
+            label="Eyebrow"
+            path={`${path}/eyebrow`}
+            feedback={feedback}
+            value={(props.eyebrow as string | undefined) ?? ""}
+            maxLength={200}
+            onChange={(value) =>
+              change((target) => {
+                if (value) target.props.eyebrow = value;
+                else delete target.props.eyebrow;
+              })
+            }
+          />
           <TextField
             label="Heading"
             path={`${path}/heading`}
@@ -148,6 +164,31 @@ function BlockFields({
               })
             }
           />
+          {brand &&
+            (["displayName", "initial", "agentDisplayName"] as const).map((field) => (
+              <TextField
+                key={field}
+                label={
+                  field === "displayName"
+                    ? "Website brand name"
+                    : field === "initial"
+                      ? "Brand initial"
+                      : "Inquiry recipient display name"
+                }
+                path={`${path}/brand/${field}`}
+                feedback={feedback}
+                value={brand[field]}
+                maxLength={field === "initial" ? 2 : 120}
+                onChange={(value) =>
+                  change((target) => {
+                    target.props.brand = {
+                      ...(target.props.brand as typeof brand),
+                      [field]: value,
+                    };
+                  })
+                }
+              />
+            ))}
           <TextField
             label="Summary"
             path={`${path}/summary`}

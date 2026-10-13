@@ -1,0 +1,479 @@
+"use client";
+
+import { useGetListing } from "../api";
+import { useParams, Link } from "../navigation";
+import { Layout } from "../components/Layout";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Bed,
+  Bath,
+  Square,
+  MapPin,
+  Calendar,
+  Check,
+  Info,
+  Car,
+  Waves,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { IdxAttribution } from "../components/IdxAttribution";
+import { FavoriteButton } from "../components/FavoriteButton";
+import { PropertyInquiryForm } from "../components/PropertyInquiryForm";
+import { setPageMetadata } from "../lib/seo";
+import { emitBehaviorEvent } from "../lib/events";
+
+export default function ListingDetail() {
+  const params = useParams();
+  const listingKey = params.listingKey || "";
+
+  const { data: listing, isLoading, isError } = useGetListing(listingKey);
+  const [activePhoto, setActivePhoto] = useState(0);
+
+  useEffect(() => {
+    if (listingKey && listing) {
+      emitBehaviorEvent("LISTING_VIEWED", { listingKey });
+    }
+  }, [listing, listingKey]);
+
+  useEffect(() => {
+    const address = listing?.streetAddress || listing?.city || "Las Vegas property";
+    const price = listing?.price
+      ? new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: "USD",
+          maximumFractionDigits: 0,
+        }).format(listing.price)
+      : "Property details";
+    const description =
+      listing?.publicRemarks?.slice(0, 155) ||
+      `View ${price.toLowerCase()} details, photos, property facts, and brokerage attribution.`;
+    setPageMetadata({
+      title: `${price} ${address} | Las Vegas Live IDX`,
+      description,
+      path: `/listing/${encodeURIComponent(listingKey)}`,
+      type: "article",
+    });
+  }, [listing, listingKey]);
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-8">
+          <div className="h-4 w-32 bg-muted animate-pulse rounded mb-8"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="aspect-[4/3] bg-muted animate-pulse rounded-lg"></div>
+              <div className="grid grid-cols-4 gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="aspect-square bg-muted animate-pulse rounded-md"></div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-6">
+              <div className="h-10 bg-muted animate-pulse rounded w-1/2"></div>
+              <div className="h-6 bg-muted animate-pulse rounded w-3/4"></div>
+              <div className="h-24 bg-muted animate-pulse rounded"></div>
+              <div className="h-64 bg-muted animate-pulse rounded"></div>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (isError || !listing) {
+    return (
+      <Layout>
+        <div role="alert" className="container mx-auto px-4 py-20 text-center">
+          <h2 className="text-2xl font-serif mb-4 text-foreground">Listing Not Found</h2>
+          <p className="text-muted-foreground mb-8">
+            The property you are looking for might have been removed or is temporarily unavailable.
+          </p>
+          <Link
+            href="/"
+            className="inline-flex items-center px-6 py-3 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors"
+          >
+            Return to Search
+          </Link>
+        </div>
+      </Layout>
+    );
+  }
+
+  const formatPrice = (price?: number) => {
+    if (!price) return "Price Upon Request";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(price);
+  };
+
+  const hasPhotos = listing.photos && listing.photos.length > 0;
+  const photoCount = listing.photos.length;
+  const showPreviousPhoto = () => setActivePhoto((current) => (current - 1 + photoCount) % photoCount);
+  const showNextPhoto = () => setActivePhoto((current) => (current + 1) % photoCount);
+  const mapHref =
+    listing.latitude != null && listing.longitude != null
+      ? `https://www.google.com/maps?q=${listing.latitude},${listing.longitude}`
+      : listing.streetAddress
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+            [listing.streetAddress, listing.city, listing.state, listing.postalCode]
+              .filter(Boolean)
+              .join(", "),
+          )}`
+        : undefined;
+  const amenityGroups: Array<[string, string[] | undefined]> = [
+    ["Community", listing.communityFeatures],
+    ["Interior", listing.interiorFeatures],
+    ["Exterior", listing.exteriorFeatures],
+    ["Heating", listing.heating],
+    ["Cooling", listing.cooling],
+    ["Flooring", listing.flooring],
+    ["Appliances", listing.appliances],
+    ["Views", listing.view],
+    ["Parking", listing.parkingFeatures],
+  ];
+
+  return (
+    <Layout>
+      <div className="bg-background border-b border-border/50 sticky top-16 z-40">
+        <div className="container mx-auto px-4 h-12 flex items-center justify-between gap-4">
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors font-medium"
+          >
+            <ChevronLeft className="w-4 h-4" /> Back to Results
+          </Link>
+          <nav aria-label="Property tools" className="flex items-center gap-3 text-xs sm:gap-4 sm:text-sm">
+            <Link href="/account/favorites" className="text-muted-foreground hover:text-primary">
+              Saved homes
+            </Link>
+            <Link href="/account/organizer" className="text-muted-foreground hover:text-primary">
+              Organizer
+            </Link>
+          </nav>
+        </div>
+      </div>
+
+      <div className="container mx-auto px-4 md:px-6 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+          {/* Gallery Section */}
+          <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-4">
+            <div className="aspect-[4/3] md:aspect-[16/10] bg-muted rounded-xl overflow-hidden relative shadow-sm border border-border">
+              {hasPhotos ? (
+                <img
+                  src={listing.photos[activePhoto]}
+                  alt={
+                    listing.streetAddress
+                      ? `${listing.streetAddress} view ${activePhoto + 1}`
+                      : `Property photo ${activePhoto + 1}`
+                  }
+                  className="w-full h-full object-cover transition-opacity duration-300"
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground p-6 text-center bg-accent/30">
+                  <Waves className="w-12 h-12 text-muted/40 mb-4" />
+                  <span className="text-lg font-medium">No Photos Available</span>
+                  <p className="text-sm mt-2 max-w-xs">
+                    This property listing currently does not have associated imagery.
+                  </p>
+                </div>
+              )}
+
+              {hasPhotos && photoCount > 1 && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Previous photo"
+                    onClick={showPreviousPhoto}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-background/90 p-2 text-foreground shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Next photo"
+                    onClick={showNextPhoto}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-background/90 p-2 text-foreground shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                  <span className="absolute bottom-3 right-3 rounded-full bg-background/90 px-3 py-1 text-xs font-medium text-foreground">
+                    {activePhoto + 1} / {photoCount}
+                  </span>
+                </>
+              )}
+
+              {listing.status && (
+                <div className="absolute top-4 left-4 bg-background/95 backdrop-blur-sm px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded border border-border shadow-sm">
+                  {listing.status}
+                </div>
+              )}
+            </div>
+
+            {hasPhotos && listing.photos.length > 1 && (
+              <div className="grid grid-cols-5 md:grid-cols-6 gap-3">
+                {listing.photos.map((photo, idx) => (
+                  <button
+                    type="button"
+                    key={idx}
+                    aria-label={`View photo ${idx + 1}`}
+                    aria-current={activePhoto === idx ? "true" : undefined}
+                    onClick={() => setActivePhoto(idx)}
+                    className={`relative aspect-square rounded-md overflow-hidden border-2 transition-all ${activePhoto === idx ? "border-primary ring-2 ring-primary/20 scale-[0.98]" : "border-transparent hover:opacity-80"}`}
+                  >
+                    <img src={photo} alt="Thumbnail" className="w-full h-full object-cover" loading="lazy" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Details Section */}
+          <div className="lg:col-span-5 xl:col-span-4">
+            <div className="sticky top-32 space-y-8">
+              {/* Header */}
+              <div>
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <h1 className="text-4xl md:text-5xl font-serif font-medium text-foreground">
+                    {formatPrice(listing.price)}
+                  </h1>
+                  <FavoriteButton listingKey={listing.listingKey} />
+                </div>
+                <div className="flex items-start gap-2 text-lg text-muted-foreground mb-6">
+                  <MapPin className="w-5 h-5 shrink-0 mt-1" />
+                  <div className="leading-relaxed">
+                    {listing.streetAddress && (
+                      <span className="block font-medium text-foreground">{listing.streetAddress}</span>
+                    )}
+                    <div>
+                      {listing.city}
+                      {listing.state && `, ${listing.state}`} {listing.postalCode}
+                    </div>
+                  </div>
+                </div>
+
+                {mapHref && (
+                  <a
+                    href={mapHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline mb-6"
+                  >
+                    Open map
+                  </a>
+                )}
+
+                <div className="grid grid-cols-3 divide-x divide-border/60 py-4 border-y border-border/60">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <div className="flex items-center gap-1.5 text-foreground mb-1">
+                      <Bed className="w-5 h-5 text-muted-foreground" />
+                      <span className="font-semibold text-lg">{listing.bedrooms ?? "-"}</span>
+                    </div>
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground font-medium">
+                      Beds
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <div className="flex items-center gap-1.5 text-foreground mb-1">
+                      <Bath className="w-5 h-5 text-muted-foreground" />
+                      <span className="font-semibold text-lg">{listing.bathrooms ?? "-"}</span>
+                    </div>
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground font-medium">
+                      Baths
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <div className="flex items-center gap-1.5 text-foreground mb-1">
+                      <Square className="w-5 h-5 text-muted-foreground" />
+                      <span className="font-semibold text-lg">
+                        {listing.livingArea ? listing.livingArea.toLocaleString() : "-"}
+                      </span>
+                    </div>
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground font-medium">
+                      Sq Ft
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Overview */}
+              {listing.publicRemarks && (
+                <div className="pt-6 border-t border-border/60">
+                  <h3 className="text-xl font-serif font-medium mb-4">About this home</h3>
+                  <div className="prose prose-sm md:prose-base dark:prose-invert text-muted-foreground">
+                    <p className="leading-relaxed">{listing.publicRemarks}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Facts */}
+              <div className="pt-6 border-t border-border/60">
+                <h3 className="text-xl font-serif font-medium mb-4">Property Facts</h3>
+                <div className="space-y-3 text-sm">
+                  {listing.propertySubType && (
+                    <div className="flex justify-between py-2 border-b border-border/30">
+                      <span className="text-muted-foreground flex items-center gap-2">
+                        <Check className="w-4 h-4" /> Property Subtype
+                      </span>
+                      <span className="font-medium text-foreground text-right">
+                        {listing.propertySubType}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between py-2 border-b border-border/30">
+                    <span className="text-muted-foreground flex items-center gap-2">
+                      <Check className="w-4 h-4" /> Property Type
+                    </span>
+                    <span className="font-medium text-foreground text-right">
+                      {listing.propertyType || "Unknown"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-border/30">
+                    <span className="text-muted-foreground flex items-center gap-2">
+                      <Calendar className="w-4 h-4" /> Year Built
+                    </span>
+                    <span className="font-medium text-foreground text-right">
+                      {listing.yearBuilt || "Unknown"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-border/30">
+                    <span className="text-muted-foreground flex items-center gap-2">
+                      <Info className="w-4 h-4" /> MLS ID
+                    </span>
+                    <span className="font-medium text-foreground text-right">
+                      {listing.listingId || listing.listingKey}
+                    </span>
+                  </div>
+                  {listing.modificationTimestamp && (
+                    <div className="flex justify-between py-2 border-b border-border/30">
+                      <span className="text-muted-foreground flex items-center gap-2">
+                        <Info className="w-4 h-4" /> Last Updated
+                      </span>
+                      <span className="font-medium text-foreground text-right">
+                        {new Date(listing.modificationTimestamp).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {(listing.lotSizeSquareFeet ||
+                listing.lotSizeArea ||
+                listing.garageSpaces !== undefined ||
+                listing.garageYN !== undefined ||
+                listing.stories ||
+                listing.storiesTotal ||
+                listing.poolFeatures?.length ||
+                listing.poolPrivateYN !== undefined ||
+                listing.hoaFee !== undefined ||
+                listing.hoaFeeFrequency) && (
+                <div className="pt-6 border-t border-border/60">
+                  <h3 className="text-xl font-serif font-medium mb-4">Home Features</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    {listing.lotSizeSquareFeet && (
+                      <div>
+                        <span className="block text-muted-foreground">Lot size</span>
+                        <span className="font-medium">
+                          {listing.lotSizeSquareFeet.toLocaleString()} sq ft
+                        </span>
+                      </div>
+                    )}
+                    {listing.lotSizeArea && (
+                      <div>
+                        <span className="block text-muted-foreground">Lot area</span>
+                        <span className="font-medium">{listing.lotSizeArea.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {listing.garageSpaces !== undefined && (
+                      <div>
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                          <Car className="w-4 h-4" /> Garage
+                        </span>
+                        <span className="font-medium">{listing.garageSpaces} spaces</span>
+                      </div>
+                    )}
+                    {listing.garageYN !== undefined && (
+                      <div>
+                        <span className="block text-muted-foreground">Garage</span>
+                        <span className="font-medium">{listing.garageYN ? "Yes" : "No"}</span>
+                      </div>
+                    )}
+                    {listing.storiesTotal !== undefined && (
+                      <div>
+                        <span className="block text-muted-foreground">Stories</span>
+                        <span className="font-medium">{listing.storiesTotal}</span>
+                      </div>
+                    )}
+                    {listing.stories !== undefined && listing.storiesTotal === undefined && (
+                      <div>
+                        <span className="block text-muted-foreground">Stories</span>
+                        <span className="font-medium">{listing.stories}</span>
+                      </div>
+                    )}
+                    {listing.poolFeatures?.length && (
+                      <div>
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                          <Waves className="w-4 h-4" /> Pool
+                        </span>
+                        <span className="font-medium">{listing.poolFeatures.join(", ")}</span>
+                      </div>
+                    )}
+                    {listing.poolPrivateYN !== undefined && (
+                      <div>
+                        <span className="block text-muted-foreground">Private pool</span>
+                        <span className="font-medium">{listing.poolPrivateYN ? "Yes" : "No"}</span>
+                      </div>
+                    )}
+                    {listing.hoaFee !== undefined && (
+                      <div>
+                        <span className="block text-muted-foreground">HOA fee</span>
+                        <span className="font-medium">
+                          ${listing.hoaFee.toLocaleString()}
+                          {listing.hoaFeeFrequency ? ` / ${listing.hoaFeeFrequency}` : ""}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {amenityGroups.some(([, values]) => values?.length) && (
+                <div className="pt-6 border-t border-border/60">
+                  <h3 className="text-xl font-serif font-medium mb-4">Features & Amenities</h3>
+                  <div className="space-y-4 text-sm">
+                    {amenityGroups.map(([label, values]) =>
+                      values?.length ? (
+                        <div key={label}>
+                          <span className="block text-muted-foreground mb-1">{label}</span>
+                          <div className="flex flex-wrap gap-2">
+                            {values.map((value) => (
+                              <span key={value} className="rounded-full bg-muted px-3 py-1 text-xs">
+                                {value}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null,
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-6 border-t border-border/60">
+                <PropertyInquiryForm listingKey={listing.listingKey} listingId={listing.listingId} />
+              </div>
+
+              {/* Brokerage Attribution */}
+              <div className="pt-6 mt-6 border-t border-border/60">
+                <IdxAttribution listing={listing} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Layout>
+  );
+}

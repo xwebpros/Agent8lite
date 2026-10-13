@@ -1,0 +1,11 @@
+export type MapBounds = { minLatitude: number; maxLatitude: number; minLongitude: number; maxLongitude: number };
+
+export function normalizeMapBounds(input: { south: number; north: number; west: number; east: number }): MapBounds | undefined {
+  if (![input.south, input.north, input.west, input.east].every(Number.isFinite)) return undefined;
+  const south = Math.max(-90, Math.min(90, input.south));
+  const north = Math.max(-90, Math.min(90, input.north));
+  const west = Math.max(-180, Math.min(180, input.west));
+  const east = Math.max(-180, Math.min(180, input.east));
+  if (south >= north || west >= east) return undefined;
+  return { minLatitude: south, maxLatitude: north, minLongitude: west, maxLongitude: east };
+}

@@ -1,0 +1,129 @@
+import { type FormEvent, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
+import { updateConsumerProfile } from "@workspace/api-client-react";
+import { clearFavoriteState, notifyAuthChanged } from "@/lib/favorites";
+import { Layout } from "@/components/Layout";
+
+type User = { id: string; email: string; displayName?: string | null; firstName?: string | null; lastName?: string | null; phone?: string | null };
+type AccountSession = {
+  user: User;
+  tenant?: { id: string; slug: string; name: string } | null;
+  roles?: string[];
+  permissions?: string[];
+};
+
+async function readJson(response: Response) {
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || "The request could not be completed.");
+  return body;
+}
+
+export default function Account({ verify = false }: { verify?: boolean }) {
+  const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [session, setSession] = useState<AccountSession | null>(null);
+  const [message, setMessage] = useState("");
+  const [profile, setProfile] = useState({ firstName: "", lastName: "", phone: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("token");
+    if (verify && token) {
+      fetch(`/api/auth/verify?token=${encodeURIComponent(token)}`, { credentials: "include" })
+        .then(readJson)
+        .then(() => { queryClient.clear(); notifyAuthChanged(); navigate("/account"); })
+        .catch((cause: Error) => setError(cause.message))
+        .finally(() => setLoading(false));
+      return;
+    }
+    fetch("/api/me", { credentials: "include" })
+      .then(async (response) => response.status === 401 ? { user: null } : readJson(response))
+      .then((body) => {
+        setSession(body.user ? body : null);
+        if (body.user) setProfile({ firstName: body.user.firstName || "", lastName: body.user.lastName || "", phone: body.user.phone || "" });
+      })
+      .catch((cause: Error) => setError(cause.message))
+      .finally(() => setLoading(false));
+  }, [navigate, verify]);
+
+  async function requestLink(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    try {
+      const body = await readJson(await fetch("/api/auth/magic-link", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      }));
+      setMessage(body.message);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to request a sign-in link.");
+    }
+  }
+
+  async function logout() {
+    setError("");
+    try {
+      await readJson(await fetch("/api/auth/logout", { method: "POST", credentials: "include" }));
+      queryClient.clear();
+      clearFavoriteState();
+      notifyAuthChanged();
+      setSession(null);
+      setMessage("You have been signed out.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to sign out safely.");
+    }
+  }
+
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      await updateConsumerProfile(profile, { credentials: "include" });
+      setSession((current) => current ? { ...current, user: { ...current.user, ...profile, displayName: `${profile.firstName} ${profile.lastName}` } } : current);
+      setMessage("Your contact information has been saved.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to save your contact information."); }
+  }
+
+  if (loading) return <Layout roles={[]}><main className="mx-auto w-full max-w-2xl px-6 py-20">Checking your session...</main></Layout>;
+  if (verify && error) return <Layout roles={[]}><main className="mx-auto w-full max-w-2xl px-6 py-20"><h1 className="font-serif text-4xl">Sign-in link expired</h1><p className="mt-4">{error}</p><Link href="/account" className="mt-8 inline-block underline">Request a new link</Link></main></Layout>;
+  if (session) return <Layout roles={session.roles ?? []}><main className="mx-auto w-full max-w-2xl px-6 py-20">
+    <p className="text-sm uppercase tracking-widest text-muted-foreground">VegasIDX account</p>
+    <h1 className="mt-3 font-serif text-4xl">Your account</h1>
+    <p className="mt-4">Signed in as {session.user.email}</p>
+    {session.tenant && <p className="mt-2 text-muted-foreground">Tenant: {session.tenant.name}</p>}
+    {session.roles?.length ? <p className="mt-2 text-muted-foreground">Role: {session.roles.join(", ")}</p> : null}
+    {(!session.user.firstName || !session.user.lastName || !session.user.phone) && <form onSubmit={saveProfile} className="mt-8 max-w-md space-y-4 rounded-lg border p-5">
+      <h2 className="font-serif text-2xl">Complete your profile</h2>
+      <p className="text-sm text-muted-foreground">This helps the team follow up on homes you save or view.</p>
+      <input aria-label="First name" required placeholder="First name" value={profile.firstName} onChange={(event) => setProfile({ ...profile, firstName: event.target.value })} className="w-full rounded border px-3 py-2" />
+      <input aria-label="Last name" required placeholder="Last name" value={profile.lastName} onChange={(event) => setProfile({ ...profile, lastName: event.target.value })} className="w-full rounded border px-3 py-2" />
+      <input aria-label="Phone number" required placeholder="Phone number" value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })} className="w-full rounded border px-3 py-2" />
+      <button className="rounded bg-primary px-4 py-2 text-primary-foreground">Save contact information</button>
+    </form>}
+    <div className="mt-8 flex flex-wrap items-center gap-4">
+      <Link href="/workspace" className="rounded bg-primary px-4 py-2 text-primary-foreground">Open workspace</Link>
+      <Link href="/account/favorites" className="underline">Saved and viewed homes</Link>
+      <Link href="/account/organizer" className="underline">Property organizer</Link>
+      <Link href="/" className="underline">Browse listings</Link>
+      <button className="rounded border px-4 py-2" onClick={logout}>Sign out</button>
+    </div>
+  </main></Layout>;
+
+  return <Layout roles={[]}><main className="mx-auto w-full max-w-2xl px-6 py-20">
+    <h1 className="font-serif text-4xl">Sign in to VegasIDX</h1>
+    <p className="mt-4 text-muted-foreground">We will email you a secure, one-time sign-in link.</p>
+    <form onSubmit={requestLink} className="mt-8 flex max-w-md flex-col gap-4">
+      <label htmlFor="account-email">Email address</label>
+      <input id="account-email" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="rounded border px-3 py-2" />
+      <button type="submit" className="rounded bg-primary px-4 py-2 text-primary-foreground">Email me a sign-in link</button>
+    </form>
+    {message && <p className="mt-4" role="status">{message}</p>}
+    {error && <p className="mt-4 text-destructive" role="alert">{error}</p>}
+  </main></Layout>;
+}

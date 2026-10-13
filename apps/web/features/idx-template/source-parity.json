@@ -1,0 +1,188 @@
+{
+  "repository": "djmichaelmartin-cmd/Las-Vegas-Live-IDX",
+  "branch": "Full_Web_App_phase_1",
+  "commit": "920d148ee0ec6465381bf245381afcbdb5540bce",
+  "transformations": [
+    "Original public source retained byte-for-byte in provenance/original for reproducibility.",
+    "Active source JSX utility classes retained; imports adapted to native generated API, Next navigation and published CMS context.",
+    "Provider calls, private browser persistence, original CRM/admin, source analytics and direct email removed.",
+    "Unsupported optional capabilities keep source panel geometry with explicit unavailable states.",
+    "CSS compiled and scoped to data-idx-template; Leaflet loaded only in client and external tiles remain disabled."
+  ],
+  "files": [
+    {
+      "path": "App.tsx",
+      "sha256": "00175db4d55ff91abcc170f3a01313f6603e1d157e62f14f17059a4cadc1a2cc",
+      "bytes": 4359,
+      "active": false
+    },
+    {
+      "path": "pages/Home.tsx",
+      "sha256": "37672ca674de668acd6753aee082327c6a0b311c6303694dd3d63f68c9e7b7f5",
+      "bytes": 26170,
+      "active": true
+    },
+    {
+      "path": "pages/ListingDetail.tsx",
+      "sha256": "284d3d78bed9c7ee39bc9186df1044e3f30e42b0c28b9eefe00a663bd36f168b",
+      "bytes": 19861,
+      "active": true
+    },
+    {
+      "path": "pages/LocationPage.tsx",
+      "sha256": "108d297f36d2d56a916d845517eb841e0c54939a15ce23708f72d284e961a782",
+      "bytes": 7328,
+      "active": false
+    },
+    {
+      "path": "pages/SavedHomes.tsx",
+      "sha256": "4352ddae64d9a231fefca869bd152aa5f585af4a91a28131ee854d4a3e036a2d",
+      "bytes": 7084,
+      "active": false
+    },
+    {
+      "path": "pages/Organizer.tsx",
+      "sha256": "4b47f3a518c78613cdc26482ab504a9f12892d15b5e9ac027e93c8ca5688d990",
+      "bytes": 15103,
+      "active": false
+    },
+    {
+      "path": "pages/Account.tsx",
+      "sha256": "c9ef774bdd760842fc93bab1dec08e22cd1859a6b69625b268f1af508142bc8a",
+      "bytes": 7409,
+      "active": false
+    },
+    {
+      "path": "pages/Terms.tsx",
+      "sha256": "2c81e305f8bea1193d468771fed525a560757c3d477d563c49df79a1d5e91c0e",
+      "bytes": 8165,
+      "active": false
+    },
+    {
+      "path": "components/Layout.tsx",
+      "sha256": "8166bd26bef7c564e5731bdd2d38bd17f05864247449997db2f3a5d2f47bbf62",
+      "bytes": 8820,
+      "active": true
+    },
+    {
+      "path": "components/ListingCard.tsx",
+      "sha256": "8ef098fcf67503de9b3866c1572aafdc27876a8a00dc5dd0b45d002306ff07a2",
+      "bytes": 7300,
+      "active": true
+    },
+    {
+      "path": "components/Filters.tsx",
+      "sha256": "ddb06761d46789e22f18185778628c702e69d5ebaf04145004f051907ed03aa1",
+      "bytes": 16523,
+      "active": true
+    },
+    {
+      "path": "components/ListingMap.tsx",
+      "sha256": "ccbcbc1d85edb3282d0909b952ff54bedc13f8847635d5a22b1e40b60cc6dccc",
+      "bytes": 7202,
+      "active": true
+    },
+    {
+      "path": "components/MapListingPreview.tsx",
+      "sha256": "ebcc37342ca1ba22f902318904c685ed5e9b358a7fca93af10327c934de91075",
+      "bytes": 1665,
+      "active": true
+    },
+    {
+      "path": "components/IdxAttribution.tsx",
+      "sha256": "8a579183d1ed305e6c14368a17826e1fef0a7cbf62228ae8d7d639b1111a6a6c",
+      "bytes": 2204,
+      "active": true
+    },
+    {
+      "path": "components/PropertyInquiryForm.tsx",
+      "sha256": "91fefd4e8eac8e7751cb57cd6bcd0cebb89f58a430cdd9737ec3a4f5793efcff",
+      "bytes": 4304,
+      "active": false
+    },
+    {
+      "path": "components/NaturalLanguageSearch.tsx",
+      "sha256": "4847a1c6594b9d723e934fd3fd4aa09a79549a9d5cae00b7145f8ccaab47efec",
+      "bytes": 2619,
+      "active": false
+    },
+    {
+      "path": "components/FavoriteButton.tsx",
+      "sha256": "f68d9f13e4fc4f75cf99972cab83d2043729c5d67260a5977100af0146f5ea15",
+      "bytes": 2298,
+      "active": false
+    },
+    {
+      "path": "components/OrganizerActions.tsx",
+      "sha256": "ac7e3bf40b9d7698b3858cbeb483339aa0d59a502f6d1363e2e6f2de40cb9574",
+      "bytes": 1791,
+      "active": false
+    },
+    {
+      "path": "lib/search-state.ts",
+      "sha256": "ca1a3b9ae17218b822846dfce24e67ad63d034933d1a89c840b21218de23fe44",
+      "bytes": 2970,
+      "active": true
+    },
+    {
+      "path": "lib/map-state.ts",
+      "sha256": "3066e9b1df4ca68ed4a162a87c47f508b20a67abfb0332dd77a5ed6c6839f5c6",
+      "bytes": 738,
+      "active": true
+    },
+    {
+      "path": "lib/location-seo.ts",
+      "sha256": "1030d4f398eeef3d86777e00391e189362136df7337c332d30ccc176d805c77b",
+      "bytes": 1029,
+      "active": true
+    },
+    {
+      "path": "lib/content.ts",
+      "sha256": "e0c3a07931e85453c2db5f9743a92bc8ecd0286babbdb1967d27f6cec7fb67dd",
+      "bytes": 1779,
+      "active": false
+    },
+    {
+      "path": "lib/favorites.ts",
+      "sha256": "5429e32059b0b3aeaabe39eaa9ecbccc2327055530db6aa33d4fa3ee9c69020f",
+      "bytes": 5421,
+      "active": false
+    },
+    {
+      "path": "lib/events.ts",
+      "sha256": "1e596d1961ffd5be3dbf8c42d5aada548a936fe031b24f2e272080bb5110b503",
+      "bytes": 720,
+      "active": false
+    },
+    {
+      "path": "lib/seo.ts",
+      "sha256": "5ebd27f79ad848bd4785dc8b87c90c2c7a386a6ec66774ad1a25afdf7190be9f",
+      "bytes": 1318,
+      "active": false
+    },
+    {
+      "path": "components/ui/button.tsx",
+      "sha256": "69dc2497dcb3d1f10e3de4b562494e77b851b0794abe1114f828aad5a4280b4e",
+      "bytes": 2113,
+      "active": false
+    },
+    {
+      "path": "components/ui/input.tsx",
+      "sha256": "83684fb1a1e6bd73278c8a70b8f4fa293fb40560b406be0db3d8d57d47439a8b",
+      "bytes": 796,
+      "active": false
+    },
+    {
+      "path": "components/ui/textarea.tsx",
+      "sha256": "7d206ec317aac17e5cc580fbf9d0daa077648a3276ed0ca1d00f29f6ca09aeda",
+      "bytes": 676,
+      "active": false
+    },
+    {
+      "path": "index.css",
+      "sha256": "403f06324ab5ebf68cb66da6160207acee402f3e8aa95c38b3efe6d1d28c2625",
+      "bytes": 4367,
+      "active": false
+    }
+  ]
+}

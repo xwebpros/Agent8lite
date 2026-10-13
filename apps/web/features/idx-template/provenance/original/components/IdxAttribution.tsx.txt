@@ -1,0 +1,55 @@
+import { Listing } from "@workspace/api-client-react";
+
+type AttributionListing = Pick<
+  Listing,
+  "listingOffice" | "listingOfficeEmail" | "listingOfficePhone" | "listingAgent"
+>;
+
+export function IdxAttribution({
+  listing,
+  compact = false,
+}: {
+  listing: AttributionListing;
+  compact?: boolean;
+}) {
+  const office = listing.listingOffice || "Multiple Listing Service";
+
+  if (compact) {
+    return (
+      <span className="truncate" title={`Courtesy of ${office}`}>
+        {listing.listingOffice ? `Listed by ${listing.listingOffice}` : "Courtesy of MLS"}
+      </span>
+    );
+  }
+
+  return (
+    <div className="bg-muted p-5 rounded-lg border border-border/50">
+      <h4 className="text-sm font-semibold uppercase tracking-wider mb-2">Listing Information</h4>
+      <p className="text-sm text-muted-foreground mb-1">
+        Provided by: <span className="font-medium text-foreground">{office}</span>
+      </p>
+      {listing.listingAgent && (
+        <p className="text-sm text-muted-foreground mb-1">
+          Listing Agent: <span className="font-medium text-foreground">{listing.listingAgent}</span>
+        </p>
+      )}
+      {(listing.listingOfficePhone || listing.listingOfficeEmail) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm mt-3">
+          {listing.listingOfficePhone && (
+            <a className="text-primary hover:underline" href={`tel:${listing.listingOfficePhone}`}>
+              {listing.listingOfficePhone}
+            </a>
+          )}
+          {listing.listingOfficeEmail && (
+            <a className="text-primary hover:underline" href={`mailto:${listing.listingOfficeEmail}`}>
+              Contact brokerage
+            </a>
+          )}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground/80 leading-relaxed border-t border-border pt-3 mt-3">
+        The data relating to real estate for sale on this website comes in part from the IDX program of the Multiple Listing Service. Information is provided for personal, non-commercial use and is deemed reliable but not guaranteed. Contact the listing brokerage for property questions.
+      </p>
+    </div>
+  );
+}

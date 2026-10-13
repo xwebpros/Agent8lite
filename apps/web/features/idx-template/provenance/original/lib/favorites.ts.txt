@@ -1,0 +1,152 @@
+import { addMyFavorite, getCurrentUser, removeMyFavorite, syncMyFavorites } from "@workspace/api-client-react";
+
+const STORAGE_KEY = "las-vegas-live-idx:favorites";
+const OWNER_KEY = "las-vegas-live-idx:favorites-owner";
+const FAVORITES_EVENT = "las-vegas-live-idx:favorites-changed";
+const AUTH_EVENT = "las-vegas-live-idx:auth-changed";
+
+
+export type FavoriteSyncResult = { authenticated: boolean; userId?: string; keys: string[] };
+
+let syncPromise: Promise<FavoriteSyncResult> | undefined;
+let syncedUserId: string | undefined;
+
+function errorStatus(error: unknown) {
+  return error && typeof error === "object" && "status" in error && typeof error.status === "number" ? error.status : undefined;
+}
+
+export function getFavoriteKeys(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
+    return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getFavoriteOwner(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    return window.localStorage.getItem(OWNER_KEY) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function publishFavoriteKeys(keys: string[]) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...new Set(keys)]));
+    window.dispatchEvent(new Event(FAVORITES_EVENT));
+  } catch {
+    // Private browsing and restricted storage should not break property browsing.
+  }
+}
+
+function markFavoriteOwner(userId: string) {
+  try {
+    window.localStorage.setItem(OWNER_KEY, userId);
+  } catch {
+    // The server remains authoritative when browser storage is unavailable.
+  }
+}
+
+export function setFavorite(listingKey: string, shouldFavorite: boolean): string[] {
+  const next = new Set(getFavoriteKeys());
+  if (shouldFavorite) next.add(listingKey);
+  else next.delete(listingKey);
+  const keys = [...next];
+  publishFavoriteKeys(keys);
+  return keys;
+}
+
+export function clearFavoriteState() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(OWNER_KEY);
+    window.dispatchEvent(new Event(FAVORITES_EVENT));
+  } catch {
+    // A later server request still cannot expose data without a valid session.
+  }
+  syncedUserId = undefined;
+  syncPromise = undefined;
+}
+
+export async function syncFavoritesWithServer(): Promise<FavoriteSyncResult> {
+  if (typeof window === "undefined") return { authenticated: false, keys: [] };
+  if (syncPromise) return syncPromise;
+
+  syncPromise = (async () => {
+    let me;
+    try {
+      me = await getCurrentUser();
+    } catch (error) {
+      if (errorStatus(error) === 401) return { authenticated: false, keys: getFavoriteKeys() };
+      throw new Error("Unable to verify the current account.");
+    }
+    const userId = me.user?.id;
+    if (!userId) return { authenticated: false, keys: getFavoriteKeys() };
+    if (syncedUserId === userId) return { authenticated: true, userId, keys: getFavoriteKeys() };
+
+    // A different owner is private state from another account and must never be migrated.
+    const owner = getFavoriteOwner();
+    const localKeys = !owner || owner === userId ? getFavoriteKeys() : [];
+    let body;
+    try {
+      body = await syncMyFavorites({ listingKeys: localKeys });
+    } catch {
+      throw new Error("Unable to synchronize saved homes.");
+    }
+    const keys = [...new Set((body.favorites ?? []).map((favorite) => favorite.listingKey))];
+    publishFavoriteKeys(keys);
+    markFavoriteOwner(body.userId);
+    syncedUserId = body.userId;
+    return { authenticated: true, userId: body.userId, keys };
+  })().finally(() => { syncPromise = undefined; });
+
+  return syncPromise;
+}
+
+export async function persistFavorite(listingKey: string, shouldFavorite: boolean) {
+  let sync;
+  try {
+    sync = await syncFavoritesWithServer();
+  } catch {
+    setFavorite(listingKey, shouldFavorite);
+    return { authenticated: false } as const;
+  }
+  if (!sync.authenticated) {
+    setFavorite(listingKey, shouldFavorite);
+    return { authenticated: false } as const;
+  }
+  try {
+    if (shouldFavorite) await addMyFavorite(listingKey);
+    else await removeMyFavorite(listingKey);
+  } catch (error) {
+    if (errorStatus(error) === 401) return { authenticated: false } as const;
+    throw new Error("Unable to update this saved home.");
+  }
+  setFavorite(listingKey, shouldFavorite);
+  return { authenticated: true } as const;
+}
+
+export function notifyAuthChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTH_EVENT));
+}
+
+export function subscribeToFavorites(onChange: () => void) {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener(FAVORITES_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(FAVORITES_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+export function subscribeToAuthChanges(onChange: () => void) {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener(AUTH_EVENT, onChange);
+  return () => window.removeEventListener(AUTH_EVENT, onChange);
+}

@@ -1,0 +1,24 @@
+import { useState } from "react";
+import type { ListListingsParams } from "@workspace/api-client-react";
+
+export function NaturalLanguageSearch({ onApply }: { onApply: (filters: ListListingsParams) => void }) {
+  const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<ListListingsParams>();
+  const [message, setMessage] = useState("");
+  const interpret = async () => {
+    setMessage("");
+    try {
+      const response = await fetch("/api/ai/search/interpret", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) });
+      const body = await response.json() as { error?: string; filters?: ListListingsParams };
+      if (!response.ok || !body.filters) throw new Error(body.error || "Unable to interpret that search.");
+      setFilters(body.filters); setMessage("Interpreted filters are ready to review.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to interpret that search."); }
+  };
+  return <section aria-labelledby="natural-language-search-heading" className="mb-6 rounded-lg border border-primary/20 bg-primary/5 p-4">
+    <h2 id="natural-language-search-heading" className="font-serif text-xl">Search in your own words</h2>
+    <p className="mt-1 text-sm text-muted-foreground">Try “4-bedroom homes in Henderson under $750k with a pool.” Property filters only.</p>
+    <div className="mt-3 flex flex-col gap-2 sm:flex-row"><label htmlFor="natural-language-search" className="sr-only">Describe the home you want</label><input id="natural-language-search" value={query} maxLength={500} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void interpret(); }} placeholder="Describe the home you want" className="min-h-10 flex-1 rounded border bg-background px-3" /><button type="button" onClick={() => void interpret()} disabled={!query.trim()} className="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">Interpret search</button></div>
+    {filters && <div className="mt-3 flex flex-wrap items-center gap-2" aria-live="polite">{Object.entries(filters).filter(([key]) => key !== "page" && key !== "sort").map(([key, value]) => <span key={key} className="rounded-full bg-background px-3 py-1 text-xs">{key}: {String(value)}</span>)}<button type="button" className="text-sm font-medium underline" onClick={() => onApply({ ...filters, page: 1 })}>Apply interpreted filters</button></div>}
+    {message && <p role="status" className="mt-2 text-sm text-muted-foreground">{message}</p>}
+  </section>;
+}
