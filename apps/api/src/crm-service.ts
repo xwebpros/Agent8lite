@@ -364,7 +364,7 @@ export class CrmService {
     const supportedFilters: Record<string, string[]> = {
       contacts: ["q", "ownerMemberId", "tagIds", "stageId", "sourceId", "intent"],
       leads: ["q", "ownerMemberId", "stageId", "sourceId", "intent", "tagIds"],
-      tasks: ["q", "ownerMemberId"],
+      tasks: ["q", "ownerMemberId", "stageId", "sourceId", "intent", "tagIds"],
     };
     if (
       Object.keys(filter).some(
@@ -412,6 +412,24 @@ export class CrmService {
       params.push(filter.ownerMemberId);
       where.push(`r.assignee_member_id=$${params.length}`);
     }
+    if (resource === "tasks") {
+      const taskLeadFilters: string[] = [];
+      for (const [field, column] of [
+        ["stageId", "stage_id"],
+        ["sourceId", "source_id"],
+        ["intent", "intent"],
+      ] as const) {
+        if (filter[field]) {
+          params.push(filter[field]);
+          taskLeadFilters.push(`l.${column}=$${params.length}`);
+        }
+      }
+      if (taskLeadFilters.length) {
+        where.push(
+          `r.lead_id IS NOT NULL AND EXISTS(SELECT 1 FROM app.lead l WHERE l.tenant_id=app.current_tenant() AND l.id=r.lead_id AND l.archived_at IS NULL AND ${taskLeadFilters.join(" AND ")})`,
+        );
+      }
+    }
     if (filter.ownerMemberId && resource === "contacts") {
       params.push(filter.ownerMemberId);
       where.push(
@@ -433,6 +451,10 @@ export class CrmService {
       if (resource === "leads")
         where.push(
           `(SELECT count(*) FROM app.lead_tag lt WHERE lt.tenant_id=app.current_tenant() AND lt.lead_id=r.id AND lt.tag_id=ANY(${tagsParam}))=cardinality(${tagsParam})`,
+        );
+      else if (resource === "tasks")
+        where.push(
+          `r.lead_id IS NOT NULL AND EXISTS(SELECT 1 FROM app.lead_tag lt WHERE lt.tenant_id=app.current_tenant() AND lt.lead_id=r.lead_id AND lt.tag_id=ANY(${tagsParam}) GROUP BY lt.lead_id HAVING count(*)=cardinality(${tagsParam}))`,
         );
       else if (resource === "contacts") {
         const leadScope = requirePermission(this.context, "crm.leads.read");

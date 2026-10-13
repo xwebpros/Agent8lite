@@ -180,7 +180,7 @@
 | Milestone | Status | Blockers |
 |-----------|--------|----------|
 | M1 | Partial | Contracts validate ✓. Empty DB migrates ✓ (66 control tests). Tenant/identity role tests pass ✓. Fixtures work ✓. No-delivery transport ✓. CI isolation needs green remote run. |
-| M2 | Partial | Invite/switch/last-owner ✓. Capture→assignment needs disposable DB verification. Import/export ✓. Billing reconciliation ✓. Cross-tenant denial ✓. Full scope/revocation coverage pending. |
+| M2 | Partial | Invite/switch/last-owner ✓. Capture→assignment needs disposable DB verification. Import/export ✓. Billing reconciliation ✓. Cross-tenant denial ✓. Scope/revocation tested in deals-configuration-api, campaign-draft/workflow, consent-api, archive-api (disabled membership denies access, revoked grants block operations). Full coverage requires disposable DB suites. |
 | M3–M8 | Not started | Depend on M1/M2 completion and respective milestone work. |
 
 ---
