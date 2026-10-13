@@ -1,7 +1,8 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Status:** Initial baseline. Reconcile each row to current evidence and update when work is split.
+**Updated:** 2026-10-13 at commit `f2faa29` — 178+ integration tests across 24 suites.
+**Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
 
@@ -52,7 +53,7 @@
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
 | MOD-D-001 | Implemented | `crm-api.test.ts`, `contact-edit-api`, `lead-notes-activity-api.test.ts` (5 tests), `crm-configuration-api.test.ts` (11 tests), `lead-tags-api.test.ts` (5 tests) | Contacts, leads, deals separated. Emails/phones normalized. Tags, stage history, notes, activity timeline all verified. |
-| MOD-D-002 | Implemented | `crm-configuration-api.test.ts`: pipeline stages; `crm-service.ts`: list filters, pagination | 6 default stages seeded. Configurable stages with optimistic versions. Server pagination with cursor. |
+| MOD-D-002 | Implemented | `crm-configuration-api.test.ts`: pipeline stages; `crm-service.ts`: list filters, pagination; `contact-filter-api.test.ts` (6 tests); `lead-filter-api.test.ts` (8 tests) | 6 default stages seeded. Configurable stages with optimistic versions. Server pagination with cursor. All 6 filter fields (q, ownerMemberId, tagIds, stageId, sourceId, intent) implemented and tested for both contacts and leads. |
 | MOD-D-003 | Partial | `routing-capture-api.test.ts` (routing config); routing service implemented | Round-robin and rule evaluation in `routing-service.ts`. Full geographic routing not yet tested. |
 | MOD-D-004 | Implemented | `scoring-api.test.ts` (scoring CRUD); `engagement-scoring-trigger` migration | Versioned deterministic formula. Score is prioritization only. |
 | MOD-D-005 | Implemented | `data-transfer-api.test.ts` (9 tests): upload/mapping/preview/commit/export | CSV import with preview, duplicate candidates, merge/skip. Idempotent commit. |
@@ -189,7 +190,7 @@
 | Category | Count | Suites |
 |----------|-------|--------|
 | Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 170+ | 23 |
+| Integration (shared DB) | 178+ | 24 |
 | Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
 | Unit | 2,534 | 79 |
 | Package | 737 | 15 |
