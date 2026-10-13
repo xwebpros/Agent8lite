@@ -757,6 +757,7 @@ class ApiController {
         "broadcast-confirmations": "confirmationId",
         "push-subscriptions": "pushDeviceId",
         "mls-feeds": "feedId",
+        enrollments: "enrollmentId",
         integrations: "integrationId",
         "ai/jobs": "aiJobId",
       };
