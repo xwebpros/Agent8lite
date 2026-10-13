@@ -2609,7 +2609,7 @@ export class CrmService {
   /** Trusted MOD-D capture evidence is never accepted from a published request body. */
   async createCapturedLead(
     body: Body,
-    evidence: { attribution: Record<string, unknown>; score: number; scoreVersion: string },
+    evidence: { attribution: Record<string, unknown>; score: number | null; scoreVersion: string },
   ) {
     return this.create("leads", body, evidence);
   }
@@ -2617,7 +2617,7 @@ export class CrmService {
   async create(
     resource: string,
     body: Body,
-    captureEvidence?: { attribution: Record<string, unknown>; score: number; scoreVersion: string },
+    captureEvidence?: { attribution: Record<string, unknown>; score: number | null; scoreVersion: string },
   ): Promise<Mutation> {
     if (resource === "tasks")
       throw new AccessError(
