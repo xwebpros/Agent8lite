@@ -1,5 +1,26 @@
 # Implementation status — 2026-10-13
 
+## Dispatch integration tests and runtime grants — 2026-10-13
+
+**Committed:**
+- `18ab570` feat: add dispatch integration tests, runtime grants and contract fixes
+- `5e7fd1f` docs: update evidence ledger with dispatch tests and job replay
+
+**Integration tests (`dispatch-api.test.ts`):** 6 new tests covering broadcast dispatch, action worker, retention enforcement and job listing with state/kind filters. All 260 shared-DB integration tests pass.
+
+**Migration 0037:** Grants runtime role (estate_runtime) SELECT/INSERT/UPDATE on `scheduled_action`, SELECT/INSERT on `delivery_attempt`, DELETE on `idempotency_record`, SELECT/DELETE on `outbox_consumer_receipt`. Required for dispatch worker and retention service to operate under RLS.
+
+**Contract addition:** Added `GET /v1/orgs/{orgId}/jobs` listing endpoint with cursor pagination and optional state/kind query filters, returning `PageJob`.
+
+**Bug fixes:**
+- Dashboard deal query: joined through `lead` table since `deal` has `amount` not `value` and no `owner_member_id` column
+- Dashboard integration health: mapped unknown connection states (e.g. `mock`) to `unconfigured` to pass contract validation
+- MOD-J-003 staff job replay confirmed already implemented in `http-adapter.ts` lines 435-449
+
+**Test evidence:** 260/260 integration tests (shared DB), 737/737 package tests, TypeScript clean.
+
+---
+
 ## M4 marketing infrastructure — 2026-10-13
 
 **Committed:**
@@ -18,7 +39,7 @@
 
 **Automation workspace UI:** `automation-workspace.tsx` lists automations with name/trigger/campaign/status, inline create form, active/inactive toggle via PATCH, enrollment list with cancel. Wired into workspace nav gated on `automations.read` permission.
 
-**Test evidence:** 737/737 package tests, 254/254 integration tests (shared DB), TypeScript clean (root + web).
+**Test evidence:** 737/737 package tests, 260/260 integration tests (shared DB), TypeScript clean (root + web).
 
 ## M2 dashboard metrics expansion — 2026-10-13
 
