@@ -22591,6 +22591,135 @@
         "x-rate-limit": "120 requests per member per minute; provider side effects also have organization quotas"
       }
     },
+    "/v1/orgs/{orgId}/jobs": {
+      "get": {
+        "operationId": "listJobs",
+        "tags": [
+          "Integrations"
+        ],
+        "summary": "list Jobs",
+        "description": "Permission: jobs.read. Cursor-paginated list of integration jobs scoped to the requesting member. Optional state and kind query filters.",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 50
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful authorized response.",
+            "headers": {
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "description": "Correlation ID; contains no contact data."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission, entitlement, policy or signature denied",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Quota exceeded; Retry-After required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "required": true,
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "Seconds until quota resets."
+              }
+            }
+          }
+        },
+        "x-permission": "jobs.read",
+        "x-tenant-context": "verified active organization membership",
+        "x-rate-limit": "120 requests per member per minute"
+      }
+    },
     "/v1/orgs/{orgId}/jobs/{jobId}": {
       "get": {
         "operationId": "getJob",

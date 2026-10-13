@@ -2965,9 +2965,11 @@ export class CrmService {
     );
     const contactCount = Number(contactCounts.rows[0]?.count ?? 0);
     const dealCounts = await this.client.query(
-      `SELECT count(*) AS cnt, coalesce(sum(CASE WHEN d.value IS NOT NULL AND d.value>=0 THEN d.value ELSE 0 END),0) AS total_value
-       FROM app.deal d WHERE d.tenant_id=app.current_tenant() AND d.archived_at IS NULL
-       AND d.owner_member_id=$1
+      `SELECT count(*) AS cnt, coalesce(sum(CASE WHEN d.amount IS NOT NULL AND d.amount>=0 THEN d.amount ELSE 0 END),0) AS total_value
+       FROM app.deal d
+       JOIN app.lead l ON (l.tenant_id,l.id)=(d.tenant_id,d.lead_id)
+       WHERE d.tenant_id=app.current_tenant()
+       AND l.owner_member_id=$1
        AND d.created_at BETWEEN $2::timestamptz AND $3::timestamptz`,
       [context.memberId, period.from, period.to],
     );
@@ -3084,7 +3086,7 @@ export class CrmService {
         id: r.id as string,
         provider: r.provider as string,
         mode: r.mode as "mock" | "sandbox" | "live",
-        state: r.state as "unconfigured" | "pending" | "ready" | "degraded" | "revoked",
+        state: (["unconfigured", "pending", "ready", "degraded", "revoked"].includes(r.state as string) ? r.state : "unconfigured") as "unconfigured" | "pending" | "ready" | "degraded" | "revoked",
         capabilities: r.safe_config && typeof r.safe_config === "object"
           ? Object.fromEntries(
               Object.entries(r.safe_config as Record<string, unknown>)
