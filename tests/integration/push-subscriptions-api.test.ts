@@ -32,6 +32,17 @@ function subscriptionWrite(label?: string): Schemas["PushSubscriptionWrite"] {
   };
 }
 
+describe("VAPID public key endpoint", () => {
+  it("returns the VAPID applicationServerKey without authentication", async () => {
+    const response = await fetch(`http://127.0.0.1:${process.env.PORT ?? 3001}/v1/push/vapid-key`);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.applicationServerKey).toBeDefined();
+    expect(typeof body.applicationServerKey).toBe("string");
+    expect(body.applicationServerKey.length).toBeGreaterThan(20);
+  });
+});
+
 describe("push-subscriptions CRUD", () => {
   it("creates a push subscription", async () => {
     const input = subscriptionWrite();
