@@ -2975,6 +2975,10 @@ export class CrmService {
           [context.memberId],
         )
       : { rows: [] };
+    const integrations = await this.client.query(
+      `SELECT id,provider,mode,state,safe_config FROM app.integration_connection
+       WHERE tenant_id=app.current_tenant() ORDER BY provider LIMIT 20`,
+    );
     const measured = await this.client.query(
       "SELECT date_trunc('milliseconds',clock_timestamp()) AS refreshed_at",
     );
@@ -3017,7 +3021,21 @@ export class CrmService {
       ],
       tasks: tasks.rows.map(models.task),
       notifications: notificationItems,
-      integrationHealth: [],
+      integrationHealth: integrations.rows.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        provider: r.provider as string,
+        mode: r.mode as "mock" | "sandbox" | "live",
+        state: r.state as "unconfigured" | "pending" | "ready" | "degraded" | "revoked",
+        capabilities: r.safe_config && typeof r.safe_config === "object"
+          ? Object.fromEntries(
+              Object.entries(r.safe_config as Record<string, unknown>)
+                .filter((e): e is [string, string | number | boolean | null] =>
+                  typeof e[1] === "string" || typeof e[1] === "number" || typeof e[1] === "boolean" || e[1] === null)
+                .slice(0, 30),
+            )
+          : {},
+        lastSuccessAt: null,
+      })),
     };
   }
 
