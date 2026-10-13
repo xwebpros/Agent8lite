@@ -30,6 +30,7 @@ import {
   Users,
   WifiOff,
   X,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -55,6 +56,7 @@ import ConsentPanel from "./consent-panel";
 import { PropertiesFeature } from "../features/properties";
 import CmsWorkspace from "./cms-workspace";
 import CampaignWorkspace from "./campaign-workspace";
+import AutomationWorkspace from "./automation-workspace";
 import NotificationCenter from "./notification-center";
 import { safeNotificationHref } from "./notification-controller";
 import AppointmentAgenda from "./appointment-agenda";
@@ -158,6 +160,7 @@ type View =
   | "properties"
   | "websites"
   | "campaigns"
+  | "automations"
   | "notifications"
   | "settings";
 type InstallEvent = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> };
@@ -169,6 +172,7 @@ const navigation = [
   { id: "properties", name: "Properties", icon: House },
   { id: "websites", name: "Websites", icon: Layers3 },
   { id: "campaigns", name: "Campaigns", icon: Mail },
+  { id: "automations", name: "Automations", icon: Zap },
   { id: "notifications", name: "Notifications", icon: Bell },
   { id: "settings", name: "Settings", icon: Settings2 },
 ] as const;
@@ -244,6 +248,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const cmsProtected = useRef(false);
   const [campaignDirty, setCampaignDirty] = useState(false);
   const campaignProtected = useRef(false);
+  const [automationDirty, setAutomationDirty] = useState(false);
+  const automationProtected = useRef(false);
   const [notificationPending, setNotificationPending] = useState(false);
   const notificationProtected = useRef(false);
   const [invitationTransfer, setInvitationTransfer] = useState<InvitationTransfer | null>(null);
@@ -394,6 +400,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     tagDirty ||
     cmsDirty ||
     campaignDirty ||
+    automationDirty ||
     notificationPending ||
     taskPending ||
     contactPending ||
@@ -718,6 +725,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     busy ||
     cmsProtected.current ||
     campaignProtected.current ||
+    automationProtected.current ||
     notificationProtected.current ||
     Boolean(taskEdit.current.getSnapshot().command) ||
     Boolean(contactEdit.current.getSnapshot().command) ||
@@ -736,6 +744,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     campaignProtected.current = value;
     if (value) reloadProtected.current = true;
     setCampaignDirty(value);
+  }, []);
+  const protectAutomation = useCallback((value: boolean) => {
+    automationProtected.current = value;
+    if (value) reloadProtected.current = true;
+    setAutomationDirty(value);
   }, []);
   const protectNotification = useCallback((value: boolean) => {
     notificationProtected.current = value;
@@ -788,6 +801,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (item.id === "websites")
       return syntheticEnabled && permission("sites.read") && permission("content.read");
     if (item.id === "campaigns") return syntheticEnabled && permission("campaigns.read");
+    if (item.id === "automations") return syntheticEnabled && permission("automations.read");
     if (item.id === "notifications") return permission("self.notifications.read");
     return true;
   });
@@ -5048,6 +5062,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           {view !== "properties" &&
             view !== "websites" &&
             view !== "campaigns" &&
+            view !== "automations" &&
             view !== "notifications" && (
               <div className="scope-line">
                 <span>
@@ -5261,6 +5276,22 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   onAccessRevoked={() => {
                     router.replace("/dashboard");
                     setError("Campaign access changed. Refresh workspace access before reopening Campaigns.");
+                  }}
+                />
+              )}
+              {view === "automations" && (
+                <AutomationWorkspace
+                  key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                  session={session}
+                  csrf={csrf}
+                  online={online}
+                  syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
+                  accessRevision={accessRevision}
+                  memberId={member}
+                  onDirty={protectAutomation}
+                  onAccessRevoked={() => {
+                    router.replace("/dashboard");
+                    setError("Automation access changed. Refresh workspace access before reopening Automations.");
                   }}
                 />
               )}

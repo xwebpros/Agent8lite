@@ -30,7 +30,7 @@ import {
   type ServerSession,
 } from "../../../packages/auth/sessions";
 import { operation, schemaName, validateSchema, validateNativeCapture } from "./contract-validation";
-import { CrmService, assertUuid } from "./crm-service";
+import { CrmService, assertUuid, stable } from "./crm-service";
 import { organization } from "./models";
 import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { MockOidcProvider } from "../../../packages/providers/identity/mock";
@@ -565,6 +565,16 @@ class ApiController {
         res.status(result.status).json(result.body);
         return;
       }
+      if (req.path === "/dev/dispatch-broadcasts" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { DispatchService } = await import("./marketing/dispatch-service");
+          const service = new DispatchService(client, context, traceId);
+          return service.processQueuedBroadcasts();
+        });
+        res.json(result);
+        return;
+      }
       if (req.path === "/dev/capture" && req.method === "POST") {
         localIdentity(req);
         validateNativeCapture(req.body);
@@ -1030,6 +1040,30 @@ class ApiController {
             const body = req.body;
             validateSchema("PreviewConfirm", body);
             assertUuid(body.previewId);
+            const confirmKey =
+              String(req.headers["idempotency-key"] ?? "").slice(0, 255) ||
+              (() => {
+                throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required.");
+              })();
+            const confirmRoute = `POST /v1/orgs/${context.organizationId}/broadcast-confirmations`;
+            const confirmHash = createHash("sha256").update(stable({ previewId: body.previewId })).digest("hex");
+            await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+              `${context.organizationId}:${context.userId}:${confirmRoute}:${confirmKey}`,
+            ]);
+            const existingConfirm = await client.query<{
+              request_hash: string;
+              response_body: unknown;
+              status_code: number;
+            }>(
+              `SELECT request_hash,response_body,status_code FROM app.idempotency_record
+               WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+              [context.userId, confirmRoute, confirmKey],
+            );
+            if (existingConfirm.rowCount) {
+              if (existingConfirm.rows[0].request_hash !== confirmHash)
+                throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
+              return { body: existingConfirm.rows[0].response_body, status: 202 } as ApiCommandResponse;
+            }
             const preview = await client.query(
               `SELECT ir.response_ref,ir.response_body,ir.expires_at>clock_timestamp() AS unexpired
                FROM app.idempotency_record ir
@@ -1066,13 +1100,20 @@ class ApiController {
                 JSON.stringify({ previewId: body.previewId }),
               ],
             );
+            const confirmResponse = {
+              id: jobRow.rows[0].id,
+              kind: jobRow.rows[0].kind,
+              state: jobRow.rows[0].state,
+              createdAt: jobRow.rows[0].created_at.toISOString(),
+            };
+            await client.query(
+              `INSERT INTO app.idempotency_record
+               (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_ref,expires_at)
+               VALUES(app.current_tenant(),$1,$2,$3,$4,$5,202,$6,'infinity'::timestamptz)`,
+              [context.userId, confirmRoute, confirmKey, confirmHash, JSON.stringify(confirmResponse), jobRow.rows[0].id],
+            );
             const response: ApiCommandResponse = {
-              body: {
-                id: jobRow.rows[0].id,
-                kind: jobRow.rows[0].kind,
-                state: jobRow.rows[0].state,
-                createdAt: jobRow.rows[0].created_at.toISOString(),
-              },
+              body: confirmResponse,
               status: 202,
             };
             if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
