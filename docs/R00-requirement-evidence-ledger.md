@@ -40,7 +40,7 @@
 
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
-| MOD-B-001 | Partial | `dashboard-report-api.test.ts` (disposable DB); dashboard endpoint returns 200 with pipeline/task/lead summaries and unread notifications | Dashboard wired to real notification data. Activity endpoint works. Full workspace UI is M2/frontend scope. |
+| MOD-B-001 | Partial | `dashboard-report-api.test.ts` (disposable DB); dashboard endpoint returns 200 with pipeline/task/lead summaries, unread notifications and integration health | Dashboard wired to real notification data and integration_connection state. Activity endpoint works. |
 | MOD-B-002 | Partial | Dashboard includes period/timezone/definitions. Not all KPI states verified. | |
 | MOD-B-003 | Deferred | Frontend scope (R09). API supports detail/drawer routes. | |
 | MOD-B-004 | Partial | `appointments-api.test.ts` (disposable DB); `AppointmentService` implemented | No scheduling provider integration yet. |
