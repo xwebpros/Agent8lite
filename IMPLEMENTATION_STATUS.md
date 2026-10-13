@@ -1,5 +1,19 @@
 # Implementation status — 2026-10-13
 
+## M2 push subscription management and notification coverage — 2026-10-13
+
+**Committed:**
+- `4b79d90` feat(pwa): add push notification subscription management — PushSettings component in workspace settings, permission-gated, lists active devices with topic labels, register/remove device flows
+- `18246c4` test(notifications): add stage transition notification test — 4th integration test covering lead.stage_changed notification to lead owner when another member transitions the stage
+- `62dcea2` fix(test): update contact search tests for new filter fields — removed stale rejection assertions for intent/tagIds/stageId which are now valid LeadFilter fields
+- `af624d6` docs: update evidence ledger with notification producer verification
+
+**Push settings (`apps/web/components/push-settings.tsx`):** Permission-gated component (self.push.write) wired into workspace. Lists active push subscriptions, supports registering new devices (requests Notification permission, subscribes via PushManager, POSTs to API with CSRF/idempotency), and removing devices. VAPID key configuration is not yet available — registration will fail until server VAPID keys are set.
+
+**Test evidence:** 4/4 notification producer integration tests pass (lead assignment, self-assign suppression, task assignment, stage transition). 3270/3270 unit tests pass. 260/260 integration tests pass.
+
+---
+
 ## M2 notification producer and dashboard wiring — 2026-10-13
 
 **Committed:**
