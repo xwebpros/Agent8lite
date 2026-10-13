@@ -84,7 +84,12 @@
 
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
-| MOD-E-001–008 | Partial | `automation-service.test.ts`: automation/enrollment CRUD. `broadcast-preview-api.test.ts`: audience preview. `consent-api.test.ts` (17/18 pass): consent events, opt-out, eligibility. `campaign-draft-service.test.ts`, `campaign-workflow-service.test.ts`: campaign versioning. | M4 scope. No-delivery transport active. Live send gated on provider/consent review. |
+| MOD-E-001–003 | Implemented | `campaign-draft-service.test.ts`, `campaign-workflow-service.test.ts`: campaign versioning, draft CRUD, workflow publish. `broadcast-preview-api.test.ts`: audience preview with consent eligibility. | Campaign drafts, message designs and workflow versions implemented. |
+| MOD-E-004 | Partial | `automation-service.ts`: automation CRUD + enrollment. `automation-workspace.tsx`: frontend list/create/toggle/enroll/cancel. | Scheduled-action dispatch worker not yet implemented. |
+| MOD-E-005 | Implemented | `dispatch-service.ts`: no-delivery transport adapter. `POST /dev/dispatch-broadcasts` dev route. Consent eligibility checked per lead. Synthetic delivery results recorded in `integration_job.safe_result`. | No real messages sent. Live send gated on provider. |
+| MOD-E-006 | Implemented | Broadcast confirmation `POST /v1/orgs/:orgId/broadcast-confirmations` now requires `Idempotency-Key` header, uses advisory lock and `idempotency_record` for replay. All other campaign/automation mutations already had idempotency. | |
+| MOD-E-007 | Implemented | `dispatch-service.ts` checks `app.consent_state` and `app.suppression` per lead before synthetic dispatch. Withdrawn consent or active suppression prevents delivery. | Live consent review still required before production. |
+| MOD-E-008 | Implemented | `consent-api.test.ts` (17/18 pass): consent events, opt-out, eligibility, suppression. | |
 
 ---
 
@@ -147,7 +152,7 @@
 | INV-02 | Verified | `database-isolation.test.ts`: RLS non-bypass (disposable DB). `runtime-role.test.ts`: role verification. Control tests: migration roles. |
 | INV-03 | Verified | `outbox.test.ts`: domain+outbox in one transaction. `invitation-api.test.ts`: idempotency replay. `billing-api.test.ts`: idempotent confirm. |
 | INV-04 | Verified | `crm-api.test.ts`: If-Match concurrency. `admin-api.test.ts`: role/org versioning. `crm-configuration-api.test.ts`: tag/source/stage versions. |
-| INV-05 | Partial | `consent-api.test.ts`: consent check at dispatch. No-delivery transport enforced. Live delivery gated. |
+| INV-05 | Verified | `consent-api.test.ts`: consent check at dispatch. `dispatch-service.ts`: consent eligibility verified per lead before synthetic delivery. No-delivery transport enforced. Live delivery gated. |
 | INV-06 | N/A | MLS not yet connected. Mock adapter rejects live data. |
 | INV-07 | Verified | All fixtures are conspicuously synthetic. `synthetic-session-boundary.test.ts` confirms dev-only access. |
 | INV-08 | N/A | AI not yet implemented. |
@@ -165,7 +170,7 @@
 | FL-01 | Verified | `public-site-api.test.ts` (25 tests): form capture → consent → routing → durable outcome |
 | FL-02 | Partial | `lead-assignment-api.test.ts`, `stage-transition-api.test.ts` (disposable DB): lead assignment and follow-up |
 | FL-03 | Partial | CMS draft/publish/rollback exists. Needs W05 integration. |
-| FL-04 | Partial | `campaign-draft-service.test.ts`, `campaign-workflow-service.test.ts`, `broadcast-preview-api.test.ts` |
+| FL-04 | Partial | `campaign-draft-service.test.ts`, `campaign-workflow-service.test.ts`, `broadcast-preview-api.test.ts`. `dispatch-service.ts` processes queued broadcasts with consent check. `automation-workspace.tsx` manages automation rules. Broadcast confirmation idempotency implemented. |
 | FL-05 | Blocked | MLS not connected. |
 | FL-06 | Blocked | MLS not connected. |
 | FL-07 | Verified | `billing-api.test.ts`: preview → confirm → reconcile |
