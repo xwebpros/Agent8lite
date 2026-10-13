@@ -12,8 +12,7 @@ beforeAll(async () => {
   owner = await new ApiSession().signIn("owner");
 });
 afterAll(async () => {
-  if (tagIds.size)
-    await admin.query("DELETE FROM app.tag WHERE id=ANY($1::uuid[])", [[...tagIds]]);
+  if (tagIds.size) await admin.query("DELETE FROM app.tag WHERE id=ANY($1::uuid[])", [[...tagIds]]);
   if (keys.size)
     await admin.query("DELETE FROM app.idempotency_record WHERE key=ANY($1::text[])", [[...keys]]);
   await admin.end();
@@ -68,16 +67,10 @@ describe("audit-events API", () => {
   });
 
   it("rejects POST method", async () => {
-    await assertProblem(
-      await owner.command(`/v1/orgs/${owner.orgId}/audit-events`, {}),
-      404,
-    );
+    await assertProblem(await owner.command(`/v1/orgs/${owner.orgId}/audit-events`, {}), 404);
   });
 
   it("rejects invalid cursor uuid", async () => {
-    await assertProblem(
-      await owner.request(`/v1/orgs/${owner.orgId}/audit-events?cursor=not-a-uuid`),
-      422,
-    );
+    await assertProblem(await owner.request(`/v1/orgs/${owner.orgId}/audit-events?cursor=not-a-uuid`), 422);
   });
 });

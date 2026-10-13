@@ -132,7 +132,8 @@ export class AdminService {
     const binding = cursorBinding(this.context, resource, "organization", {});
     const cursor = decodeCursor(query.cursor, binding);
     if (cursor) assertUuid(cursor);
-    const table = resource === "offices" ? "office" : resource === "roles" ? "role_definition" : "business_profile";
+    const table =
+      resource === "offices" ? "office" : resource === "roles" ? "role_definition" : "business_profile";
     const result = await this.client.query(
       `SELECT * FROM app.${table} WHERE ($1::uuid IS NULL OR id>$1::uuid) ORDER BY id LIMIT $2`,
       [cursor, limit + 1],
@@ -152,7 +153,8 @@ export class AdminService {
       resource === "offices" ? "offices.read" : resource === "roles" ? "roles.read" : "profiles.read",
     );
     assertUuid(id);
-    const table = resource === "offices" ? "office" : resource === "roles" ? "role_definition" : "business_profile";
+    const table =
+      resource === "offices" ? "office" : resource === "roles" ? "role_definition" : "business_profile";
     const rows = await this.client.query(`SELECT * FROM app.${table} WHERE id=$1`, [id]);
     if (!rows.rowCount) throw new AccessError(404, "resource_unavailable", "Resource unavailable.");
     const mapper = resource === "roles" ? role : resource === "offices" ? officeModel : profileModel;
@@ -334,7 +336,9 @@ export class AdminService {
   ): Promise<Mutation> {
     requirePermission(this.context, "members.manage");
     assertUuid(memberId);
-    const current = await this.client.query("SELECT * FROM app.membership WHERE id=$1 FOR UPDATE", [memberId]);
+    const current = await this.client.query("SELECT * FROM app.membership WHERE id=$1 FOR UPDATE", [
+      memberId,
+    ]);
     if (!current.rowCount) throw new AccessError(404, "resource_unavailable", "Member not found.");
     const row = current.rows[0];
     version(row, expected);
@@ -352,7 +356,9 @@ export class AdminService {
     const newRoleId = body.roleId ?? row.role_id;
     const newStatus = body.status ?? row.status;
     if (newStatus === "disabled" && row.status === "active") {
-      const currentRole = await this.client.query("SELECT name FROM app.role_definition WHERE id=$1", [row.role_id]);
+      const currentRole = await this.client.query("SELECT name FROM app.role_definition WHERE id=$1", [
+        row.role_id,
+      ]);
       if (currentRole.rows[0]?.name === "Owner") {
         const otherOwners = await this.client.query(
           `SELECT count(*)::int AS n FROM app.membership m JOIN app.role_definition r ON r.id=m.role_id AND r.tenant_id=m.tenant_id WHERE m.id!=$1 AND m.status='active' AND r.name='Owner'`,
@@ -379,7 +385,12 @@ export class AdminService {
         );
       }
     }
-    await this.foundation.audit("membership.updated", "membership", memberId, Number(updated.rows[0].row_version));
+    await this.foundation.audit(
+      "membership.updated",
+      "membership",
+      memberId,
+      Number(updated.rows[0].row_version),
+    );
     return { body: memberModel(updated.rows[0]), status: 200, etag: `"${updated.rows[0].row_version}"` };
   }
   async job(id: string) {

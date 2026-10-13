@@ -54,8 +54,13 @@ let supportUser: Login;
 beforeAll(async () => {
   let handler: Awaited<ReturnType<typeof createStaffHttpAdapter>>;
   server = createServer((req, res) => {
-    if (!handler) { res.writeHead(503).end(); return; }
-    void handler(req, res).then((handled) => { if (!handled) res.writeHead(404).end(); });
+    if (!handler) {
+      res.writeHead(503).end();
+      return;
+    }
+    void handler(req, res).then((handled) => {
+      if (!handled) res.writeHead(404).end();
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -124,16 +129,21 @@ describe("platform plans CRUD", () => {
   });
 
   it("creates a plan", async () => {
-    const { response, body } = await request("/v1/platform/plans", "POST", {
-      code: `test-plan-${randomUUID().slice(0, 8)}`,
-      name: "Test Plan",
-      priceMinor: 4999,
-      currency: "USD",
-      billingInterval: "month",
-      providerPriceId: null,
-      features: { listings: true },
-      limits: { maxListings: 50 },
-    }, administrator);
+    const { response, body } = await request(
+      "/v1/platform/plans",
+      "POST",
+      {
+        code: `test-plan-${randomUUID().slice(0, 8)}`,
+        name: "Test Plan",
+        priceMinor: 4999,
+        currency: "USD",
+        billingInterval: "month",
+        providerPriceId: null,
+        features: { listings: true },
+        limits: { maxListings: 50 },
+      },
+      administrator,
+    );
     expect(response.status).toBe(201);
     expect(body).toHaveProperty("id");
     expect(body.name).toBe("Test Plan");

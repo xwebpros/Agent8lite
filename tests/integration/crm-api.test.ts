@@ -467,10 +467,9 @@ describe("M2 — durable CRM commands and optimistic concurrency", () => {
 
 describe("session profile", () => {
   async function profileRevision() {
-    const row = await admin.query(
-      "SELECT row_version FROM app.user_identity WHERE id=$1",
-      [owner.session.userId],
-    );
+    const row = await admin.query("SELECT row_version FROM app.user_identity WHERE id=$1", [
+      owner.session.userId,
+    ]);
     return `"${row.rows[0].row_version}"`;
   }
 

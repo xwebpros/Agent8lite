@@ -93,13 +93,10 @@ describe("push-subscriptions CRUD", () => {
     const sub = await created.json();
     subIds.add(sub.id);
 
-    const deleteResponse = await owner.request(
-      `/v1/orgs/${owner.orgId}/push-subscriptions/${sub.id}`,
-      {
-        method: "DELETE",
-        headers: { "x-csrf-token": owner.csrf },
-      },
-    );
+    const deleteResponse = await owner.request(`/v1/orgs/${owner.orgId}/push-subscriptions/${sub.id}`, {
+      method: "DELETE",
+      headers: { "x-csrf-token": owner.csrf },
+    });
     expect(deleteResponse.status).toBe(204);
   });
 

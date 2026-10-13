@@ -23,10 +23,9 @@ function profileCmd(body: Schemas["Profile"], revision: string) {
 }
 
 async function currentVersion(): Promise<string> {
-  const rows = await admin.query(
-    "SELECT row_version FROM app.user_identity WHERE id=$1",
-    [owner.session.userId],
-  );
+  const rows = await admin.query("SELECT row_version FROM app.user_identity WHERE id=$1", [
+    owner.session.userId,
+  ]);
   return `"${rows.rows[0].row_version}"`;
 }
 
@@ -58,10 +57,7 @@ describe("session profile PATCH", () => {
 
   it("rejects empty display name", async () => {
     const rev = await currentVersion();
-    await assertProblem(
-      await profileCmd({ displayName: "   ", phone: null, timezone: "UTC" }, rev),
-      422,
-    );
+    await assertProblem(await profileCmd({ displayName: "   ", phone: null, timezone: "UTC" }, rev), 422);
   });
 
   it("rejects invalid timezone", async () => {

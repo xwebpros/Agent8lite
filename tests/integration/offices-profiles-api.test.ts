@@ -46,7 +46,10 @@ function cmd(resource: string, body: unknown, opts: { method?: string; revision?
 
 describe("offices CRUD", () => {
   it("creates and lists offices with contract-valid structure", async () => {
-    const input: Schemas["OfficeWrite"] = { name: `Synthetic office ${randomUUID()}`, timezone: "America/Chicago" };
+    const input: Schemas["OfficeWrite"] = {
+      name: `Synthetic office ${randomUUID()}`,
+      timezone: "America/Chicago",
+    };
     const created = await cmd("offices", input);
     expect(created.status).toBe(201);
     const office = await created.json();
@@ -79,10 +82,14 @@ describe("offices CRUD", () => {
     officeIds.add(office.id);
 
     const newName = `Updated office ${randomUUID()}`;
-    const updated = await cmd(`offices/${office.id}`, { name: newName, timezone: "America/New_York" }, {
-      method: "PATCH",
-      revision: `"${office.version}"`,
-    });
+    const updated = await cmd(
+      `offices/${office.id}`,
+      { name: newName, timezone: "America/New_York" },
+      {
+        method: "PATCH",
+        revision: `"${office.version}"`,
+      },
+    );
     expect(updated.status).toBe(200);
     const body = await updated.json();
     assertContract("Office", body);
@@ -99,10 +106,7 @@ describe("offices CRUD", () => {
   });
 
   it("rejects empty name", async () => {
-    await assertProblem(
-      await cmd("offices", { name: "   ", timezone: "UTC" }),
-      422,
-    );
+    await assertProblem(await cmd("offices", { name: "   ", timezone: "UTC" }), 422);
   });
 
   it("rejects unknown office id", async () => {
@@ -134,7 +138,10 @@ describe("business-profiles CRUD", () => {
     const profile = await created.json();
     profileIds.add(profile.id);
 
-    const detail = await owner.read(`/v1/orgs/${owner.orgId}/business-profiles/${profile.id}`, "BusinessProfile");
+    const detail = await owner.read(
+      `/v1/orgs/${owner.orgId}/business-profiles/${profile.id}`,
+      "BusinessProfile",
+    );
     expect(detail.body.id).toBe(profile.id);
   });
 
@@ -144,10 +151,14 @@ describe("business-profiles CRUD", () => {
     profileIds.add(profile.id);
 
     const newName = `Updated profile ${randomUUID()}`;
-    const updated = await cmd(`business-profiles/${profile.id}`, {
-      name: newName,
-      brand: { ...brand, primaryColor: "#00FF00" },
-    }, { method: "PATCH", revision: `"${profile.version}"` });
+    const updated = await cmd(
+      `business-profiles/${profile.id}`,
+      {
+        name: newName,
+        brand: { ...brand, primaryColor: "#00FF00" },
+      },
+      { method: "PATCH", revision: `"${profile.version}"` },
+    );
     expect(updated.status).toBe(200);
     const body = await updated.json();
     assertContract("BusinessProfile", body);

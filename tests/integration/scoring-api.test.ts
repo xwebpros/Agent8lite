@@ -14,8 +14,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (leadId) {
-    await admin.query("DELETE FROM app.activity_event WHERE tenant_id=$1 AND lead_id=$2", [fixtures.orgA, leadId]).catch(() => {});
-    await admin.query("DELETE FROM app.lead WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, leadId]).catch(() => {});
+    await admin
+      .query("DELETE FROM app.activity_event WHERE tenant_id=$1 AND lead_id=$2", [fixtures.orgA, leadId])
+      .catch(() => {});
+    await admin
+      .query("DELETE FROM app.lead WHERE tenant_id=$1 AND id=$2", [fixtures.orgA, leadId])
+      .catch(() => {});
   }
   await admin.end();
 });
