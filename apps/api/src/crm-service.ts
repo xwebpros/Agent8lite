@@ -1707,14 +1707,11 @@ export class CrmService {
         ],
       );
       if (effectiveOwner && effectiveOwner !== context.memberId) {
-        await this.client.query(
-          `SELECT app.create_notification($1,$2,'lead.assigned',$3)`,
-          [
-            context.organizationId,
-            effectiveOwner,
-            JSON.stringify({ title: "A lead was assigned to you", href: "/pipeline" }),
-          ],
-        );
+        await this.client.query(`SELECT app.create_notification($1,$2,'lead.assigned',$3)`, [
+          context.organizationId,
+          effectiveOwner,
+          JSON.stringify({ title: "A lead was assigned to you", href: "/pipeline" }),
+        ]);
       }
     }
     await this.client.query(
@@ -1955,14 +1952,11 @@ export class CrmService {
       ],
     );
     if (lead.ownerMemberId && lead.ownerMemberId !== context.memberId) {
-      await this.client.query(
-        `SELECT app.create_notification($1,$2,'lead.stage_changed',$3)`,
-        [
-          context.organizationId,
-          lead.ownerMemberId,
-          JSON.stringify({ title: "A lead's pipeline stage was updated", href: "/pipeline" }),
-        ],
-      );
+      await this.client.query(`SELECT app.create_notification($1,$2,'lead.stage_changed',$3)`, [
+        context.organizationId,
+        lead.ownerMemberId,
+        JSON.stringify({ title: "A lead's pipeline stage was updated", href: "/pipeline" }),
+      ]);
     }
     await this.client.query(
       `INSERT INTO app.idempotency_record
@@ -2205,14 +2199,11 @@ export class CrmService {
       [context.organizationId, context.userId, task.id, traceId, timestamp],
     );
     if (input.assigneeMemberId && input.assigneeMemberId !== context.memberId) {
-      await this.client.query(
-        `SELECT app.create_notification($1,$2,'task.assigned',$3)`,
-        [
-          context.organizationId,
-          input.assigneeMemberId,
-          JSON.stringify({ title: `Task assigned: ${input.title.slice(0, 120)}`, href: "/tasks" }),
-        ],
-      );
+      await this.client.query(`SELECT app.create_notification($1,$2,'task.assigned',$3)`, [
+        context.organizationId,
+        input.assigneeMemberId,
+        JSON.stringify({ title: `Task assigned: ${input.title.slice(0, 120)}`, href: "/tasks" }),
+      ]);
     }
     await this.client.query(
       `INSERT INTO app.idempotency_record
@@ -2965,9 +2956,7 @@ export class CrmService {
           [context.memberId],
         )
       : { rows: [] };
-    const recentNotifications = context.permissions.some(
-      (grant) => grant.code === "self.notifications.read",
-    )
+    const recentNotifications = context.permissions.some((grant) => grant.code === "self.notifications.read")
       ? await this.client.query(
           `SELECT id,kind,safe_payload,read_at,row_version FROM app.notification
            WHERE tenant_id=app.current_tenant() AND member_id=$1 AND read_at IS NULL

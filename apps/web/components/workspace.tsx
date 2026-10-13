@@ -5627,94 +5627,121 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 !changingOrganization &&
                 !stagePending && (
                   <>
-                  <div className="pipeline-filters" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
-                      Intent
-                      <select value={pipelineIntentFilter} onChange={(e) => setPipelineIntentFilter(e.target.value)}>
-                        <option value="">All</option>
-                        <option value="buyer">Buyer</option>
-                        <option value="seller">Seller</option>
-                        <option value="both">Both</option>
-                        <option value="unknown">Unknown</option>
-                      </select>
-                    </label>
-                    {data.sources.length > 0 && (
-                      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
-                        Source
-                        <select value={pipelineSourceFilter} onChange={(e) => setPipelineSourceFilter(e.target.value)}>
-                          <option value="">All sources</option>
-                          {data.sources.map((source) => (
-                            <option key={source.id} value={source.id}>{source.label}</option>
-                          ))}
+                    <div
+                      className="pipeline-filters"
+                      style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}
+                    >
+                      <label
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                          fontSize: 13,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Intent
+                        <select
+                          value={pipelineIntentFilter}
+                          onChange={(e) => setPipelineIntentFilter(e.target.value)}
+                        >
+                          <option value="">All</option>
+                          <option value="buyer">Buyer</option>
+                          <option value="seller">Seller</option>
+                          <option value="both">Both</option>
+                          <option value="unknown">Unknown</option>
                         </select>
                       </label>
-                    )}
-                  </div>
-                  <div className="pipeline-board">
-                    {data.stages.map((stage) => {
-                      const leads = data.leads.filter(
-                        (lead) =>
-                          lead.stageId === stage.id &&
-                          (!pipelineIntentFilter || lead.intent === pipelineIntentFilter) &&
-                          (!pipelineSourceFilter || lead.sourceId === pipelineSourceFilter),
-                      );
-                      return (
-                        <section className="pipeline-column" key={stage.id}>
-                          <div className="pipeline-column-heading">
-                            <h2>{stage.name}</h2>
-                            <Badge>{leads.length}</Badge>
-                          </div>
-                          {leads.map((lead) => (
-                            <article className="lead-card" key={lead.id}>
-                              <Link href={`/pipeline?lead=${lead.id}`} className="lead-name">
-                                {nameFor(lead)}
-                              </Link>
-                              <div className="lead-badges">
-                                <Badge>{lead.intent === "unknown" ? "Intent unknown" : lead.intent}</Badge>
-                                <span>v{lead.version}</span>
-                              </div>
-                              <p>{lead.timeline || "Timeline not provided"}</p>
-                              <div className="lead-source">
-                                {data.sources.find((source) => source.id === lead.sourceId)?.label ||
-                                  "Source unavailable"}
-                              </div>
-                              <label className="stage-selector">
-                                <span>Move to stage</span>
-                                <select
-                                  aria-label={`Stage for ${nameFor(lead)}`}
-                                  value={lead.stageId}
-                                  disabled={
-                                    busy ||
-                                    loading ||
-                                    !online ||
-                                    !stageBinding ||
-                                    stageSnapshot.phase === "forgotten" ||
-                                    unsaved ||
-                                    !contactVisible
-                                  }
-                                  onChange={(event) => void moveLead(lead, event.target.value)}
-                                >
-                                  {data.stages.map((option) => (
-                                    <option key={option.id} value={option.id}>
-                                      {option.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                            </article>
-                          ))}
-                          {!leads.length && <p className="column-empty">No opportunities here yet</p>}
+                      {data.sources.length > 0 && (
+                        <label
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                            fontSize: 13,
+                            fontWeight: 600,
+                          }}
+                        >
+                          Source
+                          <select
+                            value={pipelineSourceFilter}
+                            onChange={(e) => setPipelineSourceFilter(e.target.value)}
+                          >
+                            <option value="">All sources</option>
+                            {data.sources.map((source) => (
+                              <option key={source.id} value={source.id}>
+                                {source.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                    <div className="pipeline-board">
+                      {data.stages.map((stage) => {
+                        const leads = data.leads.filter(
+                          (lead) =>
+                            lead.stageId === stage.id &&
+                            (!pipelineIntentFilter || lead.intent === pipelineIntentFilter) &&
+                            (!pipelineSourceFilter || lead.sourceId === pipelineSourceFilter),
+                        );
+                        return (
+                          <section className="pipeline-column" key={stage.id}>
+                            <div className="pipeline-column-heading">
+                              <h2>{stage.name}</h2>
+                              <Badge>{leads.length}</Badge>
+                            </div>
+                            {leads.map((lead) => (
+                              <article className="lead-card" key={lead.id}>
+                                <Link href={`/pipeline?lead=${lead.id}`} className="lead-name">
+                                  {nameFor(lead)}
+                                </Link>
+                                <div className="lead-badges">
+                                  <Badge>{lead.intent === "unknown" ? "Intent unknown" : lead.intent}</Badge>
+                                  <span>v{lead.version}</span>
+                                </div>
+                                <p>{lead.timeline || "Timeline not provided"}</p>
+                                <div className="lead-source">
+                                  {data.sources.find((source) => source.id === lead.sourceId)?.label ||
+                                    "Source unavailable"}
+                                </div>
+                                <label className="stage-selector">
+                                  <span>Move to stage</span>
+                                  <select
+                                    aria-label={`Stage for ${nameFor(lead)}`}
+                                    value={lead.stageId}
+                                    disabled={
+                                      busy ||
+                                      loading ||
+                                      !online ||
+                                      !stageBinding ||
+                                      stageSnapshot.phase === "forgotten" ||
+                                      unsaved ||
+                                      !contactVisible
+                                    }
+                                    onChange={(event) => void moveLead(lead, event.target.value)}
+                                  >
+                                    {data.stages.map((option) => (
+                                      <option key={option.id} value={option.id}>
+                                        {option.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </article>
+                            ))}
+                            {!leads.length && <p className="column-empty">No opportunities here yet</p>}
+                          </section>
+                        );
+                      })}
+                      {!data.stages.length && (
+                        <section className="panel">
+                          <Empty icon={<Kanban size={30} />} title="Pipeline unavailable">
+                            Reconnect and refresh to load your configured stages.
+                          </Empty>
                         </section>
-                      );
-                    })}
-                    {!data.stages.length && (
-                      <section className="panel">
-                        <Empty icon={<Kanban size={30} />} title="Pipeline unavailable">
-                          Reconnect and refresh to load your configured stages.
-                        </Empty>
-                      </section>
-                    )}
-                  </div>
+                      )}
+                    </div>
                   </>
                 )}
 
@@ -5736,7 +5763,15 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                     <span className="muted">Times in {timezone}</span>
                   </div>
                   <div style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "8px 0 12px" }}>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
+                    <label
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
                       Lead intent
                       <select value={taskIntentFilter} onChange={(e) => setTaskIntentFilter(e.target.value)}>
                         <option value="">All</option>
@@ -5747,12 +5782,25 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       </select>
                     </label>
                     {data.sources.length > 0 && (
-                      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
+                      <label
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                          fontSize: 13,
+                          fontWeight: 600,
+                        }}
+                      >
                         Lead source
-                        <select value={taskSourceFilter} onChange={(e) => setTaskSourceFilter(e.target.value)}>
+                        <select
+                          value={taskSourceFilter}
+                          onChange={(e) => setTaskSourceFilter(e.target.value)}
+                        >
                           <option value="">All sources</option>
                           {data.sources.map((source) => (
-                            <option key={source.id} value={source.id}>{source.label}</option>
+                            <option key={source.id} value={source.id}>
+                              {source.label}
+                            </option>
                           ))}
                         </select>
                       </label>

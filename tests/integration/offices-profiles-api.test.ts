@@ -127,7 +127,10 @@ describe("business-profiles CRUD", () => {
     expect(profile.name).toBe(input.name);
     expect(profile.version).toBe(1);
 
-    const list = await owner.read(`/v1/orgs/${owner.orgId}/business-profiles?limit=100`, "PageBusinessProfile");
+    const list = await owner.read(
+      `/v1/orgs/${owner.orgId}/business-profiles?limit=100`,
+      "PageBusinessProfile",
+    );
     expect(list.body.items.length).toBeGreaterThan(0);
     const found = list.body.items.find((p: { id: string }) => p.id === profile.id);
     expect(found).toBeDefined();

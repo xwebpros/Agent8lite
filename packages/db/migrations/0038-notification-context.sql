@@ -29,8 +29,8 @@ BEGIN
     OR jsonb_typeof(p_safe_payload->'title') IS DISTINCT FROM 'string'
     OR jsonb_typeof(p_safe_payload->'href') IS DISTINCT FROM 'string'
     OR length(p_safe_payload->>'title') NOT BETWEEN 1 AND 160
-    OR p_safe_payload->>'href' IS DISTINCT FROM
-      CASE WHEN p_kind='task.assigned' THEN '/tasks' ELSE '/pipeline' END THEN
+    OR (p_safe_payload->>'href') IS DISTINCT FROM
+      (CASE WHEN p_kind='task.assigned' THEN '/tasks' ELSE '/pipeline' END) THEN
     RAISE EXCEPTION 'Safe notification input required' USING ERRCODE='23514';
   END IF;
   -- This internal port runs only after the CRM command authorizes its entity scope.

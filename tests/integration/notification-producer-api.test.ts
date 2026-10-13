@@ -63,9 +63,7 @@ describe("notification producer", () => {
 
     const after = await listNotifications(agent);
     expect(after.length).toBeGreaterThan(beforeCount);
-    const notification = after.find(
-      (n: Schemas["Notification"]) => n.kind === "lead.assigned",
-    );
+    const notification = after.find((n: Schemas["Notification"]) => n.kind === "lead.assigned");
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
     expect(notification!.title).toContain("assigned");
@@ -112,9 +110,7 @@ describe("notification producer", () => {
 
     const after = await listNotifications(agent);
     expect(after.length).toBeGreaterThan(beforeCount);
-    const notification = after.find(
-      (n: Schemas["Notification"]) => n.kind === "task.assigned",
-    );
+    const notification = after.find((n: Schemas["Notification"]) => n.kind === "task.assigned");
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
     expect(notification!.title).toContain("Synthetic notification task");
