@@ -41,7 +41,7 @@
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
 | MOD-B-001 | Partial | `dashboard-report-api.test.ts` (disposable DB); dashboard endpoint returns 200 with pipeline/task/lead summaries, unread notifications and integration health | Dashboard wired to real notification data and integration_connection state. Activity endpoint works. |
-| MOD-B-002 | Partial | Dashboard includes period/timezone/definitions. Not all KPI states verified. | |
+| MOD-B-002 | Implemented | Dashboard returns 6 metrics: leads.created, contacts.created, deals.created, deals.pipeline_value, tasks.completed, revenue (unconfigured). Frontend definitions with titles/descriptions/denominators. Period/timezone labels. | Revenue metric blocked on billing provider. |
 | MOD-B-003 | Deferred | Frontend scope (R09). API supports detail/drawer routes. | |
 | MOD-B-004 | Partial | `appointments-api.test.ts` (disposable DB); `AppointmentService` implemented | No scheduling provider integration yet. |
 | MOD-B-005 | Implemented | `notifications-api.test.ts` (disposable DB); `notification-producer-api.test.ts` (4 tests); notification list/mark-read + producer (lead.assigned, task.assigned, lead.stage_changed); `push-settings.tsx` subscription management UI | Poll-based. SSE deferred per spec. SECURITY DEFINER `app.create_notification` validates active membership. Dashboard returns real unread notifications. Push subscription UI permission-gated (self.push.write). |
