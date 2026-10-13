@@ -1,7 +1,7 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Updated:** 2026-10-13 at commit `3461235` — 298 integration tests across 39 suites.
+**Updated:** 2026-10-13 at commit `2697b5b` — 318 integration tests across 43 suites.
 **Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
@@ -44,7 +44,7 @@
 | MOD-B-002 | Implemented | Dashboard returns 6 metrics: leads.created, contacts.created, deals.created, deals.pipeline_value, tasks.completed, revenue (unconfigured). Frontend definitions with titles/descriptions/denominators. Period/timezone labels. | Revenue metric blocked on billing provider. |
 | MOD-B-003 | Deferred | Frontend scope (R09). API supports detail/drawer routes. | |
 | MOD-B-004 | Partial | `appointments-api.test.ts` (disposable DB); `appointment-list-api.test.ts` (2 tests, shared DB): paginated listing verified; `AppointmentService` implemented | No scheduling provider integration yet. |
-| MOD-B-005 | Implemented | `notifications-api.test.ts` (disposable DB); `notification-producer-api.test.ts` (4 tests); notification list/mark-read + producer (lead.assigned, task.assigned, lead.stage_changed); `push-settings.tsx` subscription management UI | Poll-based. SSE deferred per spec. SECURITY DEFINER `app.create_notification` validates active membership. Dashboard returns real unread notifications. Push subscription UI permission-gated (self.push.write). |
+| MOD-B-005 | Implemented | `notifications-api.test.ts` (disposable DB); `notification-producer-api.test.ts` (4 tests); `notification-read-api.test.ts` (3 tests, shared DB): mark-read, nonexistent rejection, listing with seeded data; notification list/mark-read + producer (lead.assigned, task.assigned, lead.stage_changed); `push-settings.tsx` subscription management UI | Poll-based. SSE deferred per spec. SECURITY DEFINER `app.create_notification` validates active membership. Dashboard returns real unread notifications. Push subscription UI permission-gated (self.push.write). |
 
 ---
 
@@ -199,7 +199,7 @@
 | Category | Count | Suites |
 |----------|-------|--------|
 | Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 298 | 39 |
+| Integration (shared DB) | 318 | 43 |
 | Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
 | Unit | 2,534 | 79 |
 | Package | 737 | 15 |

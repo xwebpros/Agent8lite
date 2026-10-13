@@ -11,7 +11,23 @@
 
 **Bug fix:** Added `enrollments: "enrollmentId"` to resourceId map in `main.ts` so contract validation matches the OpenAPI path for enrollment cancel operations.
 
-**Test evidence:** 298/298 integration tests (shared DB, 39 suites), 737/737 package tests, TypeScript clean.
+**Test evidence:** 318/318 integration tests (shared DB, 43 suites), 737/737 package tests, TypeScript clean.
+
+---
+
+## Error handling, cross-resource and notification tests — 2026-10-13
+
+**Committed:**
+- `0119da7` feat: add notification mark-read and health endpoint integration tests
+- `2697b5b` feat: add error handling and cross-resource consistency tests
+
+**New tests:** 20 shared-DB integration tests across 4 suites:
+- `notification-read-api.test.ts` (3 tests): mark-read, nonexistent rejection, listing with seeded data
+- `health-api.test.ts` (2 tests): status check, delivery mode
+- `error-handling-api.test.ts` (6 tests): unknown route/resource 404, problem+json, no-store headers, oversized body, invalid JSON
+- `cross-resource-api.test.ts` (9 tests): pagination consistency for contacts/leads/tasks/deals/tickets/roles/members/offices, agent/owner data equality
+
+**Test evidence:** 318/318 integration tests (shared DB, 43 suites), TypeScript clean.
 
 ---
 
