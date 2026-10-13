@@ -139,9 +139,9 @@ All CMS/staff/public/CRM/billing/admin paths route correctly.
 
 **Security fix — `2aab7eb`:** `listMembers` query added explicit `tenant_id=app.current_tenant()` filter. The RLS `membership_select` PERMISSIVE policy allowed `user_id=current_actor()` across tenants, leaking cross-tenant member IDs to the organization owner. Integration test confirms fix.
 
-**Test results (2026-10-13, latest `d7fa712`):**
+**Test results (2026-10-13, latest `3e4ba51`):**
 - Control tests: 66/66 pass (disposable database, 4 suites)
-- Integration tests: 122/122 pass across 16 suites (admin-api, billing-api, crm-api, data-transfer-api, database-isolation, deal-crud-api, deals-configuration-api, http-boundary, invitation-api, member-management-api, outbox, profile-reference, routing-capture-api, runtime-role, scoring-api, support-api)
+- Integration tests: 143/143 pass across 19 suites (admin-api, billing-api, crm-api, crm-configuration-api, data-transfer-api, database-isolation, deal-crud-api, deals-configuration-api, http-boundary, invitation-api, lead-notes-activity-api, lead-tags-api, member-management-api, outbox, profile-reference, routing-capture-api, runtime-role, scoring-api, support-api)
 - Unit tests: 2,534/2,534 pass (79 suites)
 - Package tests: 737/737 pass (15 suites)
 - 27 additional integration suites require `TEST_DATABASE_URL`/`TEST_MIGRATION_DATABASE_URL`/`TEST_API_ORIGIN` with a disposable acceptance database (by design — these are the deep module-level acceptance tests)
