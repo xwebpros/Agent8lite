@@ -26,6 +26,16 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s
           --health-timeout 5s --health-retries 20
+      # IDX acceptance never changes roles or fixtures on the application's cluster.
+      idx-postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: idx-migration-only
+        ports: ["127.0.0.1:54434:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
       # Dedicated to the BullMQ acceptance: it must be isolated from application traffic.
       redis-acceptance:
         image: redis:7.4.6-alpine
@@ -44,6 +54,7 @@ jobs:
       REDIS_URL: redis://127.0.0.1:56379
       MLS_PROVIDER: mock
       DELIVERY_PROVIDER: no-delivery
+      IDX_TEST_SERVICE_CONTAINER: ${{ job.services.idx-postgres.id }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

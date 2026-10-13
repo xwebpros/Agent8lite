@@ -64,6 +64,10 @@ import { MessageDesignDraftService } from "./marketing/message-design-service";
 import { MessageDesignCommandError } from "./marketing/message-design-errors";
 import { messageDesignEtag } from "./marketing/message-design-model";
 import { tryPublicSiteRoute } from "./public-site-service";
+import { IdxTemplateHttpAdapter } from "./idx-template";
+import { createIdxTemplateRuntimeProvider } from "./idx-template-runtime";
+import { idxTemplateOrigins, verifyIdxTemplateRequest } from "../../../packages/auth/idx-template-bridge";
+import { projectIdxTemplateContent } from "../../../packages/templates/idx-template";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -362,6 +366,29 @@ class ApiController {
           `public:${req.socket.remoteAddress ?? "unknown"}:${isMutation ? "mutation" : "read"}`,
           isMutation ? 60 : 200,
         );
+        if (/^\/v1\/public\/sites\/[^/]+\/idx-template(?:\/|$)/.test(req.path)) {
+          const adapter = new IdxTemplateHttpAdapter(runtimePool, {
+            allowedOrigins: idxTemplateOrigins(),
+            trustedOrigin: (request) => verifyIdxTemplateRequest({ ...request, headers: req.headers }),
+            createProvider: createIdxTemplateRuntimeProvider,
+            projectContent: projectIdxTemplateContent,
+          });
+          const result = await adapter.handle({
+            method: req.method,
+            url: req.originalUrl,
+            headers: Object.fromEntries(
+              Object.entries(req.headers).map(([name, value]) => [
+                name,
+                typeof value === "string" ? value : undefined,
+              ]),
+            ),
+            body: req.body,
+            remoteAddress: req.socket.remoteAddress,
+          });
+          for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
+          res.status(result.status).json(result.body);
+          return;
+        }
         const handled = await tryPublicSiteRoute(req, res, runtimePool, traceId, {
           signingKey:
             process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production",
@@ -674,7 +701,9 @@ class ApiController {
         res.status(result.status).json(result.body);
         return;
       }
-      const match = req.path.match(/^\/v1\/orgs\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/);
+      const match = req.path.match(
+        /^\/v1\/orgs\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/,
+      );
       if (!match) throw new AccessError(404, "route_unavailable", "Route unavailable.");
       let [, org, resource, id, action, subAction] = match;
       assertUuid(org);
@@ -1138,8 +1167,7 @@ class ApiController {
               body = id
                 ? await admin.get(resource as "offices" | "business-profiles" | "roles", id)
                 : await admin.list(resource as "offices" | "business-profiles" | "roles", req.query);
-            else if (resource === "members" && !action)
-              body = await admin.listMembers(req.query);
+            else if (resource === "members" && !action) body = await admin.listMembers(req.query);
             else if (resource === "leads" && id && action === "notes") body = await crm.notes(id);
             else if (resource === "leads" && id && action === "activity") body = await crm.activity(id);
             // ADR-049: contact duplicate candidates and merge result

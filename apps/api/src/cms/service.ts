@@ -20,6 +20,7 @@ import {
   type TenantContext,
 } from "../../../../packages/db/tenant-transaction";
 import { listTemplateDefinitions } from "../../../../packages/templates/catalog";
+import { projectIdxTemplateContent } from "../../../../packages/templates/idx-template";
 import type { PublishPolicy } from "../../../../packages/templates/registry";
 import { validateSchema } from "../contract-validation";
 import { assertUuid, CrmService, stable } from "../crm-service";
@@ -706,6 +707,35 @@ export class CmsService {
 
   // ── Document publication (ADR-055 / MOD-C-003) ───────────────────────────
 
+  private async validateIdxPublication(doc: DocumentRow, revision: RevisionRow) {
+    const site = await this.site(doc.site_id);
+    if (!/^las-vegas-idx-(agent|brokerage)@1[.]0[.]0$/.test(site.theme_version)) return;
+    const bindings = await this.client.query<{ document_id: string }>(
+      "SELECT document_id FROM app.idx_template_binding WHERE tenant_id=app.current_tenant() AND site_id=$1 FOR SHARE",
+      [site.id],
+    );
+    if (
+      !bindings.rows.some((binding) => binding.document_id === doc.id) &&
+      !(doc.kind === "page" && doc.slug === "home")
+    )
+      return;
+    try {
+      const projected = projectIdxTemplateContent({
+        schemaVersion: revision.schema_version,
+        blocks: revision.block_data as Schemas["Block"][],
+        seo: revision.seo as Schemas["Seo"],
+      });
+      validateSchema("IdxTemplateText", projected.content);
+      validateSchema("IdxTemplateBrand", projected.brand);
+    } catch {
+      throw new AccessError(
+        422,
+        "idx_template_content_invalid",
+        "Restore the required IDX template content slots and resolve their validation errors before publishing.",
+      );
+    }
+  }
+
   async publishDocument(
     id: string,
     body: Schemas["PublishRequest"],
@@ -724,6 +754,7 @@ export class CmsService {
       async () => {
         const revision = await this.repository.revision(body.revisionId);
         if (!revision || revision.document_id !== doc.id) unavailable();
+        await this.validateIdxPublication(doc, revision);
         const updated = await this.repository.setPublishedRevision(
           doc.id,
           body.revisionId,
@@ -766,6 +797,7 @@ export class CmsService {
       async () => {
         const revision = await this.repository.revision(body.revisionId);
         if (!revision || revision.document_id !== doc.id) unavailable();
+        await this.validateIdxPublication(doc, revision);
         const updated = await this.repository.setPublishedRevision(
           doc.id,
           body.revisionId,

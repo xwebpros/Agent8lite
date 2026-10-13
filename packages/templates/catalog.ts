@@ -1,4 +1,5 @@
 import type { components } from "../contracts/generated/api";
+import { createIdxTemplateDefinition } from "./idx-template";
 import { BLOCK_SCHEMA_VERSION, validateForPublication } from "./registry";
 
 type Template = components["schemas"]["Template"];
@@ -143,6 +144,8 @@ const definitions: Array<{ metadata: Template; document: Revision }> = [
 ];
 
 /** Repository-owned catalog metadata, detached so consumers cannot mutate another request's catalog. */
+definitions.push(createIdxTemplateDefinition("agent"), createIdxTemplateDefinition("brokerage"));
+
 export function listTemplateDefinitions(): Template[] {
   return definitions
     .map(({ metadata }) => structuredClone(metadata))

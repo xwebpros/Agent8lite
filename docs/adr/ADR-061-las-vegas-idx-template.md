@@ -26,6 +26,10 @@ Review corrected the existing ADR-number collision, source identifier bounds, ZI
 
 ## Acceptance
 
+Publication and rollback additionally validate the imported renderer's required native content slots and generated text/brand bounds for its bound document (and the default `home` page). A broken template cannot acquire a new public revision pointer. Normal CMS creation already pins `code@version`; it never activates an MLS binding. The reviewed local-only provisioning tool uses explicit existing tenant/site/document/profile/feed references and a migration identity, with no automatic content publication, live rights, delivery or production activation.
+
+Runtime media projection needs current tenant media read locks. Proposal0036 grants only SELECT on `tenant_id,id,listing_id,source_url,position,expires_at` and UPDATE on the lock-only `row_version` column; its restrictive UPDATE policy has `WITH CHECK(false)`. It does not grant media INSERT/DELETE or mutable runtime access. PostgreSQL/PostGIS acceptance must prove current-context reads, cross-tenant/missing-context denial and mutation denial before release.
+
 - Source provenance and retained MLS files match the selected commit; no original CRM/Directus/mailer import reaches the template bundle.
 - CMS picker exposes both versioned families. Draft/save/preview/publish/rollback retain controlled source content; public reads never disclose drafts or another tenant's revision/media/form.
 - Source search/detail/gallery/form layout and advanced filter controls remain available at 360/768/1440px. Keyboard/error/focus/reduced-motion behavior is checked; visual/device acceptance is recorded precisely.
@@ -35,4 +39,4 @@ Review corrected the existing ADR-number collision, source identifier bounds, ZI
 
 ## Current evidence and unfinished work
 
-Source review confirmed the selected branch contains `PropertyInquiryForm.tsx`, mounted by `ListingDetail.tsx`, with the fields above. Current Agent8lite public-site handlers at `cb0ac06` discard inquiry messages and use synthetic/arbitrary source routing; the template must use the corrected bounded port rather than those legacy paths. Current registry only implements hero/text/CTA/footer; property/search/map/form support and the published public renderer require implementation. Source completion reports and README are historical claims, not executed acceptance evidence. No live provider call or production deployment has been performed for this refactor.
+Source review confirmed the selected branch contains `PropertyInquiryForm.tsx`, mounted by `ListingDetail.tsx`, with the fields above. The legacy public-site handlers at `cb0ac06` discard inquiry messages and use synthetic/arbitrary source routing; this template instead uses the reviewed bounded port. Registered native hero/footer slots hold the editable source copy and brand. Fixed repository-owned versioned search/detail/map/form components consume generated projections; they are not executable tenant content or evidence that the full MOD-C block catalog is complete. Source completion reports and README are historical claims, not executed acceptance evidence. No live provider call or production deployment has been performed for this refactor.

@@ -5,7 +5,14 @@ import { renderRegisteredBlocks } from "./registry";
 describe("independent versioned template families", () => {
   it("supplies every specified family with a registered, safe draft starter", () => {
     const templates = listTemplateDefinitions();
-    expect(templates.map((item) => item.family).sort()).toEqual(["agent", "brokerage", "landing"]);
+    expect([...new Set(templates.map((item) => item.family))].sort()).toEqual([
+      "agent",
+      "brokerage",
+      "landing",
+    ]);
+    expect(templates.map((item) => item.code)).toEqual(
+      expect.arrayContaining(["las-vegas-idx-agent", "las-vegas-idx-brokerage"]),
+    );
     for (const template of templates) {
       const draft = instantiateTemplate(template.code, template.version)!;
       expect(draft.schemaVersion).toBe(template.blockSchemaVersion);

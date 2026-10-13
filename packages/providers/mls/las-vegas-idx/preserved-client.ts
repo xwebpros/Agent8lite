@@ -1,0 +1,361 @@
+// Derived from pinned owner source920d148. Regenerate only after source/policy review.
+import { MEDIA_SELECT, PUBLIC_PROPERTY_FIELDS, mapProperty } from "./trestle-fields";
+
+export function createPreservedIdxClient(
+  environment: Readonly<Record<string, string | undefined>>,
+  transport: typeof globalThis.fetch,
+) {
+  const fetch = transport;
+  const ROOT = (environment["TRESTLE_BASE_URL"] ?? "https://api.cotality.com/trestle").replace(/\/$/, "");
+  const TOKEN_URL = `${ROOT}/oidc/connect/token`;
+  const ODATA_URL = `${ROOT}/odata`;
+
+  let cachedToken: { value: string; expiresAt: number } | undefined;
+  type LiveStatus = {
+    configured: boolean;
+    authenticated: boolean;
+    metadata: boolean;
+    property: boolean;
+    media: boolean;
+    live: boolean;
+    message: string;
+  };
+  let cachedLiveStatus: { value: LiveStatus; expiresAt: number } | undefined;
+  let liveStatusInFlight: Promise<LiveStatus> | undefined;
+  const listingPageCache = new Map<
+    string,
+    {
+      value: {
+        items: ReturnType<typeof mapProperty>[];
+        page: number;
+        pageSize: number;
+        hasMore: boolean;
+        live: true;
+      };
+      expiresAt: number;
+    }
+  >();
+  const listingCacheTtlMs = 15_000;
+
+  class TrestleError extends Error {
+    constructor(
+      message: string,
+      readonly status?: number,
+    ) {
+      super(message);
+    }
+  }
+
+  function isConfigured() {
+    return Boolean(environment["TRESTLE_CLIENT_ID"] && environment["TRESTLE_CLIENT_SECRET"]);
+  }
+
+  async function getToken() {
+    if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
+      return cachedToken.value;
+    }
+    const clientId = environment["TRESTLE_CLIENT_ID"];
+    const clientSecret = environment["TRESTLE_CLIENT_SECRET"];
+    if (!clientId || !clientSecret) {
+      throw new TrestleError("Trestle credentials are not configured", 503);
+    }
+    const response = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "client_credentials",
+        scope: "api",
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      throw new TrestleError("Trestle authentication failed", response.status);
+    }
+    const body = (await response.json()) as {
+      access_token?: string;
+      expires_in?: number;
+    };
+    if (!body.access_token) {
+      throw new TrestleError("Trestle did not return an access token", 502);
+    }
+    cachedToken = {
+      value: body.access_token,
+      expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000,
+    };
+    return cachedToken.value;
+  }
+
+  async function trestleFetch(path: string) {
+    const token = await getToken();
+    const response = await fetch(`${ODATA_URL}${path}`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) {
+      if (response.status === 401) cachedToken = undefined;
+      throw new TrestleError("Live IDX request failed", response.status);
+    }
+    return response;
+  }
+
+  function quote(value: string) {
+    return `'${value.replaceAll("'", "''")}'`;
+  }
+
+  type ListingFilters = {
+    minPrice?: number;
+    maxPrice?: number;
+    beds?: number;
+    baths?: number;
+    address?: string;
+    city?: string;
+    zip?: string;
+    status?: "Active" | "ActiveUnderContract" | "Pending";
+    propertyType?: "Residential" | "HighRise" | "MultiFamily" | "ResidentialIncome" | "ResidentialLease";
+    propertySubType?: "Condominium" | "Townhouse" | "SingleFamilyResidence" | "Attached" | "Detached";
+    minSqft?: number;
+    maxSqft?: number;
+    minYearBuilt?: number;
+    maxYearBuilt?: number;
+    pool?: boolean;
+    singleStory?: boolean;
+    hoa?: boolean;
+    gated?: boolean;
+    minGarageSpaces?: number;
+    minLotSizeSqft?: number;
+    minLatitude?: number;
+    maxLatitude?: number;
+    minLongitude?: number;
+    maxLongitude?: number;
+    sort?: "newest" | "price-asc" | "price-desc";
+    page?: number;
+  };
+
+  function propertyQuery(
+    filters: ListingFilters,
+    top: number,
+    photoCount: number,
+    modifiedSince?: Date,
+    pageSize = 24,
+    skipOverride?: number,
+  ) {
+    const where = [`StandardStatus eq ${quote(filters.status ?? "Active")}`];
+    if (filters.minPrice !== undefined) where.push(`ListPrice ge ${filters.minPrice}`);
+    if (filters.maxPrice !== undefined) where.push(`ListPrice le ${filters.maxPrice}`);
+    if (filters.beds !== undefined) where.push(`BedroomsTotal ge ${filters.beds}`);
+    if (filters.baths !== undefined) where.push(`BathroomsTotalInteger ge ${filters.baths}`);
+    if (filters.city) where.push(`City eq ${quote(filters.city)}`);
+    if (filters.zip) where.push(`PostalCode eq ${quote(filters.zip)}`);
+    if (filters.propertyType) where.push(`PropertyType eq ${quote(filters.propertyType)}`);
+    if (filters.propertySubType) where.push(`PropertySubType eq ${quote(filters.propertySubType)}`);
+    if (filters.minSqft !== undefined) where.push(`LivingArea ge ${filters.minSqft}`);
+    if (filters.maxSqft !== undefined) where.push(`LivingArea le ${filters.maxSqft}`);
+    if (filters.minYearBuilt !== undefined) where.push(`YearBuilt ge ${filters.minYearBuilt}`);
+    if (filters.maxYearBuilt !== undefined) where.push(`YearBuilt le ${filters.maxYearBuilt}`);
+    if (filters.pool) where.push(`PoolFeatures ne 'None'`);
+    if (filters.singleStory) where.push(`Stories eq 1`);
+    if (filters.hoa) where.push(`AssociationYN eq true`);
+    if (filters.gated) where.push(`CommunityFeatures eq 'Gated'`);
+    if (filters.minGarageSpaces !== undefined) where.push(`GarageSpaces ge ${filters.minGarageSpaces}`);
+    if (filters.minLotSizeSqft !== undefined) where.push(`LotSizeSquareFeet ge ${filters.minLotSizeSqft}`);
+    if (filters.minLatitude !== undefined) where.push(`Latitude ge ${filters.minLatitude}`);
+    if (filters.maxLatitude !== undefined) where.push(`Latitude le ${filters.maxLatitude}`);
+    if (filters.minLongitude !== undefined) where.push(`Longitude ge ${filters.minLongitude}`);
+    if (filters.maxLongitude !== undefined) where.push(`Longitude le ${filters.maxLongitude}`);
+    if (modifiedSince) where.push(`ModificationTimestamp gt ${modifiedSince.toISOString()}`);
+
+    const orderBy =
+      filters.sort === "price-asc"
+        ? "ListPrice asc"
+        : filters.sort === "price-desc"
+          ? "ListPrice desc"
+          : "ModificationTimestamp desc";
+    const page = filters.page ?? 1;
+    const params = new URLSearchParams({
+      $select: PUBLIC_PROPERTY_FIELDS,
+      $expand: `Media($select=${MEDIA_SELECT};$orderby=Order asc;$top=${photoCount})`,
+      $filter: where.join(" and "),
+      $orderby: orderBy,
+      $top: String(top),
+      $skip: String(skipOverride ?? (page - 1) * pageSize),
+    });
+    return `/Property?${params.toString()}`;
+  }
+
+  async function listChangedProperties(
+    filters: ListingFilters,
+    modifiedSince: Date,
+    page = 1,
+    pageSize = 100,
+  ) {
+    const response = await trestleFetch(
+      propertyQuery({ ...filters, sort: "newest", page }, pageSize + 1, 1, modifiedSince, pageSize),
+    );
+    const body = (await response.json()) as { value?: Record<string, unknown>[] };
+    const records = body.value ?? [];
+    return {
+      items: records.slice(0, pageSize).map(mapProperty),
+      page,
+      pageSize,
+      hasMore: records.length > pageSize,
+      live: true,
+    };
+  }
+
+  async function listProperties(filters: ListingFilters) {
+    const normalizedFilters = { ...filters, sort: filters.sort ?? "newest", page: filters.page ?? 1 };
+    const cacheKey = JSON.stringify(normalizedFilters);
+    const cached = listingPageCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    const records = filters.address
+      ? await findAddressMatches(filters)
+      : await fetchPropertyPage(propertyQuery(filters, 25, 1));
+    const page = filters.page ?? 1;
+    const start = filters.address ? (page - 1) * 24 : 0;
+    const value = {
+      items: records.slice(start, start + 24).map(mapProperty),
+      page,
+      pageSize: 24,
+      hasMore: filters.address ? records.length > start + 24 : records.length > 24,
+      live: true as const,
+    };
+    listingPageCache.set(cacheKey, { value, expiresAt: Date.now() + listingCacheTtlMs });
+    if (listingPageCache.size > 32) {
+      const oldest = listingPageCache.keys().next().value;
+      if (oldest) listingPageCache.delete(oldest);
+    }
+    return value;
+  }
+
+  async function fetchPropertyPage(path: string) {
+    const response = await trestleFetch(path);
+    const body = (await response.json()) as { value?: Record<string, unknown>[] };
+    return body.value ?? [];
+  }
+
+  function normalizedAddress(value: unknown) {
+    return typeof value === "string" ? value.toLocaleLowerCase().replace(/\s+/g, " ").trim() : "";
+  }
+
+  async function findAddressMatches(filters: ListingFilters) {
+    const search = normalizedAddress(filters.address);
+    const batchSize = 100;
+    const matches: Record<string, unknown>[] = [];
+    let skip = 0;
+
+    // Trestle does not consistently support OData string functions. Scan the
+    // paginated provider result and apply the partial-address match locally.
+    while (true) {
+      const records = await fetchPropertyPage(
+        propertyQuery(filters, batchSize, 1, undefined, batchSize, skip),
+      );
+      matches.push(
+        ...records.filter((record) => normalizedAddress(record["UnparsedAddress"]).includes(search)),
+      );
+      if (records.length < batchSize) return matches;
+      skip += batchSize;
+    }
+  }
+
+  async function getProperty(listingKey: string) {
+    const params = new URLSearchParams({
+      $select: PUBLIC_PROPERTY_FIELDS,
+      // Detail responses need every media item. The list endpoint intentionally
+      // requests one image, but a fixed detail limit silently drops photos.
+      $expand: `Media($select=${MEDIA_SELECT};$orderby=Order asc)`,
+      $filter: `ListingKey eq ${quote(listingKey)}`,
+      $top: "1",
+    });
+    const response = await trestleFetch(`/Property?${params.toString()}`);
+    const body = (await response.json()) as { value?: Record<string, unknown>[] };
+    return body.value?.[0] ? mapProperty(body.value[0]) : undefined;
+  }
+
+  async function getPropertyByListingId(listingId: string) {
+    const params = new URLSearchParams({
+      $select: PUBLIC_PROPERTY_FIELDS,
+      $expand: `Media($select=${MEDIA_SELECT};$orderby=Order asc)`,
+      $filter: `ListingId eq ${quote(listingId)}`,
+      $top: "1",
+    });
+    const response = await trestleFetch(`/Property?${params.toString()}`);
+    const body = (await response.json()) as { value?: Record<string, unknown>[] };
+    return body.value?.[0] ? mapProperty(body.value[0]) : undefined;
+  }
+
+  async function getPropertiesByListingKeys(listingKeys: string[]) {
+    const params = new URLSearchParams({
+      $select: PUBLIC_PROPERTY_FIELDS,
+      $expand: `Media($select=${MEDIA_SELECT};$orderby=Order asc;$top=1)`,
+      $filter: listingKeys.map((listingKey) => `ListingKey eq ${quote(listingKey)}`).join(" or "),
+      $top: String(listingKeys.length),
+    });
+    const response = await trestleFetch(`/Property?${params.toString()}`);
+    const body = (await response.json()) as { value?: Record<string, unknown>[] };
+    return (body.value ?? []).map(mapProperty);
+  }
+
+  async function checkLiveStatus(): Promise<LiveStatus> {
+    if (cachedLiveStatus && cachedLiveStatus.expiresAt > Date.now()) return cachedLiveStatus.value;
+    if (liveStatusInFlight) return liveStatusInFlight;
+    liveStatusInFlight = checkLiveStatusUncached();
+    try {
+      const value = await liveStatusInFlight;
+      cachedLiveStatus = { value, expiresAt: Date.now() + 60_000 };
+      return value;
+    } finally {
+      liveStatusInFlight = undefined;
+    }
+  }
+
+  async function checkLiveStatusUncached() {
+    const status = {
+      configured: isConfigured(),
+      authenticated: false,
+      metadata: false,
+      property: false,
+      media: false,
+      live: false,
+      message:
+        "Set TRESTLE_CLIENT_ID and TRESTLE_CLIENT_SECRET in .env.local at the repo root before starting VegasIDX.",
+    };
+    if (!status.configured) return status;
+    try {
+      await getToken();
+      status.authenticated = true;
+      const metadata = await trestleFetch("/$metadata");
+      status.metadata = metadata.ok;
+
+      const page = await listProperties({ page: 1 });
+      const firstListing = page.items[0];
+      status.property = Boolean(firstListing?.listingKey);
+      status.media = page.items.some((item) => item.photos.length > 0);
+      // Property availability is the feed health signal; media is an optional
+      // enrichment and should not make usable listings appear offline.
+      status.live = status.authenticated && status.metadata && status.property;
+      status.message = status.live
+        ? status.media
+          ? "Live GLVAR/LVR IDX feed connected"
+          : "Live GLVAR/LVR IDX feed connected; media validation is incomplete"
+        : "Connected, but live property validation is incomplete";
+    } catch (error) {
+      status.message =
+        error instanceof TrestleError && error.status === 401
+          ? "Authentication failed"
+          : "Live IDX connection unavailable";
+    }
+    return status;
+  }
+
+  return {
+    isConfigured,
+    listProperties,
+    getProperty,
+    getPropertyByListingId,
+    getPropertiesByListingKeys,
+    listChangedProperties,
+    checkLiveStatus,
+  };
+}

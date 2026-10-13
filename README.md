@@ -10,6 +10,8 @@ For a clean source ZIP on 64-bit Intel/AMD Windows, extract it and double-click 
 
 Open the application at `http://localhost:3000`. Synthetic sign-in offers fictional owner and agent identities. No app-store distribution is required; actual iPhone/Android installation acceptance needs HTTPS staging and physical-device checks.
 
+The CMS includes **Las Vegas IDX — Agent** and **Las Vegas IDX — Brokerage**, derived from the owner's selected public website. Native revisions own the editable copy and brand; native CRM owns property inquiries and their routing. Published sites render at `/templates/las-vegas-idx/<siteId>`. Follow the [IDX template runbook](docs/runbooks/las-vegas-idx-template.md) for explicit local provisioning, publication, recovery and activation gates.
+
 Run `pnpm contracts:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test:isolated` and `pnpm build` for non-browser verification. The isolated test runner creates and removes only its own databases, API processes and private-object directories. Browser tests use the approved Playwright harness when browser access is available.
 
 Trestle is the selected future MLS provider. Live feeds, outbound messaging, charges and production deployment remain disabled until their documented authorization and integration gates are satisfied.

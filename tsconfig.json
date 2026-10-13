@@ -25,7 +25,9 @@
     "tests/cms/**/*.ts",
     "tests/cms/**/*.tsx",
     "tests/mls/**/*.ts",
-    "tests/control/**/*.ts"
+    "tests/control/**/*.ts",
+    "tests/idx-template/**/*.ts",
+    "tests/idx-template/**/*.tsx"
   ],
   "exclude": ["node_modules", "apps/web", "packages/ui", "packages/contracts/generated"]
 }

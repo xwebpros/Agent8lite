@@ -4,3 +4,9 @@
 *.jpg binary
 *.webp binary
 *.ico binary
+# Byte-preserved owner source and upstream licenses must survive clone unchanged.
+apps/web/features/idx-template/provenance/original/** binary
+docs/reference/las-vegas-live-idx/*.txt binary
+apps/web/public/fonts/idx-template/*.ttf binary
+apps/web/public/fonts/idx-template/*-OFL.txt binary
+apps/web/public/idx-template-leaflet/LICENSE binary

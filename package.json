@@ -19,6 +19,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm --dir apps/web typecheck",
     "test": "vitest run",
     "test:isolated": "node scripts/test-isolated.mjs",
+    "test:idx-template": "node tests/idx-template/run.mjs",
+    "test:idx-template:unit": "node tests/idx-template/run.mjs --unit",
     "test:e2e": "playwright test",
     "build": "node scripts/build-app.mjs",
     "start": "node scripts/start-app.mjs",
@@ -69,6 +71,7 @@
     "@tailwindcss/postcss": "4.1.14",
     "@types/leaflet": "1.9.22",
     "openapi-typescript": "7.10.1",
+    "postcss": "8.5.6",
     "tailwindcss": "4.1.14",
     "tsx": "4.20.6",
     "vitest": "5.0.3"
