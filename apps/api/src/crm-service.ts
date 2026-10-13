@@ -2965,6 +2965,16 @@ export class CrmService {
           [context.memberId],
         )
       : { rows: [] };
+    const recentNotifications = context.permissions.some(
+      (grant) => grant.code === "self.notifications.read",
+    )
+      ? await this.client.query(
+          `SELECT id,kind,safe_payload,read_at,row_version FROM app.notification
+           WHERE tenant_id=app.current_tenant() AND member_id=$1 AND read_at IS NULL
+           ORDER BY created_at DESC LIMIT 5`,
+          [context.memberId],
+        )
+      : { rows: [] };
     const measured = await this.client.query(
       "SELECT date_trunc('milliseconds',clock_timestamp()) AS refreshed_at",
     );
@@ -2973,6 +2983,16 @@ export class CrmService {
       throw new AccessError(503, "dashboard_clock_unavailable", "The reporting clock is unavailable.");
     await assertAuthority();
     await requireEntitlement(this.client, "dashboard.read", { lock: false });
+    const notificationItems = recentNotifications.rows.map((row: Record<string, unknown>) => {
+      const payload = row.safe_payload as Record<string, unknown> | null;
+      return {
+        id: row.id as string,
+        kind: String(row.kind ?? "unknown"),
+        title: String(payload?.title ?? "Notification"),
+        ...(payload?.href ? { href: String(payload.href) } : {}),
+        readAt: null,
+      };
+    });
     return {
       period,
       metrics: [
@@ -2996,7 +3016,7 @@ export class CrmService {
         },
       ],
       tasks: tasks.rows.map(models.task),
-      notifications: [],
+      notifications: notificationItems,
       integrationHealth: [],
     };
   }
