@@ -575,6 +575,16 @@ class ApiController {
         res.json(result);
         return;
       }
+      if (req.path === "/dev/dispatch-actions" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { ActionWorker } = await import("./marketing/action-worker");
+          const worker = new ActionWorker(client, context, traceId);
+          return worker.processDueActions();
+        });
+        res.json(result);
+        return;
+      }
       if (req.path === "/dev/capture" && req.method === "POST") {
         localIdentity(req);
         validateNativeCapture(req.body);
