@@ -215,6 +215,28 @@ export function VerifiedMetricsView({
               })}
             </div>
           )}
+          {report.integrationHealth.length > 0 && (
+            <div className={styles.integrations}>
+              <h3>Connected services</h3>
+              {report.integrationHealth.map((integration) => (
+                <div key={integration.id} className={styles.integrationRow}>
+                  <strong>{integration.provider}</strong>
+                  <Badge
+                    tone={
+                      integration.state === "ready"
+                        ? "positive"
+                        : integration.state === "degraded"
+                          ? "warning"
+                          : "neutral"
+                    }
+                  >
+                    {integration.state}
+                  </Badge>
+                  <span className={styles.integrationMode}>{integration.mode}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {state.receivedAt && (
             <p className={styles.caption}>
               Report read at <time dateTime={state.receivedAt}>{state.receivedAt}</time> (UTC). This is
