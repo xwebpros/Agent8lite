@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Mail, Phone, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, Filter, Mail, Phone, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Badge, Button, Empty } from "../../../packages/ui/components";
 import type { Schema } from "../lib/api";
@@ -11,6 +11,7 @@ import {
   contactSearchRequest,
   contactSearchRowLimit,
   requireLoadedContactResults,
+  type ContactsSearchFilters,
   type ContactsSearchScope,
   type ContactsSearchState,
 } from "./contacts-search-controller";
@@ -25,11 +26,14 @@ export type ContactsSearchProps = {
   changingOrganization?: boolean;
   refreshMarker: string | null;
   actionsBlocked?: boolean;
+  stages: { id: string; name: string }[];
+  sources: { id: string; label: string }[];
   onOpenContact(id: string): void;
   onAccessRevoked?(): void;
 };
 export type ContactsSearchActions = {
   changeQuery(value: string): void;
+  changeFilter(key: keyof ContactsSearchFilters, value: string): void;
   submit(): void;
   refresh(): void;
   more(): void;
@@ -41,12 +45,16 @@ export function ContactsSearchView({
   nowInstant,
   actions,
   actionsBlocked = false,
+  stages = [],
+  sources = [],
 }: {
   state: ContactsSearchState;
   scope: ContactsSearchScope;
   nowInstant: unknown;
   actions: ContactsSearchActions;
   actionsBlocked?: boolean;
+  stages?: { id: string; name: string }[];
+  sources?: { id: string; label: string }[];
 }) {
   const heading = useId(),
     hint = useId(),
@@ -138,6 +146,57 @@ export function ContactsSearchView({
           Search names
         </Button>
       </form>
+      <div className={styles.filters}>
+        <Filter size={16} aria-hidden="true" />
+        <label>
+          Intent
+          <select
+            value={state.filters.intent}
+            disabled={!readable}
+            onChange={(e) => actions.changeFilter("intent", e.target.value)}
+          >
+            <option value="">All</option>
+            <option value="buyer">Buyer</option>
+            <option value="seller">Seller</option>
+            <option value="both">Both</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
+        {stages.length > 0 && (
+          <label>
+            Stage
+            <select
+              value={state.filters.stageId}
+              disabled={!readable}
+              onChange={(e) => actions.changeFilter("stageId", e.target.value)}
+            >
+              <option value="">All stages</option>
+              {stages.map((stage) => (
+                <option key={stage.id} value={stage.id}>
+                  {stage.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {sources.length > 0 && (
+          <label>
+            Source
+            <select
+              value={state.filters.sourceId}
+              disabled={!readable}
+              onChange={(e) => actions.changeFilter("sourceId", e.target.value)}
+            >
+              <option value="">All sources</option>
+              {sources.map((source) => (
+                <option key={source.id} value={source.id}>
+                  {source.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
       <p id={hint} className={styles.caption}>
         Name search matches literal text, ignoring case. It does not search email or phone. Spaces are
         preserved. Maximum 200 characters, including emoji.
@@ -331,6 +390,7 @@ export default function ContactsSearch(props: ContactsSearchProps) {
     canRead: canRead && state.canRead,
     query: sourceCurrent ? state.query : "",
     appliedQuery: sourceCurrent ? state.appliedQuery : null,
+    filters: sourceCurrent ? state.filters : { intent: "", stageId: "", sourceId: "" },
     page: sourceCurrent ? state.page : null,
     refreshedAt: sourceCurrent ? state.refreshedAt : null,
   };
@@ -340,9 +400,14 @@ export default function ContactsSearch(props: ContactsSearchProps) {
       scope={props.scope}
       nowInstant={clock ? new Date().toISOString() : null}
       actionsBlocked={props.actionsBlocked}
+      stages={props.stages}
+      sources={props.sources}
       actions={{
         changeQuery: (value) => {
           if (current()) controller.setQuery(value);
+        },
+        changeFilter: (key, value) => {
+          if (current()) controller.setFilter(key, value);
         },
         submit: () => {
           if (current() && !controller.getSnapshot().reading) {

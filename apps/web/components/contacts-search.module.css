@@ -66,6 +66,39 @@
   padding: 10px 12px;
   font-size: 16px;
 }
+.filters {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+.filters > svg {
+  flex: none;
+  margin-bottom: 12px;
+  color: var(--color-muted);
+}
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  flex: 0 1 180px;
+  min-width: 0;
+}
+.filters select {
+  min-height: 38px;
+  padding: 6px 8px;
+  font-size: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+.filters select:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
 .caption {
   font-size: 12px;
   line-height: 1.6;

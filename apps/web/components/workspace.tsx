@@ -5511,6 +5511,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   online={online}
                   changingOrganization={changingOrganization}
                   refreshMarker={refreshed}
+                  stages={data.stages}
+                  sources={data.sources}
                   actionsBlocked={busy || loading || detailLoading || unsaved}
                   onOpenContact={openSearchContact}
                   onAccessRevoked={() =>
