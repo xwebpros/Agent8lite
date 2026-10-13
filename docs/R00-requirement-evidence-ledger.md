@@ -131,7 +131,7 @@
 |-----|--------|----------|-------|
 | MOD-J-001 | Implemented | `support-api.test.ts` (6 tests): ticket create/list/detail/status | Scoped tickets with event timeline. |
 | MOD-J-002 | Implemented | Integration job model exists. GET /v1/orgs/:orgId/jobs lists jobs with state/kind filters and cursor pagination. `jobs-panel.tsx` frontend with state badges, error details, export download links. | Job listing scoped to requesting member. |
-| MOD-J-003 | Partial | Staff dashboard routes exist. Replay is idempotent per `idempotency_record`. | |
+| MOD-J-003 | Implemented | Staff dashboard routes exist. `POST /dev/staff/jobs/:id/run` replay handler in `http-adapter.ts` lines 435-449. Uses `runProvisioning` with CSRF verification and idempotency. | |
 | MOD-J-004 | Deferred | Documentation/onboarding is frontend scope. | |
 
 ---
@@ -156,7 +156,7 @@
 | INV-06 | N/A | MLS not yet connected. Mock adapter rejects live data. |
 | INV-07 | Verified | All fixtures are conspicuously synthetic. `synthetic-session-boundary.test.ts` confirms dev-only access. |
 | INV-08 | N/A | AI not yet implemented. |
-| INV-09 | Partial | Job states (pending/succeeded/failed) distinguished. Dashboard metrics show definitions. |
+| INV-09 | Verified | Job states (pending/succeeded/failed) distinguished. Dashboard 6 metrics with definitions. Job listing with state filter. `dispatch-api.test.ts` verifies states. |
 | INV-10 | Verified | Service ports in `crm-service.ts`, `admin-service.ts`, `contact-upsert-port.ts`. No cross-module direct table writes. |
 | INV-11 | Partial | Revoked membership denies access. Push subscription revocation implemented. Visitor/feed/consent revocation partial. |
 | INV-12 | Active | This ledger. Proposed architecture labeled throughout. |
@@ -199,7 +199,7 @@
 | Category | Count | Suites |
 |----------|-------|--------|
 | Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 200 | 27 |
+| Integration (shared DB) | 260 | 32 |
 | Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
 | Unit | 2,534 | 79 |
 | Package | 737 | 15 |
