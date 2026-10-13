@@ -10,6 +10,8 @@ Integration uses a separately owned PostgreSQL/PostGIS cluster on **127.0.0.1:54
 
 The adapter suite proves real RLS, current site/host/policy authority, publication isolation, native CRM notes, tenant/site/listing provenance, routing, concurrent idempotency and rollback. The HTTP suite exercises the actual API controller and native mock provider using signed bridge requests. All records and identities are synthetic; there is no live MLS, messaging, payment, map or browser call.
 
+`node tests/idx-template/run.mjs --regression tests/integration/synthetic-session-boundary.test.ts` runs the approved member-session boundary suite on a fresh owned database. `node tests/idx-template/run.mjs --compiled-smoke` runs the existing compiled API/CLI smoke after `pnpm build:runtime`, using the same owned disposable database. Its explicit fixture override accepts only this harness's loopback54434 generated database naming and runtime fixture identity; it cannot redirect the smoke to arbitrary data. Neither command touches the application's55432 database or3000/3001 listeners.
+
 For a new Windows checkout, obtain approved PostgreSQL binaries with PostGIS support. The example below creates a new cluster inside the current checkout; **do not point it at another cluster's data directory**. Replace the explicit binary directory with the approved installation you intend to use. It does not copy a development configuration, `.env`, database or credentials.
 
 ```powershell

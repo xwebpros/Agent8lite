@@ -12,6 +12,29 @@ import { readPinnedNode } from "./node-runtime.mjs";
 const root = await fs.realpath(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
 const entry = path.join(root, "dist/runtime/apps/api/src/main.js");
 const origin = "http://localhost:3000";
+// The normal CI fixture is fixed. The owned IDX harness may allocate a disposable fixture on54434.
+const fixtureDatabaseUrl = (() => {
+  const configured = process.env.RUNTIME_LOCAL_FIXTURE_DATABASE_URL;
+  if (!configured) return "postgresql://estate_runtime:local-runtime-only@127.0.0.1:55432/estate";
+  try {
+    const url = new URL(configured);
+    if (
+      process.env.TEST_IDX_ISOLATED !== "true" ||
+      url.protocol !== "postgresql:" ||
+      url.hostname !== "127.0.0.1" ||
+      url.port !== "54434" ||
+      url.username !== "estate_runtime" ||
+      url.password !== "local-runtime-only" ||
+      !/^\/estate_acceptance_[0-9a-f]{16}$/.test(url.pathname) ||
+      url.search ||
+      url.hash
+    )
+      throw new Error();
+    return url.href;
+  } catch {
+    throw new Error("runtime_local_fixture_database_invalid");
+  }
+})();
 const children = [];
 let synthetic;
 let cookie;
@@ -47,7 +70,7 @@ function environment(APP_ENV, DEV_AUTH_ENABLED) {
     ...env,
     APP_ENV,
     DEV_AUTH_ENABLED,
-    DATABASE_URL: "postgresql://estate_runtime:local-runtime-only@127.0.0.1:55432/estate",
+    DATABASE_URL: fixtureDatabaseUrl,
     WEB_ORIGIN: origin,
     API_HOST: "127.0.0.1",
   };

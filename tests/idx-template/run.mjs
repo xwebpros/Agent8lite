@@ -278,6 +278,10 @@ async function runDisposableSuite(file, config = "tests/idx-template/vitest.conf
     // Fresh clusters deliberately have no control-role credentials in SQL migrations.
     // This approved tool only initializes an unconfigured synthetic role and preserves an existing password.
     await run(["scripts/local-control-identities.mjs"], env);
+    if (file === "scripts/verify-runtime-local.mjs") {
+      await run([file], { ...env, RUNTIME_LOCAL_FIXTURE_DATABASE_URL: env.DATABASE_URL });
+      return;
+    }
     const apiStartedAt = Date.now();
     api = spawn(process.execPath, ["--import", "tsx", "apps/api/src/main.ts"], {
       cwd: root,
@@ -367,6 +371,10 @@ async function main() {
     return;
   }
   await verifyIdxCluster();
+  if (args.length === 1 && args[0] === "--compiled-smoke") {
+    await runDisposableSuite("scripts/verify-runtime-local.mjs");
+    return;
+  }
   if (args[0] === "--regression") {
     const approved = new Set([
       "tests/cms/native-drafts.integration.test.ts",
@@ -377,6 +385,8 @@ async function main() {
       "tests/integration/lead-filter-api.test.ts",
       "tests/integration/task-filter-api.test.ts",
       "tests/integration/deal-filter-api.test.ts",
+      "tests/integration/synthetic-session-boundary.test.ts",
+      "tests/mls/read-api.integration.test.ts",
     ]);
     const files = args.length > 1 ? args.slice(1) : [...approved];
     if (files.some((file) => !approved.has(file))) throw new Error("idx_test_regression_not_approved");
