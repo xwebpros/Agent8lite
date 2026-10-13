@@ -14,7 +14,9 @@
 
 **Push settings (`apps/web/components/push-settings.tsx`):** Permission-gated component (self.push.write) wired into workspace. Fetches VAPID public key on mount and uses it for PushManager.subscribe(). Lists active subscriptions, register/remove device flows.
 
-**Test evidence:** 4/4 notification producer integration tests pass. TypeScript clean (root + web).
+**Dashboard integration health (`crm-service.ts`):** Dashboard now queries `integration_connection` table and returns provider state, mode and safe capabilities in the `integrationHealth` array. Frontend `verified-metrics.tsx` displays connected services with state badges. Addresses MOD-J-002 integration status visibility.
+
+**Test evidence:** 4/4 notification producer integration tests pass. 18/18 CRM API tests pass. 18/18 consent tests pass. TypeScript clean (root + web).
 
 ---
 
