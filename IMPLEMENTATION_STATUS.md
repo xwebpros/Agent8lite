@@ -20,6 +20,16 @@
 
 **Test evidence:** 737/737 package tests, 254/254 integration tests (shared DB), TypeScript clean (root + web).
 
+## M2 dashboard metrics expansion — 2026-10-13
+
+**Committed:**
+- `cddd8ae` feat(dashboard): add contacts, deals, pipeline value and tasks metrics
+- `4e704a4` docs: update evidence ledger with dashboard metrics (MOD-B-002)
+
+**Dashboard metrics (MOD-B-002):** Dashboard now returns 6 metrics instead of 2: leads.created, contacts.created, deals.created, deals.pipeline_value, tasks.completed, revenue (unconfigured). Frontend metric definitions with titles, descriptions and denominators added to verified-metrics-controller.ts.
+
+---
+
 ## M2 job listing, retention and integration status — 2026-10-13
 
 **Committed:**
