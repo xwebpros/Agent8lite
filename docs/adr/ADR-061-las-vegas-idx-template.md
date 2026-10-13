@@ -1,6 +1,6 @@
 # ADR-061 — Native CMS/CRM integration for the owner-provided Las Vegas IDX template
 
-Date: 2026-10-13 (Asia/Bangkok). Status: accepted shared proposal after coordinator and independent contract review; implementation and runtime acceptance pending.
+Date: 2026-10-13 (Asia/Bangkok). Status: accepted and implemented after coordinator/independent review; local runtime verification passes, with remote/browser/device and public activation gates remaining.
 
 The owner selected `djmichaelmartin-cmd/Las-Vegas-Live-IDX`, branch `Full_Web_App_phase_1`, commit `920d148ee0ec6465381bf245381afcbdb5540bce`. The owner requests reusable agent/brokerage templates in Agent8lite, preserving the public website's design, MLS code and inquiry form. Existing source CMS/CRM code is replaced by the native platform; original GitHub history and source deployment remain separate. The implementation branch is `Las-Vegas-IDX` in `C:/Users/Monar/.codex/worktrees/idx-template/Agent8lite`, based on `cb0ac06`.
 
@@ -22,7 +22,7 @@ The owner selected `djmichaelmartin-cmd/Las-Vegas-Live-IDX`, branch `Full_Web_Ap
 
 The reviewed proposal/schema commit precedes consumers. Dependencies and migration candidates receive coordinator review. No unrelated owner checkout, existing data, private configuration, root service or separate demo history is changed during isolated acceptance.
 
-Review corrected the existing ADR-number collision, source identifier bounds, ZIP regex, public permission code and mandatory synthetic/expiry markers. Listing strings, coordinates, numeric values and arrays are bounded. The complete gallery permits up to1024 licensed media references and rejects oversized provider data; it never truncates a gallery to the older fixed photo count. Candidate0035 remains guarded and unapplied until its independent real-role review.
+Review corrected the existing ADR-number collision, source identifier bounds, ZIP regex, public permission code and mandatory synthetic/expiry markers. Listing strings, coordinates, numeric values and arrays are bounded. The complete gallery permits up to1024 licensed media references and rejects oversized provider data; it never truncates a gallery to the older fixed photo count. Original guarded candidates remain review provenance; accepted forward migrations use the reconciled0036/0037 allocations below.
 
 ## Acceptance
 
