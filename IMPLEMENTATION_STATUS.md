@@ -1,5 +1,27 @@
 # Implementation status — 2026-10-13
 
+## M4 marketing infrastructure — 2026-10-13
+
+**Committed:**
+- `3792001` feat(marketing): add dispatch service, automation UI and broadcast idempotency
+- `4053e61` feat(marketing): add scheduled-action dispatch worker (MOD-E-004)
+- `d8b7d3b` docs: update evidence ledger with M4 marketing implementation
+- `e7d78ab` docs: update evidence ledger with action worker (MOD-E-004)
+
+**No-delivery transport (MOD-E-005):** `dispatch-service.ts` processes queued broadcast confirmation jobs. Checks consent eligibility per lead via `app.consent_state` joined to `app.contact_channel`. Updates jobs to `state='succeeded'` with `safe_result` containing delivery mode, recipient/suppressed counts and timestamp. Dev route: `POST /dev/dispatch-broadcasts`.
+
+**Scheduled-action worker (MOD-E-004):** `action-worker.ts` claims pending `scheduled_action` rows whose `due_at` has passed using `FOR UPDATE SKIP LOCKED`. Checks consent for email/SMS actions, records synthetic `delivery_attempt` rows. Task-type actions complete immediately. Dev route: `POST /dev/dispatch-actions`.
+
+**Broadcast idempotency (MOD-E-006):** `POST /v1/orgs/:orgId/broadcast-confirmations` now requires `Idempotency-Key` header, takes advisory lock, checks `idempotency_record` for replay, and stores the receipt on first commit.
+
+**Consent at dispatch (MOD-E-007):** Both dispatch-service and action-worker verify consent state and suppression records before processing. Withdrawn consent or active suppression prevents delivery.
+
+**Automation workspace UI:** `automation-workspace.tsx` lists automations with name/trigger/campaign/status, inline create form, active/inactive toggle via PATCH, enrollment list with cancel. Wired into workspace nav gated on `automations.read` permission.
+
+**Test evidence:** 737/737 package tests, 253/254 integration tests (1 pre-existing flaky), TypeScript clean (root + web).
+
+---
+
 ## M2 push notification infrastructure and notification coverage — 2026-10-13
 
 **Committed:**
