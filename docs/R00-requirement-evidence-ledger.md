@@ -1,7 +1,7 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Updated:** 2026-10-13 at commit `6774b0e` — 270 integration tests across 34 suites.
+**Updated:** 2026-10-13 at commit `af47e21` — 283 integration tests across 38 suites.
 **Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
@@ -43,7 +43,7 @@
 | MOD-B-001 | Partial | `dashboard-report-api.test.ts` (disposable DB); dashboard endpoint returns 200 with pipeline/task/lead summaries, unread notifications and integration health | Dashboard wired to real notification data and integration_connection state. Activity endpoint works. |
 | MOD-B-002 | Implemented | Dashboard returns 6 metrics: leads.created, contacts.created, deals.created, deals.pipeline_value, tasks.completed, revenue (unconfigured). Frontend definitions with titles/descriptions/denominators. Period/timezone labels. | Revenue metric blocked on billing provider. |
 | MOD-B-003 | Deferred | Frontend scope (R09). API supports detail/drawer routes. | |
-| MOD-B-004 | Partial | `appointments-api.test.ts` (disposable DB); `AppointmentService` implemented | No scheduling provider integration yet. |
+| MOD-B-004 | Partial | `appointments-api.test.ts` (disposable DB); `appointment-list-api.test.ts` (2 tests, shared DB): paginated listing verified; `AppointmentService` implemented | No scheduling provider integration yet. |
 | MOD-B-005 | Implemented | `notifications-api.test.ts` (disposable DB); `notification-producer-api.test.ts` (4 tests); notification list/mark-read + producer (lead.assigned, task.assigned, lead.stage_changed); `push-settings.tsx` subscription management UI | Poll-based. SSE deferred per spec. SECURITY DEFINER `app.create_notification` validates active membership. Dashboard returns real unread notifications. Push subscription UI permission-gated (self.push.write). |
 
 ---
@@ -148,7 +148,7 @@
 
 | INV | Status | Evidence |
 |-----|--------|----------|
-| INV-01 | Verified | `database-isolation.test.ts`, `runtime-role.test.ts`: tenant context required. `crm-api.test.ts`: session identity. `admin-api.test.ts`: permission checks. |
+| INV-01 | Verified | `database-isolation.test.ts`, `runtime-role.test.ts`: tenant context required. `crm-api.test.ts`: session identity. `admin-api.test.ts`: permission checks. `permission-boundary-api.test.ts` (5 tests): agent role denial, CSRF enforcement, unauthenticated rejection. `session-api.test.ts` (4 tests): identity isolation. |
 | INV-02 | Verified | `database-isolation.test.ts`: RLS non-bypass (disposable DB). `runtime-role.test.ts`: role verification. Control tests: migration roles. |
 | INV-03 | Verified | `outbox.test.ts`: domain+outbox in one transaction. `invitation-api.test.ts`: idempotency replay. `billing-api.test.ts`: idempotent confirm. |
 | INV-04 | Verified | `crm-api.test.ts`: If-Match concurrency. `admin-api.test.ts`: role/org versioning. `crm-configuration-api.test.ts`: tag/source/stage versions. |
@@ -199,7 +199,7 @@
 | Category | Count | Suites |
 |----------|-------|--------|
 | Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 270 | 34 |
+| Integration (shared DB) | 283 | 38 |
 | Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
 | Unit | 2,534 | 79 |
 | Package | 737 | 15 |

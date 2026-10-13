@@ -11,7 +11,22 @@
 
 **Bug fix:** Added `enrollments: "enrollmentId"` to resourceId map in `main.ts` so contract validation matches the OpenAPI path for enrollment cancel operations.
 
-**Test evidence:** 270/270 integration tests (shared DB, 34 suites), 737/737 package tests, TypeScript clean.
+**Test evidence:** 283/283 integration tests (shared DB, 38 suites), 737/737 package tests, TypeScript clean.
+
+---
+
+## Session, appointment and permission boundary tests — 2026-10-13
+
+**Committed:**
+- `c5eebc3` feat: add session and appointment listing integration tests
+- `af47e21` feat: add permission boundary, session and appointment listing tests
+
+**New tests:** 13 shared-DB integration tests across 3 suites:
+- `session-api.test.ts` (4 tests): session contract, CSRF/member headers, identity isolation, unauthenticated rejection
+- `appointment-list-api.test.ts` (2 tests): paginated listing, limit parameter
+- `permission-boundary-api.test.ts` (5 tests): agent role denial for org update, agent read access, unauthenticated rejection, CSRF enforcement
+
+**Test evidence:** 283/283 integration tests (shared DB, 38 suites), TypeScript clean.
 
 ---
 
