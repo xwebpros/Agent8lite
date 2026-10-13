@@ -1,16 +1,20 @@
 # Implementation status — 2026-10-13
 
-## M2 push subscription management and notification coverage — 2026-10-13
+## M2 push notification infrastructure and notification coverage — 2026-10-13
 
 **Committed:**
-- `4b79d90` feat(pwa): add push notification subscription management — PushSettings component in workspace settings, permission-gated, lists active devices with topic labels, register/remove device flows
-- `18246c4` test(notifications): add stage transition notification test — 4th integration test covering lead.stage_changed notification to lead owner when another member transitions the stage
-- `62dcea2` fix(test): update contact search tests for new filter fields — removed stale rejection assertions for intent/tagIds/stageId which are now valid LeadFilter fields
+- `778ee42` feat(push): add VAPID key generation and public key endpoint — migration 0036 (instance_config table), seed generates ECDSA P-256 VAPID keys, GET /v1/push/vapid-key returns public key (no auth), push-settings fetches and uses the key
+- `3e1b589` docs: update evidence ledger with push settings and stage transition test
+- `4b79d90` feat(pwa): add push notification subscription management — PushSettings component in workspace settings
+- `18246c4` test(notifications): add stage transition notification test — 4th integration test
+- `62dcea2` fix(test): update contact search tests for new filter fields
 - `af624d6` docs: update evidence ledger with notification producer verification
 
-**Push settings (`apps/web/components/push-settings.tsx`):** Permission-gated component (self.push.write) wired into workspace. Lists active push subscriptions, supports registering new devices (requests Notification permission, subscribes via PushManager, POSTs to API with CSRF/idempotency), and removing devices. VAPID key configuration is not yet available — registration will fail until server VAPID keys are set.
+**VAPID configuration:** Migration 0036 creates `app.instance_config` table (RLS-enabled, runtime read-only). Seed generates ECDSA P-256 key pair on first run and stores public key (base64url uncompressed) and private key (PKCS8 PEM). Public endpoint `/v1/push/vapid-key` returns the `applicationServerKey` for browser push subscription. Verified: endpoint returns valid key, health check passes.
 
-**Test evidence:** 4/4 notification producer integration tests pass (lead assignment, self-assign suppression, task assignment, stage transition). 3270/3270 unit tests pass. 260/260 integration tests pass.
+**Push settings (`apps/web/components/push-settings.tsx`):** Permission-gated component (self.push.write) wired into workspace. Fetches VAPID public key on mount and uses it for PushManager.subscribe(). Lists active subscriptions, register/remove device flows.
+
+**Test evidence:** 4/4 notification producer integration tests pass. TypeScript clean (root + web).
 
 ---
 
