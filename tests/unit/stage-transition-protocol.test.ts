@@ -85,6 +85,56 @@ describe("ADR-043 exact immutable stage command and historical acknowledgement",
     expect(value.protocol.getSnapshot()).toEqual({ command: null, phase: "acknowledged" });
     expect(value.protocol.isCurrent(value.command)).toBe(false);
   });
+  it("accepts the command's derived score change without relaxing its exact lead, stage or revision facts", () => {
+    const protocol = new StageTransitionProtocol();
+    protocol.bind(context);
+    const original = { ...lead(), score: 15, scoreVersion: "v1" };
+    const command = protocol.begin({ lead: original, body: body() }, key);
+    expect(protocol.acknowledge(command, { ...receipt(), score: 31, scoreVersion: "v1" }, '"8"')).toBe(true);
+    expect(protocol.getSnapshot()).toEqual({ command: null, phase: "acknowledged" });
+    expect(command.originalLead).toMatchObject({
+      score: 15,
+      scoreVersion: "v1",
+      stageId: oldStage,
+      version: 7,
+    });
+  });
+  it.each([0, 16, 100])("accepts a coherent generated score %i on a formerly unscored lead", (score) => {
+    const value = setup();
+    expect(
+      value.protocol.acknowledge(value.command, { ...receipt(), score, scoreVersion: "v1" }, '"8"'),
+    ).toBe(true);
+  });
+  it.each([
+    { score: -1, scoreVersion: "v1" },
+    { score: 101, scoreVersion: "v1" },
+    { score: "31", scoreVersion: "v1" },
+    { score: Number.NaN, scoreVersion: "v1" },
+    { score: 31, scoreVersion: null },
+    { score: 31, scoreVersion: "" },
+    { score: 31, scoreVersion: "   " },
+    { score: 31, scoreVersion: "v".repeat(81) },
+    { score: 31, scoreVersion: 1 },
+    { score: null, scoreVersion: "v1" },
+  ])("retains an uncertain command for malformed or unpaired scoring %j", (patch) => {
+    const value = setup();
+    expect(value.protocol.acknowledge(value.command, { ...receipt(), ...patch }, '"8"')).toBe(false);
+    expect(value.protocol.getSnapshot()).toMatchObject({ command: value.command, phase: "unknown" });
+  });
+  it.each([{ contactId: member }, { stageId: oldStage }, { version: 9 }, { intent: "seller" }])(
+    "a valid scored pair cannot override mismatched command facts %j",
+    (patch) => {
+      const value = setup();
+      expect(
+        value.protocol.acknowledge(
+          value.command,
+          { ...receipt(), ...patch, score: 31, scoreVersion: "v1" },
+          '"8"',
+        ),
+      ).toBe(false);
+      expect(value.protocol.getSnapshot().phase).toBe("unknown");
+    },
+  );
   it("canonical lowercase receipt accepts original uppercase UUID spelling without altering original bytes", () => {
     const protocol = new StageTransitionProtocol();
     protocol.bind(context);

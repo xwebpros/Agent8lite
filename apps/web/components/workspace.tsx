@@ -96,6 +96,7 @@ import {
   type LeadCaptureTemplate,
 } from "./lead-capture";
 import LeadCapturePanel, { emptyLeadCaptureDraft, type LeadCaptureDraft } from "./lead-capture-panel";
+import { isCreateModalReady } from "./create-modal-readiness";
 import {
   StageTransitionProtocol,
   stageTransitionContext,
@@ -755,6 +756,25 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const syntheticEnabled = syntheticFeaturesEnabled && syntheticIdentity && Boolean(session);
   const canCapture = Boolean(leadCaptureBinding) && leadSnapshot.phase !== "forgotten";
   const canTask = permission("crm.tasks.write");
+  const createModalReadiness = {
+    busy,
+    loading,
+    detailLoading,
+    protectedDraftOrCommand: reloadProtected.current,
+    online: online && !changingOrganization,
+    visible: contactVisible,
+    memberAvailable: Boolean(member),
+  };
+  const canOpenLeadCapture = isCreateModalReady({
+    ...createModalReadiness,
+    bindingAvailable: canCapture && Boolean(leadCaptureBinding),
+    forgotten: leadSnapshot.phase === "forgotten",
+  });
+  const canOpenTaskCreate = isCreateModalReady({
+    ...createModalReadiness,
+    bindingAvailable: canTask && Boolean(taskCreateBinding),
+    forgotten: taskCreateSnapshot.phase === "forgotten",
+  });
   const canUpdateTask = Boolean(taskEditBinding) && taskEditSnapshot.phase !== "forgotten";
   const taskAgendaContext = JSON.stringify([
     session?.userId,
@@ -4940,7 +4960,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                 !dealsTab &&
                 !captureTab && (
                   <Button
-                    disabled={busy || !online || (view === "tasks" ? !canTask : !canCapture) || !member}
+                    disabled={view === "tasks" ? !canOpenTaskCreate : !canOpenLeadCapture}
                     onClick={() => openModal(view === "tasks" ? "task" : "lead")}
                   >
                     <Plus size={18} />
@@ -5329,6 +5349,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       online={online && !changingOrganization}
                       canRead={permission("crm.tasks.read")}
                       canComplete={canUpdateTask && Boolean(member)}
+                      canAddTask={canOpenTaskCreate}
                       blocked={
                         busy ||
                         changingOrganization ||
