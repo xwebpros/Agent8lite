@@ -18,7 +18,18 @@
 
 **Automation workspace UI:** `automation-workspace.tsx` lists automations with name/trigger/campaign/status, inline create form, active/inactive toggle via PATCH, enrollment list with cancel. Wired into workspace nav gated on `automations.read` permission.
 
-**Test evidence:** 737/737 package tests, 253/254 integration tests (1 pre-existing flaky), TypeScript clean (root + web).
+**Test evidence:** 737/737 package tests, 254/254 integration tests (shared DB), TypeScript clean (root + web).
+
+## M2 job listing, retention and integration status — 2026-10-13
+
+**Committed:**
+- `52361cf` feat: add job listing endpoint and data retention service
+- `448548a` feat(workspace): add integration jobs status panel (MOD-J-002)
+- `e7b83b1` docs: update evidence ledger with jobs panel and retention service
+
+**Job listing (MOD-J-002):** `AdminService.listJobs()` returns paginated integration jobs scoped to requesting member. Supports optional `state` and `kind` query filters. GET /v1/orgs/:orgId/jobs wired. `jobs-panel.tsx` frontend shows state badges, error details, export download links with cursor pagination.
+
+**Retention service (MOD-D-006):** `retention-service.ts` purges expired `idempotency_record` rows, old `outbox_consumer_receipt` rows (>90 days), and reports archived contacts/leads past 365-day threshold. Dev route: `POST /dev/retention`.
 
 ---
 
