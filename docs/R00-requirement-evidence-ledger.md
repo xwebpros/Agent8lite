@@ -40,11 +40,11 @@
 
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
-| MOD-B-001 | Partial | `dashboard-report-api.test.ts` (disposable DB); dashboard endpoint returns 200 with pipeline/task/lead summaries | Dashboard implemented. Notification list returns 200. Activity endpoint works. Full workspace UI is M2/frontend scope. |
+| MOD-B-001 | Partial | `dashboard-report-api.test.ts` (disposable DB); dashboard endpoint returns 200 with pipeline/task/lead summaries and unread notifications | Dashboard wired to real notification data. Activity endpoint works. Full workspace UI is M2/frontend scope. |
 | MOD-B-002 | Partial | Dashboard includes period/timezone/definitions. Not all KPI states verified. | |
 | MOD-B-003 | Deferred | Frontend scope (R09). API supports detail/drawer routes. | |
 | MOD-B-004 | Partial | `appointments-api.test.ts` (disposable DB); `AppointmentService` implemented | No scheduling provider integration yet. |
-| MOD-B-005 | Partial | `notifications-api.test.ts` (disposable DB); notification list/mark-read implemented | Poll-based. SSE deferred per spec. |
+| MOD-B-005 | Implemented | `notifications-api.test.ts` (disposable DB); `notification-producer-api.test.ts` (3 tests); notification list/mark-read + producer (lead.assigned, task.assigned, lead.stage_changed) | Poll-based. SSE deferred per spec. SECURITY DEFINER `app.create_notification` validates active membership. Dashboard returns real unread notifications. |
 
 ---
 

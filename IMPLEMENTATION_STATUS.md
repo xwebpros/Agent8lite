@@ -1,5 +1,27 @@
 # Implementation status — 2026-10-13
 
+## M2 notification producer and dashboard wiring — 2026-10-13
+
+**Committed:**
+- `4350564` feat(notifications): add notification producer for lead assignment, task assignment and stage transitions
+- `1e83486` feat(dashboard): wire unread notifications into dashboard response
+
+**Migration `0035-notification-producer.sql`:** SECURITY DEFINER function `app.create_notification(uuid,uuid,text,jsonb)` validates target membership is active before inserting. Uses `session_user` check (not `current_user`, which becomes postgres in SECURITY DEFINER context). REVOKE ALL FROM PUBLIC, GRANT EXECUTE to estate_runtime only.
+
+**CRM service changes (`crm-service.ts`):**
+- Lead assignment: notifies new owner when `ownerMemberId` changes to another member
+- Task creation: notifies assignee when task assigned to another member
+- Stage transition: notifies lead owner when pipeline stage changes by another member
+- All notifications suppressed for self-actions (no notification when you assign to yourself)
+
+**Dashboard:** Now queries real unread notifications (`read_at IS NULL`, limit 5, permission-gated on `self.notifications.read`) instead of returning an empty stub.
+
+**Tests (`notification-producer-api.test.ts`):** 3 integration tests — lead assignment to another member, self-assign suppression, task assignment notification. All pass.
+
+**Verification:** 58 integration tests across 7 suites pass (crm-api, lead-filter-api, task-filter-api, scoring-api, notification-producer-api, offices-profiles-api, outbox). TypeScript clean.
+
+---
+
 ## Source-package migration replay correction — 2026-10-13
 
 The owner reported File Explorer error0x80010135 while extracting a whole-folder ZIP and deleted that ZIP. A source-only replacement excludes dependencies, local databases/configuration, caches and private outputs; the bootstrapper recreates its required dependencies/services and fictional data.
