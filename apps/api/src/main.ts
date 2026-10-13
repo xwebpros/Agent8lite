@@ -585,6 +585,15 @@ class ApiController {
         res.json(result);
         return;
       }
+      if (req.path === "/dev/retention" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { RetentionService } = await import("./retention-service");
+          return new RetentionService(client, context, traceId).enforceRetention();
+        });
+        res.json(result);
+        return;
+      }
       if (req.path === "/dev/capture" && req.method === "POST") {
         localIdentity(req);
         validateNativeCapture(req.body);
@@ -1193,7 +1202,8 @@ class ApiController {
                     resource as "pipeline-stages" | "lead-sources" | "tags",
                     req.query,
                   );
-            else if (resource === "jobs" && id) body = await admin.job(id);
+            else if (resource === "jobs" && !action)
+              body = id ? await admin.job(id) : await admin.listJobs(req.query);
             else if (resource === "tickets" && !action)
               body = id ? await support.get(id) : await support.list(req.query);
             else if (["offices", "business-profiles", "roles"].includes(resource) && !action)
