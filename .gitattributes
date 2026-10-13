@@ -10,3 +10,7 @@ docs/reference/las-vegas-live-idx/*.txt binary
 apps/web/public/fonts/idx-template/*.ttf binary
 apps/web/public/fonts/idx-template/*-OFL.txt binary
 apps/web/public/idx-template-leaflet/LICENSE binary
+
+# Historical reference evidence remains byte-preserved in Git history.
+evidence/** -text
+Agent-Elite-Audit-2026-10-10/evidence/** -text
