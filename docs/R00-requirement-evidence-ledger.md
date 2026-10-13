@@ -135,7 +135,7 @@
 
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
-| MOD-K-001–010 | Partial | Push subscription CRUD (main.ts lines 816-890). VAPID/endpoint security in place. PWA manifest (`app/manifest.ts`), service worker, install prompt implemented. `push-settings.tsx` subscription management UI with device list, register/remove, topic labels, permission state. | VAPID keys not yet configured — push delivery blocked until server keys set. M8 physical device testing required. |
+| MOD-K-001–010 | Partial | Push subscription CRUD (main.ts lines 816-890). VAPID/endpoint security in place. PWA manifest (`app/manifest.ts`), service worker (`sw.js`) with cache allowlist, offline fallback, push handler. Install prompt in workspace. `push-settings.tsx` subscription management UI. SW update banner guards dirty drafts, pending commands, and in-flight reconciliation before allowing reload. `beforeunload` guard on unsaved state. Offline mutation blocking with clear error messages. | VAPID keys not yet configured — push delivery blocked until server keys set. M8 physical device testing required. |
 
 ---
 

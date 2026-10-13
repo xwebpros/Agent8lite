@@ -36,6 +36,17 @@ export default function PushSettings({ organizationId, csrf, online, working, se
     else setPermissionState("unsupported");
   }, []);
 
+  const [vapidKey, setVapidKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/v1/push/vapid-key")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.applicationServerKey) setVapidKey(data.applicationServerKey);
+      })
+      .catch(() => {});
+  }, []);
+
   const load = useCallback(async () => {
     const generation = ++epoch.current;
     setLoading(true);
@@ -80,7 +91,7 @@ export default function PushSettings({ organizationId, csrf, online, working, se
         existing ||
         (await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: undefined,
+          ...(vapidKey ? { applicationServerKey: vapidKey } : {}),
         }));
 
       const keys = subscription.toJSON().keys;

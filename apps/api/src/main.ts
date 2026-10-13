@@ -204,6 +204,17 @@ class ApiController {
         });
         return;
       }
+      if (req.path === "/v1/push/vapid-key" && req.method === "GET") {
+        const vapid = await runtimePool.query(
+          `SELECT value FROM app.instance_config WHERE key='vapid_public_key'`,
+        );
+        if (!vapid.rowCount) {
+          res.status(404).json({ type: "push_unconfigured", title: "Push notifications are not configured." });
+          return;
+        }
+        res.json({ applicationServerKey: vapid.rows[0].value });
+        return;
+      }
       if (req.cookies?.estate_staff_session && req.cookies?.[sessionCookie])
         throw new AccessError(
           403,
