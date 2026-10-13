@@ -1,11 +1,18 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import pg from "pg";
 import { assertNodeRuntime, readPinnedNode } from "../../scripts/node-runtime.mjs";
+import {
+  ciContainerId,
+  verifyCiContainerOwnership,
+  verifyCiImageAndNetwork,
+  verifyCiDatabaseTarget,
+} from "./ci-ownership.mjs";
 
 export const idxTestPort = 54434;
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -51,7 +58,71 @@ export function idxTestEnvironment(parent = process.env) {
   };
 }
 
+async function inspectCiObject(kind, id) {
+  try {
+    const result = await promisify(execFile)(
+      "/usr/bin/docker",
+      ["--host", "unix:///var/run/docker.sock", kind, "inspect", id],
+      {
+        env: idxTestEnvironment(),
+        timeout: 5000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
+    const values = JSON.parse(result.stdout);
+    if (!Array.isArray(values) || values.length !== 1) throw new Error();
+    return values[0];
+  } catch {
+    // Inspection may contain environment values. Never forward Docker output or its raw error.
+    throw new Error("idx_test_ci_inspection_failed");
+  }
+}
+
+async function verifyCiCluster(id) {
+  const first = verifyCiContainerOwnership(
+    await inspectCiObject("container", id),
+    id,
+    process.env,
+    process.platform,
+  );
+  verifyCiImageAndNetwork(
+    first,
+    await inspectCiObject("image", first.imageId),
+    await inspectCiObject("network", first.networkId),
+  );
+  const pool = new pg.Pool({ connectionString: clusterUrl, max: 1, connectionTimeoutMillis: 5000 });
+  try {
+    const actual = (
+      await pool.query(
+        "SELECT current_setting('data_directory') AS directory,current_setting('port') AS port,current_database() AS database,current_user,session_user",
+      )
+    ).rows[0];
+    const postgis =
+      (await pool.query("SELECT name FROM pg_available_extensions WHERE name='postgis'")).rowCount === 1;
+    verifyCiDatabaseTarget(first, actual, postgis);
+    const current = verifyCiContainerOwnership(
+      await inspectCiObject("container", id),
+      id,
+      process.env,
+      process.platform,
+    );
+    if (JSON.stringify(current) !== JSON.stringify(first)) throw new Error("idx_test_ci_container_changed");
+    return {
+      mode: "github-actions-service",
+      port: idxTestPort,
+      containerId: first.containerId,
+      dataDirectory: first.dataDirectory,
+      internalPort: first.internalPort,
+      postgisAvailable: true,
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
 export async function verifyIdxCluster() {
+  const container = ciContainerId(process.env, process.platform);
+  if (container) return verifyCiCluster(container);
   const actualRoot = await fs.realpath(root);
   const expectedBinary = await fs.realpath(
     process.env.IDX_TEST_POSTGRES_BINARY ?? path.join(root, ".local", "postgres", "bin", "postgres.exe"),
@@ -120,6 +191,17 @@ function run(args, env) {
       code === 0 ? resolve() : reject(new Error(`idx_test_command_failed:${code}`)),
     );
   });
+}
+
+async function testReportArguments(args) {
+  if (!process.env.ISOLATED_TEST_REPORT) return args;
+  const report = path.resolve(root, process.env.ISOLATED_TEST_REPORT);
+  if (!canonical(report).startsWith(`${canonical(root)}/.local/`))
+    throw new Error("idx_test_report_outside_owned_workspace");
+  await fs.mkdir(path.dirname(report), { recursive: true });
+  if (!canonical(await fs.realpath(path.dirname(report))).startsWith(`${canonical(root)}/.local/`))
+    throw new Error("idx_test_report_linked_outside_workspace");
+  return [...args, "--reporter=default", "--reporter=json", `--outputFile=${report}`];
 }
 
 async function runDisposableSuite(file, config = "tests/idx-template/vitest.config.mts") {
@@ -196,6 +278,7 @@ async function runDisposableSuite(file, config = "tests/idx-template/vitest.conf
     // Fresh clusters deliberately have no control-role credentials in SQL migrations.
     // This approved tool only initializes an unconfigured synthetic role and preserves an existing password.
     await run(["scripts/local-control-identities.mjs"], env);
+    const apiStartedAt = Date.now();
     api = spawn(process.execPath, ["--import", "tsx", "apps/api/src/main.ts"], {
       cwd: root,
       env,
@@ -221,17 +304,26 @@ async function runDisposableSuite(file, config = "tests/idx-template/vitest.conf
       } catch {}
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
+    console.log(
+      JSON.stringify({
+        verification: "idx-test-api-startup",
+        ownedPid: api.pid,
+        elapsedMs: Date.now() - apiStartedAt,
+        ready,
+        childExited: api.exitCode !== null || api.signalCode !== null,
+        childError: Boolean(apiError),
+      }),
+    );
     if (!ready || api.exitCode !== null || apiError)
       throw new Error("idx_test_owned_api_not_ready", { cause: apiError });
     console.log("Running IDX adapter acceptance against owned 54434 disposable PostgreSQL/PostGIS.");
-    const testArguments = ["node_modules/vitest/vitest.mjs", "run", "--config", config, file];
-    if (process.env.ISOLATED_TEST_REPORT) {
-      const report = path.resolve(root, process.env.ISOLATED_TEST_REPORT);
-      if (!canonical(report).startsWith(`${canonical(root)}/.local/`))
-        throw new Error("idx_test_report_outside_owned_workspace");
-      await fs.mkdir(path.dirname(report), { recursive: true });
-      testArguments.push("--reporter=default", "--reporter=json", `--outputFile=${report}`);
-    }
+    const testArguments = await testReportArguments([
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "--config",
+      config,
+      file,
+    ]);
     await run(testArguments, env);
   } finally {
     if (api && api.exitCode === null && !apiError) {
@@ -261,7 +353,7 @@ async function main() {
       .sort()
       .map((name) => `tests/idx-template/${name}`);
     await run(
-      [
+      await testReportArguments([
         "node_modules/vitest/vitest.mjs",
         "run",
         "--config",
@@ -269,7 +361,7 @@ async function main() {
         ...unitFiles,
         "apps/web/features/idx-template/inquiry-recovery.test.ts",
         "apps/web/features/idx-template/components/PropertyInquiryForm.test.tsx",
-      ],
+      ]),
       idxTestEnvironment(),
     );
     return;
