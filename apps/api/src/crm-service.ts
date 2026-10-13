@@ -2957,6 +2957,29 @@ export class CrmService {
         "dashboard_measurement_unavailable",
         "The reporting measurement is unavailable.",
       );
+    const contactCounts = await this.client.query(
+      `SELECT count(*) FROM app.contact r WHERE r.tenant_id=app.current_tenant() AND r.archived_at IS NULL
+       AND ${current.scopeSql("contacts", leadScope, "$1")}
+       AND r.created_at BETWEEN $2::timestamptz AND $3::timestamptz`,
+      [context.memberId, period.from, period.to],
+    );
+    const contactCount = Number(contactCounts.rows[0]?.count ?? 0);
+    const dealCounts = await this.client.query(
+      `SELECT count(*) AS cnt, coalesce(sum(CASE WHEN d.value IS NOT NULL AND d.value>=0 THEN d.value ELSE 0 END),0) AS total_value
+       FROM app.deal d WHERE d.tenant_id=app.current_tenant() AND d.archived_at IS NULL
+       AND d.owner_member_id=$1
+       AND d.created_at BETWEEN $2::timestamptz AND $3::timestamptz`,
+      [context.memberId, period.from, period.to],
+    );
+    const dealCount = Number(dealCounts.rows[0]?.cnt ?? 0);
+    const dealValue = Number(dealCounts.rows[0]?.total_value ?? 0);
+    const completedTaskCounts = await this.client.query(
+      `SELECT count(*) FROM app.task r WHERE r.tenant_id=app.current_tenant() AND r.state='completed'
+       AND r.assignee_member_id=$1
+       AND r.updated_at BETWEEN $2::timestamptz AND $3::timestamptz`,
+      [context.memberId, period.from, period.to],
+    );
+    const completedTaskCount = Number(completedTaskCounts.rows[0]?.count ?? 0);
     const tasks = taskScope
       ? await this.client.query(
           `SELECT r.* FROM app.task r WHERE r.tenant_id=app.current_tenant() AND r.state='open'
@@ -3006,6 +3029,42 @@ export class CrmService {
           value: count,
           unit: "leads",
           source: "crm-own-utc-month-query-v2",
+          state: "available",
+          refreshedAt,
+        },
+        {
+          key: "contacts.created",
+          definitionVersion: 1,
+          value: contactCount,
+          unit: "contacts",
+          source: "crm-scope-utc-month-query-v1",
+          state: "available",
+          refreshedAt,
+        },
+        {
+          key: "deals.created",
+          definitionVersion: 1,
+          value: dealCount,
+          unit: "deals",
+          source: "crm-own-utc-month-query-v1",
+          state: "available",
+          refreshedAt,
+        },
+        {
+          key: "deals.pipeline_value",
+          definitionVersion: 1,
+          value: dealValue,
+          unit: "USD",
+          source: "crm-own-utc-month-query-v1",
+          state: "available",
+          refreshedAt,
+        },
+        {
+          key: "tasks.completed",
+          definitionVersion: 1,
+          value: completedTaskCount,
+          unit: "tasks",
+          source: "crm-own-utc-month-query-v1",
           state: "available",
           refreshedAt,
         },
