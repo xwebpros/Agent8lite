@@ -112,9 +112,10 @@ export function requireContactNameQuery(value: unknown): string {
     throw new Error("Enter a name query of at most 200 characters.");
   return value;
 }
+const allowedFilterKeys = new Set(["q", "ownerMemberId", "stageId", "sourceId", "intent", "tagIds"]);
 function filterSnapshot(value: unknown): Schema<"LeadFilter"> {
   const filter = snapshot(value, 8 * 1024);
-  if (!validFilter(filter) || Object.keys(filter).some((key) => key !== "q" && key !== "ownerMemberId"))
+  if (!validFilter(filter) || Object.keys(filter).some((key) => !allowedFilterKeys.has(key)))
     throw new Error("Contact search filter is unavailable.");
   if (Object.hasOwn(filter, "q")) requireContactNameQuery(filter.q);
   if (filter.q === "") delete filter.q;
@@ -249,6 +250,11 @@ export async function contactSearchRequest(
 export interface ContactsSearchClient {
   list(filter: Schema<"LeadFilter">, cursor?: string | null, signal?: AbortSignal): Promise<unknown>;
 }
+export type ContactsSearchFilters = Readonly<{
+  intent: string;
+  stageId: string;
+  sourceId: string;
+}>;
 export type ContactsSearchState = Readonly<{
   online: boolean;
   visible: boolean;
@@ -256,6 +262,7 @@ export type ContactsSearchState = Readonly<{
   reading: boolean;
   query: string;
   appliedQuery: string | null;
+  filters: ContactsSearchFilters;
   page: Schema<"PageContact"> | null;
   refreshedAt: string | null;
   phase: "idle" | "ready" | "unavailable" | "denied" | "stale";
@@ -296,6 +303,7 @@ export class ContactsSearchController {
       reading: false,
       query: "",
       appliedQuery: null,
+      filters: { intent: "", stageId: "", sourceId: "" },
       page: null,
       refreshedAt: null,
       phase: canRead ? "idle" : "denied",
@@ -338,7 +346,7 @@ export class ContactsSearchController {
       refreshedAt: null,
       error: "",
       phase: this.state.canRead ? "idle" : "denied",
-      ...(privateQuery ? { query: "" } : {}),
+      ...(privateQuery ? { query: "", filters: { intent: "", stageId: "", sourceId: "" } } : {}),
     });
   }
   attach() {
@@ -395,6 +403,13 @@ export class ContactsSearchController {
       });
     }
   }
+  setFilter(key: keyof ContactsSearchFilters, value: string) {
+    if (!this.active()) return;
+    if (this.state.filters[key] === value) return;
+    this.clear();
+    this.pageCount = 1;
+    this.update({ filters: { ...this.state.filters, [key]: value } });
+  }
   tick() {
     if (!this.active()) {
       if (this.state.page || this.state.query || this.state.reading) this.clear(true);
@@ -437,9 +452,13 @@ export class ContactsSearchController {
   private async readPages(target: number): Promise<void> {
     if (!this.active()) return;
     const query = requireContactNameQuery(this.state.query);
+    const { intent, stageId, sourceId } = this.state.filters;
     const filter = filterSnapshot({
       ...(query ? { q: query } : {}),
       ...(this.scope === "own" ? { ownerMemberId: this.memberId } : {}),
+      ...(intent ? { intent } : {}),
+      ...(stageId ? { stageId } : {}),
+      ...(sourceId ? { sourceId } : {}),
     });
     this.clear();
     const epoch = this.epoch,

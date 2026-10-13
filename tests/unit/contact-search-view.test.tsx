@@ -42,6 +42,7 @@ function render(
       actionsBlocked={options.blocked}
       actions={{
         changeQuery: vi.fn(),
+        changeFilter: vi.fn(),
         submit: vi.fn(),
         refresh: vi.fn(),
         more: vi.fn(),

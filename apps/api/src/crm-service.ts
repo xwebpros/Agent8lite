@@ -362,9 +362,9 @@ export class CrmService {
       validateSchema("LeadFilter", filter);
     }
     const supportedFilters: Record<string, string[]> = {
-      contacts: ["q", "ownerMemberId", "tagIds"],
+      contacts: ["q", "ownerMemberId", "tagIds", "stageId", "sourceId", "intent"],
       leads: ["q", "ownerMemberId", "stageId", "sourceId", "intent", "tagIds"],
-      tasks: ["q", "ownerMemberId"],
+      tasks: ["q", "ownerMemberId", "stageId", "sourceId", "intent", "tagIds"],
     };
     if (
       Object.keys(filter).some(
@@ -412,6 +412,24 @@ export class CrmService {
       params.push(filter.ownerMemberId);
       where.push(`r.assignee_member_id=$${params.length}`);
     }
+    if (resource === "tasks") {
+      const taskLeadFilters: string[] = [];
+      for (const [field, column] of [
+        ["stageId", "stage_id"],
+        ["sourceId", "source_id"],
+        ["intent", "intent"],
+      ] as const) {
+        if (filter[field]) {
+          params.push(filter[field]);
+          taskLeadFilters.push(`l.${column}=$${params.length}`);
+        }
+      }
+      if (taskLeadFilters.length) {
+        where.push(
+          `r.lead_id IS NOT NULL AND EXISTS(SELECT 1 FROM app.lead l WHERE l.tenant_id=app.current_tenant() AND l.id=r.lead_id AND l.archived_at IS NULL AND ${taskLeadFilters.join(" AND ")})`,
+        );
+      }
+    }
     if (filter.ownerMemberId && resource === "contacts") {
       params.push(filter.ownerMemberId);
       where.push(
@@ -433,6 +451,10 @@ export class CrmService {
       if (resource === "leads")
         where.push(
           `(SELECT count(*) FROM app.lead_tag lt WHERE lt.tenant_id=app.current_tenant() AND lt.lead_id=r.id AND lt.tag_id=ANY(${tagsParam}))=cardinality(${tagsParam})`,
+        );
+      else if (resource === "tasks")
+        where.push(
+          `r.lead_id IS NOT NULL AND EXISTS(SELECT 1 FROM app.lead_tag lt WHERE lt.tenant_id=app.current_tenant() AND lt.lead_id=r.lead_id AND lt.tag_id=ANY(${tagsParam}) GROUP BY lt.lead_id HAVING count(*)=cardinality(${tagsParam}))`,
         );
       else if (resource === "contacts") {
         const leadScope = requirePermission(this.context, "crm.leads.read");
@@ -529,6 +551,25 @@ export class CrmService {
       params.push(filter.ownerMemberId);
       where.push(
         `((r.created_by_member_id=$${params.length} AND NOT EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL)) OR EXISTS(SELECT 1 FROM app.lead l WHERE l.contact_id=r.id AND l.archived_at IS NULL AND l.owner_member_id=$${params.length}))`,
+      );
+    }
+    const leadFilters: string[] = [];
+    if (filter.stageId) {
+      params.push(filter.stageId);
+      leadFilters.push(`l.stage_id=$${params.length}`);
+    }
+    if (filter.sourceId) {
+      params.push(filter.sourceId);
+      leadFilters.push(`l.source_id=$${params.length}`);
+    }
+    if (filter.intent) {
+      params.push(filter.intent);
+      leadFilters.push(`l.intent=$${params.length}`);
+    }
+    if (leadFilters.length) {
+      const leadScope2 = requirePermission(context, "crm.leads.read");
+      where.push(
+        `EXISTS(SELECT 1 FROM app.lead l WHERE l.tenant_id=app.current_tenant() AND l.contact_id=r.id AND l.archived_at IS NULL AND ${current.scopeSql("leads", leadScope2, "$1").replaceAll("r.owner_member_id", "l.owner_member_id")} AND ${leadFilters.join(" AND ")})`,
       );
     }
     if (filter.tagIds?.length) {
@@ -1665,6 +1706,16 @@ export class CrmService {
           }),
         ],
       );
+      if (effectiveOwner && effectiveOwner !== context.memberId) {
+        await this.client.query(
+          `SELECT app.create_notification($1,$2,'lead.assigned',$3)`,
+          [
+            context.organizationId,
+            effectiveOwner,
+            JSON.stringify({ title: "A lead was assigned to you", href: "/pipeline" }),
+          ],
+        );
+      }
     }
     await this.client.query(
       `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff,created_at,updated_at)
@@ -1903,6 +1954,16 @@ export class CrmService {
         stageTransitionJson({ resourceVersion: lead.version }),
       ],
     );
+    if (lead.ownerMemberId && lead.ownerMemberId !== context.memberId) {
+      await this.client.query(
+        `SELECT app.create_notification($1,$2,'lead.stage_changed',$3)`,
+        [
+          context.organizationId,
+          lead.ownerMemberId,
+          JSON.stringify({ title: "A lead's pipeline stage was updated", href: "/pipeline" }),
+        ],
+      );
+    }
     await this.client.query(
       `INSERT INTO app.idempotency_record
        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
@@ -2143,6 +2204,16 @@ export class CrmService {
        VALUES($1,$2,'task.created','task',$3,$4,'{"resourceVersion":1}',$5,$5)`,
       [context.organizationId, context.userId, task.id, traceId, timestamp],
     );
+    if (input.assigneeMemberId && input.assigneeMemberId !== context.memberId) {
+      await this.client.query(
+        `SELECT app.create_notification($1,$2,'task.assigned',$3)`,
+        [
+          context.organizationId,
+          input.assigneeMemberId,
+          JSON.stringify({ title: `Task assigned: ${input.title.slice(0, 120)}`, href: "/tasks" }),
+        ],
+      );
+    }
     await this.client.query(
       `INSERT INTO app.idempotency_record
        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,response_ref,expires_at,created_at,updated_at)
@@ -2894,6 +2965,16 @@ export class CrmService {
           [context.memberId],
         )
       : { rows: [] };
+    const recentNotifications = context.permissions.some(
+      (grant) => grant.code === "self.notifications.read",
+    )
+      ? await this.client.query(
+          `SELECT id,kind,safe_payload,read_at,row_version FROM app.notification
+           WHERE tenant_id=app.current_tenant() AND member_id=$1 AND read_at IS NULL
+           ORDER BY created_at DESC LIMIT 5`,
+          [context.memberId],
+        )
+      : { rows: [] };
     const measured = await this.client.query(
       "SELECT date_trunc('milliseconds',clock_timestamp()) AS refreshed_at",
     );
@@ -2902,6 +2983,16 @@ export class CrmService {
       throw new AccessError(503, "dashboard_clock_unavailable", "The reporting clock is unavailable.");
     await assertAuthority();
     await requireEntitlement(this.client, "dashboard.read", { lock: false });
+    const notificationItems = recentNotifications.rows.map((row: Record<string, unknown>) => {
+      const payload = row.safe_payload as Record<string, unknown> | null;
+      return {
+        id: row.id as string,
+        kind: String(row.kind ?? "unknown"),
+        title: String(payload?.title ?? "Notification"),
+        ...(payload?.href ? { href: String(payload.href) } : {}),
+        readAt: null,
+      };
+    });
     return {
       period,
       metrics: [
@@ -2925,7 +3016,7 @@ export class CrmService {
         },
       ],
       tasks: tasks.rows.map(models.task),
-      notifications: [],
+      notifications: notificationItems,
       integrationHealth: [],
     };
   }

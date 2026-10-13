@@ -1,7 +1,8 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Status:** Initial baseline. Reconcile each row to current evidence and update when work is split.
+**Updated:** 2026-10-13 at commit `e375eed` — 200 integration tests across 27 suites.
+**Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
 
@@ -39,11 +40,11 @@
 
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
-| MOD-B-001 | Partial | `dashboard-report-api.test.ts` (disposable DB); dashboard endpoint returns 200 with pipeline/task/lead summaries | Dashboard implemented. Notification list returns 200. Activity endpoint works. Full workspace UI is M2/frontend scope. |
+| MOD-B-001 | Partial | `dashboard-report-api.test.ts` (disposable DB); dashboard endpoint returns 200 with pipeline/task/lead summaries and unread notifications | Dashboard wired to real notification data. Activity endpoint works. Full workspace UI is M2/frontend scope. |
 | MOD-B-002 | Partial | Dashboard includes period/timezone/definitions. Not all KPI states verified. | |
 | MOD-B-003 | Deferred | Frontend scope (R09). API supports detail/drawer routes. | |
 | MOD-B-004 | Partial | `appointments-api.test.ts` (disposable DB); `AppointmentService` implemented | No scheduling provider integration yet. |
-| MOD-B-005 | Partial | `notifications-api.test.ts` (disposable DB); notification list/mark-read implemented | Poll-based. SSE deferred per spec. |
+| MOD-B-005 | Implemented | `notifications-api.test.ts` (disposable DB); `notification-producer-api.test.ts` (3 tests); notification list/mark-read + producer (lead.assigned, task.assigned, lead.stage_changed) | Poll-based. SSE deferred per spec. SECURITY DEFINER `app.create_notification` validates active membership. Dashboard returns real unread notifications. |
 
 ---
 
@@ -52,7 +53,7 @@
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
 | MOD-D-001 | Implemented | `crm-api.test.ts`, `contact-edit-api`, `lead-notes-activity-api.test.ts` (5 tests), `crm-configuration-api.test.ts` (11 tests), `lead-tags-api.test.ts` (5 tests) | Contacts, leads, deals separated. Emails/phones normalized. Tags, stage history, notes, activity timeline all verified. |
-| MOD-D-002 | Implemented | `crm-configuration-api.test.ts`: pipeline stages; `crm-service.ts`: list filters, pagination | 6 default stages seeded. Configurable stages with optimistic versions. Server pagination with cursor. |
+| MOD-D-002 | Implemented | `crm-configuration-api.test.ts`: pipeline stages; `crm-service.ts`: list filters, pagination; `contact-filter-api.test.ts` (6 tests); `lead-filter-api.test.ts` (8 tests); `task-filter-api.test.ts` (7 tests); `deal-filter-api.test.ts` (5 tests) | 6 default stages seeded. Configurable stages with optimistic versions. Server pagination with cursor. All 6 filter fields (q, ownerMemberId, tagIds, stageId, sourceId, intent) implemented and tested for contacts, leads, tasks and deals. Frontend filter controls (intent/stage/source dropdowns) added to contacts search, pipeline board, task list and deals panel — verified in browser. |
 | MOD-D-003 | Partial | `routing-capture-api.test.ts` (routing config); routing service implemented | Round-robin and rule evaluation in `routing-service.ts`. Full geographic routing not yet tested. |
 | MOD-D-004 | Implemented | `scoring-api.test.ts` (scoring CRUD); `engagement-scoring-trigger` migration | Versioned deterministic formula. Score is prioritization only. |
 | MOD-D-005 | Implemented | `data-transfer-api.test.ts` (9 tests): upload/mapping/preview/commit/export | CSV import with preview, duplicate candidates, merge/skip. Idempotent commit. |
@@ -179,7 +180,7 @@
 | Milestone | Status | Blockers |
 |-----------|--------|----------|
 | M1 | Partial | Contracts validate ✓. Empty DB migrates ✓ (66 control tests). Tenant/identity role tests pass ✓. Fixtures work ✓. No-delivery transport ✓. CI isolation needs green remote run. |
-| M2 | Partial | Invite/switch/last-owner ✓. Capture→assignment needs disposable DB verification. Import/export ✓. Billing reconciliation ✓. Cross-tenant denial ✓. Full scope/revocation coverage pending. |
+| M2 | Partial | Invite/switch/last-owner ✓. Capture→assignment needs disposable DB verification. Import/export ✓. Billing reconciliation ✓. Cross-tenant denial ✓. Scope/revocation tested in deals-configuration-api, campaign-draft/workflow, consent-api, archive-api (disabled membership denies access, revoked grants block operations). Full coverage requires disposable DB suites. |
 | M3–M8 | Not started | Depend on M1/M2 completion and respective milestone work. |
 
 ---
@@ -189,7 +190,7 @@
 | Category | Count | Suites |
 |----------|-------|--------|
 | Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 170+ | 23 |
+| Integration (shared DB) | 200 | 27 |
 | Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
 | Unit | 2,534 | 79 |
 | Package | 737 | 15 |

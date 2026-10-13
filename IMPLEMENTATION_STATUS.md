@@ -12,6 +12,28 @@ Executed: exact contracts PASS (178 operations/182 schemas); root/web TypeScript
 
 Implementation checkpoints include frontend `44d801a`, backend/local CLI `9ca067e`, and owned tests `13a510e`; coordinator runtime/catalog/provider/web smoke are pending final integration commit. Next executable work: complete dedicated CI-cluster ownership checks; integrate current main without losing separate demo history or reversing approved cleanup; rerun affected final checks, commit and push the branch to xwebpros. Durable runbook: `docs/runbooks/las-vegas-idx-template.md`. Remote CI, browser/pixel/manual keyboard/physical mobile acceptance are unexecuted. Native visitor organizer/AI/market/legal publication and live MLS/maps/delivery remain visibly gated. This checkpoint is not full template release acceptance, M1–M8 completion or production readiness.
 
+## M2 notification producer and dashboard wiring — 2026-10-13
+
+**Committed:**
+- `4350564` feat(notifications): add notification producer for lead assignment, task assignment and stage transitions
+- `1e83486` feat(dashboard): wire unread notifications into dashboard response
+
+**Migration `0035-notification-producer.sql`:** SECURITY DEFINER function `app.create_notification(uuid,uuid,text,jsonb)` validates target membership is active before inserting. Uses `session_user` check (not `current_user`, which becomes postgres in SECURITY DEFINER context). REVOKE ALL FROM PUBLIC, GRANT EXECUTE to estate_runtime only.
+
+**CRM service changes (`crm-service.ts`):**
+- Lead assignment: notifies new owner when `ownerMemberId` changes to another member
+- Task creation: notifies assignee when task assigned to another member
+- Stage transition: notifies lead owner when pipeline stage changes by another member
+- All notifications suppressed for self-actions (no notification when you assign to yourself)
+
+**Dashboard:** Now queries real unread notifications (`read_at IS NULL`, limit 5, permission-gated on `self.notifications.read`) instead of returning an empty stub.
+
+**Tests (`notification-producer-api.test.ts`):** 3 integration tests — lead assignment to another member, self-assign suppression, task assignment notification. All pass.
+
+**Verification:** 58 integration tests across 7 suites pass (crm-api, lead-filter-api, task-filter-api, scoring-api, notification-producer-api, offices-profiles-api, outbox). TypeScript clean.
+
+---
+
 ## Source-package migration replay correction — 2026-10-13
 
 The owner reported File Explorer error0x80010135 while extracting a whole-folder ZIP and deleted that ZIP. A source-only replacement excludes dependencies, local databases/configuration, caches and private outputs; the bootstrapper recreates its required dependencies/services and fictional data.
@@ -151,14 +173,17 @@ All CMS/staff/public/CRM/billing/admin paths route correctly.
 
 **Security fix — `2aab7eb`:** `listMembers` query added explicit `tenant_id=app.current_tenant()` filter. The RLS `membership_select` PERMISSIVE policy allowed `user_id=current_actor()` across tenants, leaking cross-tenant member IDs to the organization owner. Integration test confirms fix.
 
-**Test results (2026-10-13, latest `3d4013f`):**
+**Test results (2026-10-13, latest `e375eed`):**
 - Control tests: 66/66 pass (disposable database, 4 suites)
-- Integration tests: 155/155 pass across 20 suites (admin-api, billing-api, crm-api, crm-configuration-api, data-transfer-api, database-isolation, deal-crud-api, deals-configuration-api, http-boundary, invitation-api, lead-notes-activity-api, lead-tags-api, member-management-api, offices-profiles-api, outbox, profile-reference, routing-capture-api, runtime-role, scoring-api, support-api)
+- Integration tests: 200/200 pass across 27 suites (admin-api, audit-events-api, billing-api, contact-filter-api, crm-api, crm-configuration-api, data-transfer-api, database-isolation, deal-crud-api, deal-filter-api, deals-configuration-api, http-boundary, invitation-api, lead-filter-api, lead-notes-activity-api, lead-tags-api, member-management-api, offices-profiles-api, outbox, profile-reference, push-subscriptions-api, routing-capture-api, runtime-role, scoring-api, session-profile-api, support-api, task-filter-api)
 - Unit tests: 2,534/2,534 pass (79 suites)
 - Package tests: 737/737 pass (15 suites)
-- 27 additional integration suites require `TEST_DATABASE_URL`/`TEST_MIGRATION_DATABASE_URL`/`TEST_API_ORIGIN` with a disposable acceptance database (by design — these are the deep module-level acceptance tests)
+- 25 additional integration suites require `TEST_DATABASE_URL`/`TEST_MIGRATION_DATABASE_URL`/`TEST_API_ORIGIN` with a disposable acceptance database (by design — these are the deep module-level acceptance tests)
 - Contract validation: 173 operations, 174 schemas — PASS
 - TypeScript: PASS
+- Dev login rate limit raised to 200/min (syntheticEnabled) to support concurrent test suites
+- New suites this session: audit-events-api (4), push-subscriptions-api (6), session-profile-api (5), contact-filter-api (6), lead-filter-api (8), task-filter-api (7), deal-filter-api (5) — all 6 LeadFilter fields (q, ownerMemberId, tagIds, stageId, sourceId, intent) implemented and tested for contacts, leads, tasks and deals
+- Frontend: contacts search panel now has intent/stage/source filter dropdowns (`contacts-search.tsx`, `contacts-search-controller.ts`). Controller passes all LeadFilter fields through to the API. Stages and sources loaded from workspace data.
 
 ---
 

@@ -216,7 +216,7 @@ class ApiController {
         );
       if (req.path === "/dev/session" && req.method === "POST") {
         localIdentity(req);
-        rate(loginAttempts, req.socket.remoteAddress ?? "", 20);
+        rate(loginAttempts, req.socket.remoteAddress ?? "", syntheticEnabled ? 200 : 20);
         if (
           !req.body ||
           !["owner", "agent"].includes(req.body.identity) ||
