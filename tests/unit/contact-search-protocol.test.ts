@@ -92,12 +92,16 @@ describe("closed own-data contact query before authority I/O", () => {
     "null",
     '{"q":1}',
     '{"q":"\\ud800"}',
-    '{"intent":"buyer"}',
+    '{"intent":1}',
     '{"extra":true}',
     " ".repeat(16385),
   ])("rejects malformed/unsupported filter case%#", (filter) =>
     expect(() => parseContactQuery({ filter })).toThrow(),
   );
+  it("accepts the implemented lead intent, stage and source filters without changing their values", () => {
+    const filter = { intent: "buyer", stageId: org, sourceId: org };
+    expect(parseContactQuery({ filter: JSON.stringify(filter) }).filter).toEqual(filter);
+  });
   it("counts Unicode code points and does not trim a permitted query", () => {
     expect(parseContactQuery({ filter: JSON.stringify({ q: "😀".repeat(200) }) }).filter.q).toHaveLength(400);
     expect(() => parseContactQuery({ filter: JSON.stringify({ q: "😀".repeat(201) }) })).toThrow();
@@ -411,10 +415,23 @@ describe("read-only bounded contact transport", () => {
     vi.stubGlobal("fetch", fetcher);
     await contactSearchRequest(org, {});
     expect(String(fetcher.mock.calls[0][0])).toMatch(/contacts\?limit=25$/);
-    for (const filter of [{ tagIds: [org] }, { stageId: org }])
+    for (const filter of [{ tagIds: ["not-a-uuid"] }, { stageId: "not-a-uuid" }])
       await expect(contactSearchRequest(org, filter)).rejects.toThrow();
     await expect(contactSearchRequest("PRIVATE_INVALID_ORG", {})).rejects.toThrow();
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("transports the supported intent, stage and source filters as a bounded read-only query", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetcher);
+    const filter = { intent: "buyer", stageId: org, sourceId: org, tagIds: [org] };
+    await contactSearchRequest(org, filter);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [url, options] = fetcher.mock.calls[0];
+    expect(JSON.parse(new URL(String(url), "https://synthetic.invalid").searchParams.get("filter")!)).toEqual(
+      filter,
+    );
+    expect(options).toMatchObject({ method: "GET", cache: "no-store", redirect: "error" });
+    expect(options?.body).toBeUndefined();
   });
   it.each([401, 403, 404, 503])(
     "preserves actual denial/failure%d despite a malformed private error body",
