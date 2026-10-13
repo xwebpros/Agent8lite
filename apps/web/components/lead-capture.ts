@@ -410,6 +410,8 @@ export class LeadCaptureProtocol {
         });
       } else {
         const receipt = requireLeadCaptureLead(input);
+        const score = receipt.score ?? null,
+          scoreVersion = receipt.scoreVersion ?? null;
         if (
           receipt.version !== 1 ||
           etag !== '"1"' ||
@@ -418,8 +420,7 @@ export class LeadCaptureProtocol {
           !sameId(receipt.ownerMemberId, command.body.ownerMemberId) ||
           receipt.intent !== command.body.intent ||
           (receipt.timeline ?? null) !== (command.body.timeline ?? null) ||
-          (receipt.score ?? null) !== null ||
-          (receipt.scoreVersion ?? null) !== null
+          (score === null ? scoreVersion !== null : typeof scoreVersion !== "string" || !scoreVersion.trim())
         )
           throw new Error();
         this.reset();

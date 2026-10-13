@@ -504,12 +504,30 @@ describe("registered HTTP boundary", () => {
       await ownerHttp.command(`${path}?limit=1`, request(email, { tagIds: [segment] })),
       422,
     );
-    // Sending stays on the existing unavailable path; a preview never authorizes a send.
+    for (const method of ["GET", "PATCH"]) {
+      const denied =
+        method === "GET"
+          ? await ownerHttp.request(path)
+          : await ownerHttp.command(path, request(email, { tagIds: [segment] }), { method });
+      expect((await assertProblem(denied, 404)).code).toBe("route_unavailable");
+    }
+    const beforeConfirm = (
+      await admin.query(
+        "SELECT (SELECT count(*)::int FROM app.integration_job)AS jobs,(SELECT count(*)::int FROM app.audit_event)AS audits,(SELECT count(*)::int FROM app.idempotency_record)AS receipts,(SELECT count(*)::int FROM app.outbox)AS events,(SELECT count(*)::int FROM app.scheduled_action)AS schedules,(SELECT count(*)::int FROM app.delivery_attempt)AS deliveries,(SELECT count(*)::int FROM app.consent_event)AS consent",
+      )
+    ).rows[0];
+    // ADR-051: even a current eligible preview does not authorize confirmation or sending.
     const confirm = await ownerHttp.command(`/v1/orgs/${fixtures.orgA}/broadcast-confirmations`, {
       previewId: body.id,
       acceptedTermsVersion: "synthetic",
     });
-    expect([404, 503]).toContain(confirm.status);
-    await assertProblem(confirm, confirm.status);
+    expect((await assertProblem(confirm, 404)).code).toBe("route_unavailable");
+    expect(confirm.headers.get("cache-control")).toContain("no-store");
+    const afterConfirm = (
+      await admin.query(
+        "SELECT (SELECT count(*)::int FROM app.integration_job)AS jobs,(SELECT count(*)::int FROM app.audit_event)AS audits,(SELECT count(*)::int FROM app.idempotency_record)AS receipts,(SELECT count(*)::int FROM app.outbox)AS events,(SELECT count(*)::int FROM app.scheduled_action)AS schedules,(SELECT count(*)::int FROM app.delivery_attempt)AS deliveries,(SELECT count(*)::int FROM app.consent_event)AS consent",
+      )
+    ).rows[0];
+    expect(afterConfirm).toEqual(beforeConfirm);
   });
 });

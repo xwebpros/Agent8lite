@@ -419,6 +419,67 @@ describe("file-fresh registered literal contact name search", () => {
     await denied(await owner.request(endpoint() + query({ tagIds: [tag, tag] })), 422);
     await denied(await owner.request(endpoint() + query({ tagIds: [randomUUID()] })), 422);
   });
+  it("intersects approved stage, source and intent predicates with active lead and contact scope", async () => {
+    const ownerLead = await linked(
+      "Approved relational search Owner",
+      fixtures.ownerMemberA,
+      fixtures.agentMemberA,
+    );
+    const agentLead = await linked(
+      "Approved relational search Agent",
+      fixtures.agentMemberA,
+      fixtures.ownerMemberA,
+    );
+    const unlinked = await contact("Approved relational search Unlinked");
+    await admin.query("UPDATE app.lead SET stage_id=$3,intent='seller' WHERE tenant_id=$1 AND id=$2", [
+      fixtures.orgA,
+      ownerLead.lead,
+      stageId(1, 2),
+    ]);
+    await admin.query("UPDATE app.lead SET intent='buyer' WHERE tenant_id=$1 AND id=$2", [
+      fixtures.orgA,
+      agentLead.lead,
+    ]);
+    const q = "Approved relational search";
+    expect((await read({ q })).items.map((item) => item.id).sort()).toEqual(
+      [ownerLead.contact, agentLead.contact, unlinked].sort(),
+    );
+    for (const filter of [
+      { q, stageId: stageId(1, 1) },
+      { q, intent: "buyer" },
+      { q, sourceId: fixtures.sourceA, stageId: stageId(1, 1), intent: "buyer" },
+    ] satisfies Schemas["LeadFilter"][])
+      expect((await read(filter)).items.map((item) => item.id)).toEqual([agentLead.contact]);
+    expect(
+      (await read({ q, stageId: stageId(1, 2), intent: "seller" })).items.map((item) => item.id),
+    ).toEqual([ownerLead.contact]);
+    expect((await read({ q, sourceId: fixtures.sourceA })).items.map((item) => item.id).sort()).toEqual(
+      [ownerLead.contact, agentLead.contact].sort(),
+    );
+    expect((await read({ q, sourceId: fixtures.sourceB })).items).toEqual([]);
+    expect((await read({ q, stageId: stageId(1, 2) }, agent)).items).toEqual([]);
+    expect((await read({ q, intent: "seller", ownerMemberId: owner.memberId }, agent)).items).toEqual([]);
+    await admin.query("UPDATE app.lead SET archived_at=clock_timestamp() WHERE tenant_id=$1 AND id=$2", [
+      fixtures.orgA,
+      agentLead.lead,
+    ]);
+    expect((await read({ q, intent: "buyer" })).items).toEqual([]);
+  });
+  it("requires current lead read authority for every approved relational filter", async () => {
+    await role(
+      async () => {
+        for (const filter of [
+          { stageId: stageId(1, 1) },
+          { sourceId: fixtures.sourceA },
+          { intent: "unknown" },
+        ] satisfies Schemas["LeadFilter"][])
+          await denied(await owner.request(endpoint() + query(filter)), 403);
+        // Standalone literal contact search does not acquire lead authority implicitly.
+        expect((await read({ q: "Beyond hundred" })).items.map((item) => item.id)).toEqual([target]);
+      },
+      { member: fixtures.ownerMemberA, remove: ["crm.leads.read"] },
+    );
+  });
   it("denies absent current permissions, disabled membership and CRM capability rather than an empty result", async () => {
     await role(
       async () => {
@@ -533,7 +594,12 @@ describe("file-fresh registered literal contact name search", () => {
       "?filter=%7B%22q%22%3A1%7D",
       "?filter={}&filter={}",
       "?filter[]=x",
-      "?filter=" + encodeURIComponent(JSON.stringify({ stageId: stageId(1, 1) })),
+      "?filter=" + encodeURIComponent(JSON.stringify({ stageId: "not-a-uuid" })),
+      "?filter=" + encodeURIComponent(JSON.stringify({ stageId: 1 })),
+      "?filter=" + encodeURIComponent(JSON.stringify({ sourceId: "not-a-uuid" })),
+      "?filter=" + encodeURIComponent(JSON.stringify({ sourceId: null })),
+      "?filter=" + encodeURIComponent(JSON.stringify({ intent: "undeclared-intent" })),
+      "?filter=" + encodeURIComponent(JSON.stringify({ intent: true })),
       "?filter=" + encodeURIComponent(JSON.stringify({ private: "UNDECLARED" })),
     ])
       await denied(await owner.request(endpoint() + suffix), 422);

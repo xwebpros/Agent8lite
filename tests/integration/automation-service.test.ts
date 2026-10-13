@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CampaignDraftService } from "../../apps/api/src/marketing";
 import { AutomationService } from "../../apps/api/src/marketing/automation-service";
 import { CampaignWorkflowService } from "../../apps/api/src/marketing/workflow-service";
-import { fixtures } from "../../packages/db/fixtures";
+import { fixtures, stageId } from "../../packages/db/fixtures";
 import { assertRuntimeRole } from "../../packages/db/runtime-role";
 import {
   withTenantTransaction,
@@ -27,6 +27,9 @@ const runtime = new Pool({ connectionString: process.env.TEST_DATABASE_URL, max:
 const admin = new Pool({ connectionString: process.env.TEST_MIGRATION_DATABASE_URL, max: 4 });
 const ownerA = { userId: fixtures.ownerUser, organizationId: fixtures.orgA };
 const ownerB = { userId: fixtures.ownerUser, organizationId: fixtures.orgB };
+const enrollmentLeadId = randomUUID();
+const archivedLeadId = randomUUID();
+const foreignLeadId = randomUUID();
 type Actor = VerifiedIdentityContext & { memberId: string; roleId: string };
 let ownerHttp: ApiSession;
 
@@ -109,6 +112,15 @@ function automationInput(versionId: string): Schemas["AutomationWrite"] {
   };
 }
 
+async function enrollmentEffects(userId: string) {
+  return (
+    await admin.query(
+      "SELECT (SELECT count(*)::int FROM app.enrollment WHERE tenant_id=$1)AS enrollments,(SELECT count(*)::int FROM app.idempotency_record WHERE tenant_id=$1 AND actor_ref=$2 AND route_key='marketing:enrollment:enroll')AS receipts,(SELECT count(*)::int FROM app.audit_event WHERE tenant_id=$1 AND actor_ref=$2 AND resource_type='enrollment')AS audits,(SELECT count(*)::int FROM app.outbox WHERE tenant_id=$1 AND initiating_actor_id=$2::uuid AND event_type='enrollment.created')AS events",
+      [fixtures.orgA, userId],
+    )
+  ).rows[0];
+}
+
 beforeAll(async () => {
   await assertRuntimeRole(runtime);
   for (const tenant of [fixtures.orgA, fixtures.orgB])
@@ -116,16 +128,22 @@ beforeAll(async () => {
       "INSERT INTO app.entitlement(tenant_id,feature,state)VALUES($1,'marketing','enabled')",
       [tenant],
     );
-  // Insert synthetic contact and lead for enrollment tests (not in the default seed)
-  const syntheticContactId = randomUUID();
-  await admin.query(
-    "INSERT INTO app.contact(tenant_id,id,display_name,created_by_member_id)VALUES($1,$2,'Synthetic Lead A',$3) ON CONFLICT DO NOTHING",
-    [fixtures.orgA, syntheticContactId, fixtures.ownerMemberA],
-  );
-  await admin.query(
-    "INSERT INTO app.lead(tenant_id,id,contact_id,source_id,owner_member_id)VALUES($1,$2,$3,(SELECT id FROM app.lead_source WHERE tenant_id=$1 LIMIT 1),$4) ON CONFLICT DO NOTHING",
-    [fixtures.orgA, fixtures.leadA, syntheticContactId, fixtures.ownerMemberA],
-  );
+  // Each lead has explicit tenant-matched contact/source/stage/owner FKs.
+  for (const [tenant, leadId, source, stage, owner, archived] of [
+    [fixtures.orgA, enrollmentLeadId, fixtures.sourceA, stageId(1, 1), fixtures.ownerMemberA, null],
+    [fixtures.orgA, archivedLeadId, fixtures.sourceA, stageId(1, 1), fixtures.ownerMemberA, new Date()],
+    [fixtures.orgB, foreignLeadId, fixtures.sourceB, stageId(2, 1), fixtures.ownerMemberB, null],
+  ] as const) {
+    const contactId = randomUUID();
+    await admin.query(
+      "INSERT INTO app.contact(tenant_id,id,display_name,created_by_member_id)VALUES($1,$2,'Synthetic enrollment contact',$3)",
+      [tenant, contactId, owner],
+    );
+    await admin.query(
+      "INSERT INTO app.lead(tenant_id,id,contact_id,source_id,stage_id,owner_member_id,archived_at)VALUES($1,$2,$3,$4,$5,$6,$7)",
+      [tenant, leadId, contactId, source, stage, owner, archived],
+    );
+  }
   ownerHttp = await new ApiSession().signIn("owner");
 });
 afterAll(async () => {
@@ -223,7 +241,7 @@ describe("ADR-060 enrollment CRUD", () => {
   it("enrolls a lead and lists the enrollment", async () => {
     const a = await actor();
     const vId = await publishedVersion(a);
-    const leadId = fixtures.leadA;
+    const leadId = enrollmentLeadId;
     const enrolled = await use(a, (svc) =>
       svc.enrollLead({ leadId, campaignVersionId: vId }, { key: randomUUID() }),
     );
@@ -241,10 +259,10 @@ describe("ADR-060 enrollment CRUD", () => {
     const vId = await publishedVersion(a);
     const key = randomUUID();
     const first = await use(a, (svc) =>
-      svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key }),
+      svc.enrollLead({ leadId: enrollmentLeadId, campaignVersionId: vId }, { key }),
     );
     const second = await use(a, (svc) =>
-      svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key }),
+      svc.enrollLead({ leadId: enrollmentLeadId, campaignVersionId: vId }, { key }),
     );
     expect(second.body.id).toBe(first.body.id);
   });
@@ -253,7 +271,7 @@ describe("ADR-060 enrollment CRUD", () => {
     const a = await actor();
     const vId = await publishedVersion(a);
     const { body } = await use(a, (svc) =>
-      svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key: randomUUID() }),
+      svc.enrollLead({ leadId: enrollmentLeadId, campaignVersionId: vId }, { key: randomUUID() }),
     );
     const cancelled = await use(a, (svc) => svc.cancelEnrollment(body.id, { key: randomUUID() }));
     expect(cancelled.status).toBe(201);
@@ -264,7 +282,7 @@ describe("ADR-060 enrollment CRUD", () => {
     const a = await actor();
     const vId = await publishedVersion(a);
     const { body } = await use(a, (svc) =>
-      svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key: randomUUID() }),
+      svc.enrollLead({ leadId: enrollmentLeadId, campaignVersionId: vId }, { key: randomUUID() }),
     );
     const key = randomUUID();
     const first = await use(a, (svc) => svc.cancelEnrollment(body.id, { key }));
@@ -277,7 +295,7 @@ describe("ADR-060 enrollment CRUD", () => {
     const a = await actor();
     const vId = await publishedVersion(a);
     const { body } = await use(a, (svc) =>
-      svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key: randomUUID() }),
+      svc.enrollLead({ leadId: enrollmentLeadId, campaignVersionId: vId }, { key: randomUUID() }),
     );
     await use(a, (svc) => svc.cancelEnrollment(body.id, { key: randomUUID() }));
     await expect(use(a, (svc) => svc.cancelEnrollment(body.id, { key: randomUUID() }))).rejects.toMatchObject(
@@ -293,16 +311,58 @@ describe("ADR-060 enrollment CRUD", () => {
     const vId = await publishedVersion(ownerA);
     await expect(
       use(a, (svc) =>
-        svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key: randomUUID() }),
+        svc.enrollLead({ leadId: enrollmentLeadId, campaignVersionId: vId }, { key: randomUUID() }),
       ),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it.each([
+    ["missing", randomUUID()],
+    ["archived", archivedLeadId],
+    ["foreign-tenant", foreignLeadId],
+  ])("rejects a %s lead without enrollment, receipt, audit or event effects", async (_kind, leadId) => {
+    const a = await actor();
+    const vId = await publishedVersion(a);
+    const before = await enrollmentEffects(a.userId);
+    await expect(
+      use(a, (svc) => svc.enrollLead({ leadId, campaignVersionId: vId }, { key: randomUUID() })),
+    ).rejects.toMatchObject({ status: 422, code: "lead_not_found" });
+    expect(await enrollmentEffects(a.userId)).toEqual(before);
+  });
+
+  it("requires explicit publication before enrolling a lead", async () => {
+    const a = await actor();
+    const campaign = await withTenantTransaction(runtime, a, (client, context) =>
+      new CampaignDraftService(client, context, randomUUID()).create(
+        { name: "Synthetic unpublished enrollment campaign", category: "synthetic-only" },
+        { key: randomUUID() },
+      ),
+    );
+    const draft = await withTenantTransaction(runtime, a, (client, context) =>
+      new CampaignWorkflowService(client, context, randomUUID()).create(
+        campaign.body.id,
+        { nodes: [{ key: "wait", kind: "wait", delaySeconds: 3600 }], edges: [], timezone: "UTC" },
+        { key: randomUUID() },
+      ),
+    );
+    const before = await enrollmentEffects(a.userId);
+    await expect(
+      use(a, (svc) =>
+        svc.enrollLead({ leadId: enrollmentLeadId, campaignVersionId: draft.body.id }, { key: randomUUID() }),
+      ),
+    ).rejects.toMatchObject({ status: 422, code: "campaign_version_not_published" });
+    expect(await enrollmentEffects(a.userId)).toEqual(before);
+    expect(
+      (await admin.query("SELECT state,published_at FROM app.campaign_version WHERE id=$1", [draft.body.id]))
+        .rows[0],
+    ).toEqual({ state: "draft", published_at: null });
   });
 
   it("enforces tenant isolation on enrollment listing", async () => {
     const a = await actor();
     const vId = await publishedVersion(a);
     await use(a, (svc) =>
-      svc.enrollLead({ leadId: fixtures.leadA, campaignVersionId: vId }, { key: randomUUID() }),
+      svc.enrollLead({ leadId: enrollmentLeadId, campaignVersionId: vId }, { key: randomUUID() }),
     );
     const pageB = await withTenantTransaction(runtime, ownerB, (client, context) =>
       new AutomationService(client, context).listEnrollments(),

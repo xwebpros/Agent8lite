@@ -332,7 +332,7 @@ describe("registered synthetic MLS and CMS application boundaries", () => {
       await assertProblem(await owner.request(listings() + suffix), 422);
   });
 
-  it("does not register public/live MLS, inquiries, organizer or publishing commands", async () => {
+  it("does not expose unbound public sites or register live MLS, dev inquiries/organizer and frozen revision save", async () => {
     for (const path of [
       `/v1/public/sites/${randomUUID()}/listings`,
       `/dev/orgs/${owner.orgId}/mls/live/listings`,
@@ -341,12 +341,175 @@ describe("registered synthetic MLS and CMS application boundaries", () => {
       await assertProblem(await owner.request(path), 404);
     await assertProblem(await owner.command(`${listings()}/${randomUUID()}/inquiries`, {}), 404);
     const { document } = await createPair();
-    for (const path of [
-      `${base()}/documents/${document.body.id}/revisions`,
-      `${base()}/documents/${document.body.id}/publish`,
-      `${base()}/documents/${document.body.id}/rollback`,
-    ])
-      await assertProblem(await owner.command(path, starter(), { revision: '"1"' }), 404);
+    await assertProblem(
+      await owner.command(`${base()}/documents/${document.body.id}/revisions`, starter(), {
+        revision: '"1"',
+      }),
+      404,
+    );
+    await assertProblem(
+      await owner.command(`${base()}/documents/${document.body.id}/publish/extra`, {}),
+      404,
+    );
+    await assertProblem(
+      await owner.command(`${base()}/documents/${document.body.id}/rollback/extra`, {}),
+      404,
+    );
+  });
+
+  it("registers publication commands behind strict generated input and current session/permission/CSRF boundaries", async () => {
+    const { document } = await createPair();
+    const revision = await success(
+      await owner.command(drafts(document.body.id), starter(), { revision: '"1"' }),
+      "Revision",
+      201,
+    );
+    const input: Schemas["PublishRequest"] = { revisionId: revision.body.id, expectedDocumentVersion: 2 };
+    for (const action of ["publish", "rollback"] as const) {
+      const path = `${base()}/documents/${document.body.id}/${action}`;
+      for (const invalid of [
+        {},
+        starter(),
+        { ...input, revisionId: "not-a-uuid" },
+        { revisionId: input.revisionId },
+        { ...input, expectedDocumentVersion: 0 },
+        { ...input, expectedDocumentVersion: "2" },
+        { ...input, expectedDocumentVersion: 2.5 },
+        { ...input, expectedDocumentVersion: null },
+        { ...input, undeclared: "not-authorized" },
+      ])
+        await assertProblem(await owner.command(path, invalid), 422);
+      await assertProblem(await new ApiSession().command(path, input), 401);
+      await assertProblem(await agent.command(path, input), 403);
+      await assertProblem(await owner.command(path, input, { csrf: "forged" }), 403);
+      await assertProblem(
+        await owner.command(`/v1/orgs/${fixtures.orgB}/documents/${document.body.id}/${action}`, input),
+        403,
+      );
+      await assertProblem(
+        await owner.request(path, {
+          method: "POST",
+          headers: {
+            "x-csrf-token": owner.csrf,
+            "idempotency-key": randomUUID(),
+            "x-forwarded-for": "198.51.100.19",
+          },
+          body: JSON.stringify(input),
+        }),
+        403,
+      );
+      await assertProblem(
+        await owner.request(path, {
+          method: "POST",
+          headers: {
+            "x-csrf-token": owner.csrf,
+            "idempotency-key": randomUUID(),
+            origin: "https://unapproved.example",
+          },
+          body: JSON.stringify(input),
+        }),
+        403,
+      );
+      expect(
+        await assertProblem(
+          await owner.request(path, {
+            method: "POST",
+            headers: {
+              "x-csrf-token": owner.csrf,
+            },
+            body: JSON.stringify(input),
+          }),
+          400,
+        ),
+      ).toMatchObject({ code: "idempotency_required" });
+    }
+    expect((await owner.read(`${base()}/documents/${document.body.id}`, "Document")).body).toMatchObject({
+      version: 2,
+      publishedRevisionId: null,
+    });
+  });
+
+  it("publishes and rolls back native revision pointers with exact historical replay without activating an external site", async () => {
+    const { site, document } = await createPair();
+    const first = await success(
+      await owner.command(drafts(document.body.id), starter(), { revision: '"1"' }),
+      "Revision",
+      201,
+    );
+    const publishPath = `${base()}/documents/${document.body.id}/publish`;
+    const firstInput: Schemas["PublishRequest"] = { revisionId: first.body.id, expectedDocumentVersion: 2 };
+    const publishKey = randomUUID();
+    const firstJob = await success(
+      await owner.command(publishPath, firstInput, { key: publishKey }),
+      "Job",
+      202,
+    );
+    expect(firstJob.body).toMatchObject({ state: "succeeded", kind: "document.published" });
+    expect(firstJob.etag).toBe('"3"');
+    const changed = starter();
+    changed.seo.title = "Synthetic second published revision";
+    const second = await success(
+      await owner.command(drafts(document.body.id), changed, { revision: '"3"' }),
+      "Revision",
+      201,
+    );
+    await success(
+      await owner.command(publishPath, {
+        revisionId: second.body.id,
+        expectedDocumentVersion: 4,
+      } satisfies Schemas["PublishRequest"]),
+      "Job",
+      202,
+    );
+    const historical = await success(
+      await owner.command(publishPath, firstInput, { key: publishKey }),
+      "Job",
+      202,
+    );
+    expect(historical).toEqual(firstJob);
+    expect((await owner.read(`${base()}/documents/${document.body.id}`, "Document")).body).toMatchObject({
+      version: 5,
+      publishedRevisionId: second.body.id,
+    });
+    await assertProblem(await owner.command(publishPath, firstInput), 412);
+    const unrelated = await createPair();
+    const unrelatedRevision = await success(
+      await owner.command(drafts(unrelated.document.body.id), starter(), { revision: '"1"' }),
+      "Revision",
+      201,
+    );
+    await assertProblem(
+      await owner.command(publishPath, {
+        revisionId: unrelatedRevision.body.id,
+        expectedDocumentVersion: 5,
+      } satisfies Schemas["PublishRequest"]),
+      404,
+    );
+    const rollbackPath = `${base()}/documents/${document.body.id}/rollback`;
+    const rollbackKey = randomUUID();
+    const rollbackInput: Schemas["PublishRequest"] = {
+      revisionId: first.body.id,
+      expectedDocumentVersion: 5,
+    };
+    const rollback = await success(
+      await owner.command(rollbackPath, rollbackInput, { key: rollbackKey }),
+      "Job",
+      202,
+    );
+    expect(rollback.body).toMatchObject({ state: "succeeded", kind: "document.rolledback" });
+    expect(rollback.etag).toBe('"6"');
+    expect(
+      await success(await owner.command(rollbackPath, rollbackInput, { key: rollbackKey }), "Job", 202),
+    ).toEqual(rollback);
+    expect((await owner.read(`${base()}/documents/${document.body.id}`, "Document")).body).toMatchObject({
+      version: 6,
+      publishedRevisionId: first.body.id,
+    });
+    expect((await owner.read(`${base()}/sites/${site.body.id}`, "Site")).body).toMatchObject({
+      state: "draft",
+      publishedAt: null,
+    });
+    await assertProblem(await owner.request(`/v1/public/sites/${site.body.id}/listings`), 404);
   });
 
   it("creates a profile-bound site and a private document without saving or publishing implicitly", async () => {

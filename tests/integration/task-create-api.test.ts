@@ -314,8 +314,10 @@ describe("ADR044 exact Task creation receipt and transaction effects", () => {
   it("different explicit keys create deliberate independent Tasks rather than deduping by title/time", async () => {
     const { leadId } = await source(),
       body = input(leadId),
+      keys = [randomUUID(), randomUUID()],
       before = await effects();
-    const tasks = await Promise.all((await Promise.all([post(body), post(body)])).map(receipt));
+    expect(keys[0]).not.toBe(keys[1]);
+    const tasks = await Promise.all((await Promise.all(keys.map((key) => post(body, key)))).map(receipt));
     expect(tasks[0].id).not.toBe(tasks[1].id);
     expect(await effects()).toEqual({
       ...before,
@@ -323,6 +325,12 @@ describe("ADR044 exact Task creation receipt and transaction effects", () => {
       activities: before.activities + 2,
       audits: before.audits + 2,
       receipts: before.receipts + 2,
+    });
+    await unchanged(async () => {
+      const replayed = await Promise.all(
+        (await Promise.all(keys.map((key) => post(body, key)))).map(receipt),
+      );
+      expect(replayed).toEqual(tasks);
     });
   });
   it("historical receipt after later Task update returns version1 without replacing current version/title/state", async () => {

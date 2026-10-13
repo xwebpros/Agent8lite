@@ -238,7 +238,8 @@ describe("ADR040 independent durable Contact POST and Lead POST", () => {
       ).map((r) => receipt(r, "Lead")),
     );
     expect(values[0]).toEqual(values[1]);
-    expect(values[0]).toMatchObject({ ...body, stageId: stageId(1, 1), score: null, scoreVersion: null });
+    expect(values[0]).toMatchObject({ ...body, stageId: stageId(1, 1), score: 10, scoreVersion: "v1" });
+    expect((await agent.read(path("leads") + "/" + values[0].id, "Lead")).body).toEqual(values[0]);
     expect(await effects()).toEqual({
       ...before,
       leads: before.leads + 1,
@@ -317,6 +318,7 @@ describe("ADR040 independent durable Contact POST and Lead POST", () => {
       lk = randomUUID(),
       lb = leadInput(c.id),
       l = await receipt(await agent.command(path("leads"), lb, { key: lk }), "Lead");
+    expect(l).toMatchObject({ score: 10, scoreVersion: "v1" });
     const editedC = await agent.command(
       path("contacts") + "/" + c.id,
       { displayName: "Later current contact" },
@@ -329,12 +331,22 @@ describe("ADR040 independent durable Contact POST and Lead POST", () => {
       { method: "PATCH", revision: '"1"' },
     );
     expect(editedL.status).toBe(200);
+    const stageResponse = await agent.command(
+      path("leads") + "/" + l.id + "/stage-transitions",
+      { toStageId: stageId(1, 2) },
+      { revision: '"2"' },
+    );
+    expect(stageResponse.status).toBe(201);
+    const moved = await stageResponse.json();
+    assertContract("Lead", moved);
+    expect(moved).toMatchObject({ score: 18, scoreVersion: "v1", version: 3 });
+    expect((await agent.read(path("leads") + "/" + l.id, "Lead")).body).toEqual(moved);
     await unchanged(async () => {
       expect(await receipt(await agent.command(path("contacts"), cb, { key: ck }), "Contact")).toEqual(c);
       expect(await receipt(await agent.command(path("leads"), lb, { key: lk }), "Lead")).toEqual(l);
     });
     expect((await agent.read(path("contacts") + "/" + c.id, "Contact")).body.version).toBe(2);
-    expect((await agent.read(path("leads") + "/" + l.id, "Lead")).body.version).toBe(2);
+    expect((await agent.read(path("leads") + "/" + l.id, "Lead")).body).toEqual(moved);
   });
   it.each(["contacts", "leads"] as const)(
     "retains legacy hash and null stored ETag for %s",
@@ -348,9 +360,10 @@ describe("ADR040 independent durable Contact POST and Lead POST", () => {
       const hash = createHash("sha256")
         .update(stable({ body, expectedVersion: null }))
         .digest("hex");
+      const historical = resource === "leads" ? { ...first, score: null, scoreVersion: null } : first;
       await admin.query(
-        "UPDATE app.idempotency_record SET request_hash=$4,response_etag=NULL WHERE tenant_id=$1 AND route_key=$2 AND key=$3",
-        [fixtures.orgA, route(resource), key, hash],
+        "UPDATE app.idempotency_record SET request_hash=$4,response_etag=NULL,response_body=$5 WHERE tenant_id=$1 AND route_key=$2 AND key=$3",
+        [fixtures.orgA, route(resource), key, hash, JSON.stringify(historical)],
       );
       await unchanged(async () => {
         expect(
@@ -358,8 +371,10 @@ describe("ADR040 independent durable Contact POST and Lead POST", () => {
             await agent.command(path(resource), body, { key }),
             resource === "contacts" ? "Contact" : "Lead",
           ),
-        ).toEqual(first);
+        ).toEqual(historical);
       });
+      if (resource === "leads")
+        expect((await agent.read(path("leads") + "/" + first.id, "Lead")).body).toEqual(first);
     },
   );
   it("supplied legacy POST If-Match spelling binds the original hash but does not become CAS", async () => {

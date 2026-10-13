@@ -1415,7 +1415,7 @@ export class CrmService {
         capturePostJson({ source: "manual-synthetic-workspace", sourceId: command.body.sourceId }),
       ],
     );
-    const lead = leadPostReceipt(models.lead(inserted.rows[0]), command, context.memberId);
+    let lead = leadPostReceipt(models.lead(inserted.rows[0]), command, context.memberId);
     if (!(await this.client.query(leadStatement, [lead.id, context.memberId])).rowCount) notFound();
     if (
       !(
@@ -1460,6 +1460,13 @@ export class CrmService {
       ],
     );
     await current.captureAudit("lead", lead.id);
+    const finalLead = await this.client.query(
+      `SELECT * FROM app.lead WHERE tenant_id=app.current_tenant() AND id=$1
+       AND contact_id=$2 AND source_id=$3 AND row_version=$4`,
+      [lead.id, command.body.contactId, command.body.sourceId, lead.version],
+    );
+    if (finalLead.rowCount !== 1) notFound();
+    lead = leadPostReceipt(models.lead(finalLead.rows[0]), command, context.memberId);
     await current.recordCapturePost(command, lead);
     await current.finishCapturePost(command);
     return { body: lead, status: 201, etag: '"1"' };
@@ -1674,7 +1681,7 @@ export class CrmService {
     );
     if (!updated.rowCount)
       throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
-    const lead = leadPatchReceipt(models.lead(updated.rows[0]), command);
+    let lead = leadPatchReceipt(models.lead(updated.rows[0]), command);
     if (lead.contactId.toLowerCase() !== contactId || lead.sourceId.toLowerCase() !== sourceId) notFound();
     await assertSources();
     if (changedOwner) {
@@ -1726,6 +1733,15 @@ export class CrmService {
         timestamp,
       ],
     );
+    // Activity scoring runs synchronously in this transaction. A new receipt
+    // freezes the exact committed command state, including its own derived score.
+    const finalLead = await this.client.query(
+      `SELECT * FROM app.lead WHERE tenant_id=app.current_tenant() AND id=$1
+       AND contact_id=$2 AND source_id=$3 AND row_version=$4`,
+      [command.id, contactId, sourceId, lead.version],
+    );
+    if (finalLead.rowCount !== 1) notFound();
+    lead = leadPatchReceipt(models.lead(finalLead.rows[0]), command);
     await this.client.query(
       `INSERT INTO app.idempotency_record
        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,response_ref,expires_at,created_at,updated_at)
@@ -1926,7 +1942,7 @@ export class CrmService {
     );
     if (!updated.rowCount)
       throw new AccessError(412, "revision_changed", "Resource changed. Reload before retrying.");
-    const lead = stageTransitionReceipt(models.lead(updated.rows[0]), command);
+    let lead = stageTransitionReceipt(models.lead(updated.rows[0]), command);
     if (lead.contactId.toLowerCase() !== contactId || lead.sourceId.toLowerCase() !== sourceId) notFound();
     await assertSources();
     await this.client.query(
@@ -1958,6 +1974,13 @@ export class CrmService {
         JSON.stringify({ title: "A lead's pipeline stage was updated", href: "/pipeline" }),
       ]);
     }
+    const finalLead = await this.client.query(
+      `SELECT * FROM app.lead WHERE tenant_id=app.current_tenant() AND id=$1
+       AND contact_id=$2 AND source_id=$3 AND row_version=$4`,
+      [command.id, contactId, sourceId, lead.version],
+    );
+    if (finalLead.rowCount !== 1) notFound();
+    lead = stageTransitionReceipt(models.lead(finalLead.rows[0]), command);
     await this.client.query(
       `INSERT INTO app.idempotency_record
        (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
@@ -2095,7 +2118,7 @@ export class CrmService {
     for (const source of leadSources) {
       const locked =
         (
-          await this.client.query(`${leadStatement} AND l.contact_id=$3 FOR SHARE OF l`, [
+          await this.client.query(`${leadStatement} AND l.contact_id=$3 FOR UPDATE OF l`, [
             source.id,
             context.memberId,
             source.contactId,
@@ -2363,7 +2386,7 @@ export class CrmService {
     for (const source of sources) {
       const bound =
         (
-          await this.client.query(`${leadStatement} AND l.contact_id=$3 FOR SHARE OF l`, [
+          await this.client.query(`${leadStatement} AND l.contact_id=$3 FOR UPDATE OF l`, [
             source.id,
             context.memberId,
             source.contactId,

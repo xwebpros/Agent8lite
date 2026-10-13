@@ -742,6 +742,7 @@ export class CmsService {
     headers: CommandHeaders,
   ): Promise<Mutation<Schemas["Job"]>> {
     await this.authorize("content.publish");
+    validateSchema("PublishRequest", body);
     assertUuid(id);
     assertUuid(body.revisionId);
     const doc = await this.document(id, true);
@@ -785,6 +786,7 @@ export class CmsService {
     headers: CommandHeaders,
   ): Promise<Mutation<Schemas["Job"]>> {
     await this.authorize("content.publish");
+    validateSchema("PublishRequest", body);
     assertUuid(id);
     assertUuid(body.revisionId);
     const doc = await this.document(id, true);

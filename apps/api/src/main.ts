@@ -1059,63 +1059,8 @@ class ApiController {
             return response;
           }
           if (resource === "broadcast-confirmations") {
-            localAccess(req);
-            if (req.method !== "POST" || id || action)
-              throw new AccessError(404, "route_unavailable", "Route unavailable.");
-            if (Object.keys(req.query).length)
-              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
-            requirePermission(context, spec["x-permission"]);
-            await requireEntitlement(client, spec["x-permission"]);
-            const body = req.body;
-            validateSchema("PreviewConfirm", body);
-            assertUuid(body.previewId);
-            const preview = await client.query(
-              `SELECT ir.response_ref,ir.response_body,ir.expires_at>clock_timestamp() AS unexpired
-               FROM app.idempotency_record ir
-               WHERE ir.tenant_id=$1 AND ir.route_key LIKE 'POST /v1/orgs/%/broadcast-previews'
-                 AND ir.response_ref=$2 AND ir.actor_ref=$3`,
-              [context.organizationId, body.previewId, context.userId],
-            );
-            if (!preview.rowCount)
-              throw new AccessError(
-                404,
-                "preview_unavailable",
-                "Preview unavailable or outside your request scope.",
-              );
-            if (!preview.rows[0].unexpired)
-              throw new AccessError(409, "preview_expired", "Create a new preview before confirming.");
-            const jobRow = await client.query(
-              `INSERT INTO app.integration_job(tenant_id,kind,state,result_ref,requesting_member_id,safe_result)
-               VALUES($1,'broadcast.synthetic.confirmation','queued',$2,$3,$4) RETURNING *`,
-              [
-                context.organizationId,
-                body.previewId,
-                context.memberId,
-                JSON.stringify({ externalDelivery: false, deliveryMode: "no-delivery" }),
-              ],
-            );
-            await client.query(
-              `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff)
-               VALUES($1,$2,'broadcast.confirmed','broadcast_confirmation',$3,$4,$5)`,
-              [
-                context.organizationId,
-                context.userId,
-                jobRow.rows[0].id,
-                traceId,
-                JSON.stringify({ previewId: body.previewId }),
-              ],
-            );
-            const response: ApiCommandResponse = {
-              body: {
-                id: jobRow.rows[0].id,
-                kind: jobRow.rows[0].kind,
-                state: jobRow.rows[0].state,
-                createdAt: jobRow.rows[0].created_at.toISOString(),
-              },
-              status: 202,
-            };
-            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
-            return response;
+            // ADR-051 approves preview only; confirmation needs reviewed current consent/provider gates.
+            throw new AccessError(404, "route_unavailable", "Broadcast confirmation is unavailable.");
           }
           if (resource === "broadcast-previews") {
             localAccess(req);

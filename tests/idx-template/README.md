@@ -76,6 +76,8 @@ node tests/idx-template/run.mjs tests/idx-template/http.integration.test.ts
 
 The bounded regression mode runs the existing native CMS draft/publication suite, legacy lead/routing capture APIs, and the foundation notification producer and contact/lead/task/deal filter suites against new databases on this same verified cluster:
 
+The explicit allowlist also includes member-session, native MLS reads, automation/marketing preview/draft, relational contact search, guarded native features, Lead assignment/stage/capture and Task creation/update/scoring repairs. Each file gets a new database and checked ephemeral API; pass exact listed paths after `--regression` to select a focused run. Historical receipt assertions and current authority/expiry/real-lock checks remain strict.
+
 ```powershell
 node tests/idx-template/run.mjs --regression
 ```

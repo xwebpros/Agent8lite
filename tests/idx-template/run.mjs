@@ -387,6 +387,16 @@ async function main() {
       "tests/integration/deal-filter-api.test.ts",
       "tests/integration/synthetic-session-boundary.test.ts",
       "tests/mls/read-api.integration.test.ts",
+      "tests/integration/automation-service.test.ts",
+      "tests/integration/broadcast-preview-api.test.ts",
+      "tests/integration/campaign-draft-service.test.ts",
+      "tests/integration/contact-search-api.test.ts",
+      "tests/integration/lead-assignment-api.test.ts",
+      "tests/integration/native-feature-api.test.ts",
+      "tests/integration/task-create-api.test.ts",
+      "tests/integration/task-edit-api.test.ts",
+      "tests/integration/stage-transition-api.test.ts",
+      "tests/integration/scoring-api.test.ts",
     ]);
     const files = args.length > 1 ? args.slice(1) : [...approved];
     if (files.some((file) => !approved.has(file))) throw new Error("idx_test_regression_not_approved");

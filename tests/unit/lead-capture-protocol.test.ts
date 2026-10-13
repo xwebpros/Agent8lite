@@ -137,6 +137,13 @@ describe("ADR040 immutable two-step creation without a compound atomicity promis
     expect(value.protocol.acknowledge(next, lead(), '"1"')).toBe("lead");
     expect(next.body.sourceId).toBe(sourceId.toUpperCase());
   });
+  it("a measured score and its version acknowledge the exact retained Lead command", () => {
+    const value = leadSetup();
+    expect(
+      value.protocol.acknowledge(value.command, { ...lead(), score: 10, scoreVersion: "v1" }, '"1"'),
+    ).toBe("lead");
+    expect(value.protocol.getSnapshot()).toEqual({ phase: "acknowledged", sequence: null, command: null });
+  });
   it.each([null, 'W/"1"', '"01"', '"2"', "1"])(
     "unverified Contact ETag %s cannot advance to lead",
     (etag) => {
