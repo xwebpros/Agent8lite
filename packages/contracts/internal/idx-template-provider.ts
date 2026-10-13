@@ -1,4 +1,5 @@
 import type { components, operations } from "../generated/api";
+import type { PoolClient } from "pg";
 
 type Schemas = components["schemas"];
 export type IdxTemplateQuery = NonNullable<operations["searchIdxTemplateListings"]["parameters"]["query"]>;
@@ -23,4 +24,5 @@ export interface IdxTemplateProvider {
 export type IdxTemplateProviderFactory = (
   binding: IdxTemplateProviderBinding,
   assertCurrent: () => Promise<void>,
+  client?: PoolClient,
 ) => IdxTemplateProvider;

@@ -55,6 +55,10 @@ CREATE TABLE app.idx_template_binding (
 -- one loopback origin. Active verified-domain origins identify exactly one site.
 CREATE UNIQUE INDEX idx_template_active_verified_origin ON app.idx_template_binding(origin)
   WHERE domain_id IS NOT NULL AND state='active';
+-- A public UUID/origin pair must never bootstrap two tenant identities, even
+-- when different tenants have deliberately chosen identical UUID values.
+CREATE UNIQUE INDEX idx_template_active_site_origin ON app.idx_template_binding(site_id,origin)
+  WHERE state='active';
 
 -- Trusted listing-key mappings are provisioning data, never a public-body claim
 -- or a match of MLS display names/email addresses to platform identities.
