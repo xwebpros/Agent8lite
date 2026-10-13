@@ -1,5 +1,20 @@
 # Implementation status — 2026-10-13
 
+## Enrollment and organization integration tests — 2026-10-13
+
+**Committed:**
+- `6774b0e` feat: add enrollment and organization integration tests, fix enrollment path mapping
+
+**New tests:** 10 shared-DB integration tests across 2 new suites:
+- `organization-api.test.ts` (5 tests): GET org with ETag, fabricated org denial (403), PATCH org name, stale revision (412), fabricated org PATCH denial
+- `enrollments-api.test.ts` (5 tests): enroll lead in published campaign version, list enrollments, cancel active enrollment, double-cancel rejection (409), fabricated lead rejection
+
+**Bug fix:** Added `enrollments: "enrollmentId"` to resourceId map in `main.ts` so contract validation matches the OpenAPI path for enrollment cancel operations.
+
+**Test evidence:** 270/270 integration tests (shared DB, 34 suites), 737/737 package tests, TypeScript clean.
+
+---
+
 ## Dispatch integration tests and runtime grants — 2026-10-13
 
 **Committed:**

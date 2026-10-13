@@ -1,7 +1,7 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Updated:** 2026-10-13 at commit `e375eed` — 200 integration tests across 27 suites.
+**Updated:** 2026-10-13 at commit `6774b0e` — 270 integration tests across 34 suites.
 **Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
@@ -20,7 +20,7 @@
 |-----|--------|----------|-------|
 | MOD-A-001 | Partial | `admin-service.ts` invite/accept; `invitation-api.test.ts` (7 tests); `admin-api.test.ts` (14 tests) | Provisioning bootstrap seeds roles/stages/sources/profile via `packages/db/seed.ts`. Invitation hashing/expiry/one-use verified. Durable job state (pending/ready/failed) in `integration_job`. Full provisioning flow (new org creation) not tested end-to-end yet. |
 | MOD-A-002 | Implemented | `admin-api.test.ts`: custom roles, delegation scope, reserved names; `admin-service.ts` lines 183-207 | 6 presets seeded. Delegation check prevents scope escalation. Owner name reserved. |
-| MOD-A-003 | Implemented | `offices-profiles-api.test.ts` (12 tests); `admin-api.test.ts` org update/stale; `crm-api.test.ts` org switch; `member-management-api.test.ts` (4 tests) | Optimistic versions on org/office/profile/role/member. Audit events emitted. Multi-org identity switch verified. |
+| MOD-A-003 | Implemented | `offices-profiles-api.test.ts` (12 tests); `admin-api.test.ts` org update/stale; `organization-api.test.ts` (5 tests); `crm-api.test.ts` org switch; `member-management-api.test.ts` (4 tests) | Optimistic versions on org/office/profile/role/member. Audit events emitted. Multi-org identity switch verified. Org GET/PATCH, fabricated org denial, stale revision tested. |
 | MOD-A-004 | Implemented | `billing-api.test.ts` (9 tests): preview/confirm/reconcile/portal | Subscription, capabilities, invoices, preview/confirm flow verified. |
 | MOD-A-005 | Implemented | `billing-api.test.ts`: webhook reconciliation, durable jobs | Stripe adapter with idempotent reconciliation. Failed provisioning stays failed. |
 | MOD-A-006 | Partial | `staff-feature-api.test.ts`, `staff-support-api.test.ts` (disposable DB) | Staff identity/grant/banner implemented. Time-bound grants in `staff_access_grant`. Requires disposable DB for full verification. |
@@ -85,7 +85,7 @@
 | Req | Status | Evidence | Notes |
 |-----|--------|----------|-------|
 | MOD-E-001–003 | Implemented | `campaign-draft-service.test.ts`, `campaign-workflow-service.test.ts`: campaign versioning, draft CRUD, workflow publish. `broadcast-preview-api.test.ts`: audience preview with consent eligibility. | Campaign drafts, message designs and workflow versions implemented. |
-| MOD-E-004 | Implemented | `automation-service.ts`: automation CRUD + enrollment. `automation-workspace.tsx`: frontend list/create/toggle/enroll/cancel. `action-worker.ts`: scheduled-action dispatch worker claims pending actions, checks consent, records synthetic delivery attempts. `POST /dev/dispatch-actions` dev route. | Worker uses `FOR UPDATE SKIP LOCKED` for safe concurrent processing. |
+| MOD-E-004 | Implemented | `automation-service.ts`: automation CRUD + enrollment. `automation-workspace.tsx`: frontend list/create/toggle/enroll/cancel. `enrollments-api.test.ts` (5 tests): enroll/list/cancel/double-cancel/fabricated-lead. `action-worker.ts`: scheduled-action dispatch worker claims pending actions, checks consent, records synthetic delivery attempts. `POST /dev/dispatch-actions` dev route. | Worker uses `FOR UPDATE SKIP LOCKED` for safe concurrent processing. Enrollment CRUD verified via shared-DB integration tests. |
 | MOD-E-005 | Implemented | `dispatch-service.ts`: no-delivery transport adapter. `POST /dev/dispatch-broadcasts` dev route. Consent eligibility checked per lead. Synthetic delivery results recorded in `integration_job.safe_result`. | No real messages sent. Live send gated on provider. |
 | MOD-E-006 | Implemented | Broadcast confirmation `POST /v1/orgs/:orgId/broadcast-confirmations` now requires `Idempotency-Key` header, uses advisory lock and `idempotency_record` for replay. All other campaign/automation mutations already had idempotency. | |
 | MOD-E-007 | Implemented | `dispatch-service.ts` checks `app.consent_state` and `app.suppression` per lead before synthetic dispatch. Withdrawn consent or active suppression prevents delivery. | Live consent review still required before production. |
@@ -199,7 +199,7 @@
 | Category | Count | Suites |
 |----------|-------|--------|
 | Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 260 | 32 |
+| Integration (shared DB) | 270 | 34 |
 | Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
 | Unit | 2,534 | 79 |
 | Package | 737 | 15 |
