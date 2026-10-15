@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import presets from "../contracts/role-presets.json";
 import permissionCatalog from "../contracts/permission-catalog.json";
 import { fixtures as f, roleId, stageId } from "./fixtures";
@@ -159,6 +160,21 @@ export async function seed() {
       );
     }
     await seedNativeReadFixtures(client);
+    const existingVapid = await client.query(
+      `SELECT 1 FROM app.instance_config WHERE key='vapid_public_key'`,
+    );
+    if (!existingVapid.rowCount) {
+      const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+      const pubRaw = publicKey.export({ type: "spki", format: "der" });
+      const uncompressed = pubRaw.subarray(pubRaw.length - 65);
+      const pubB64 = Buffer.from(uncompressed).toString("base64url");
+      const privJwk = privateKey.export({ type: "pkcs8", format: "pem" }) as string;
+      await client.query(
+        `INSERT INTO app.instance_config(key,value) VALUES('vapid_public_key',$1),('vapid_private_key',$2) ON CONFLICT(key) DO NOTHING`,
+        [pubB64, privJwk],
+      );
+      console.log("Generated synthetic VAPID key pair for push notifications.");
+    }
     await client.query("COMMIT");
     console.log("Seeded two organizations and synthetic identities; no external services contacted.");
   } catch (error) {

@@ -5,6 +5,7 @@ import type { components } from "../../../packages/contracts/generated/api";
 import { AccessError, requirePermission, type TenantContext } from "../../../packages/db/tenant-transaction";
 import { MockBillingProvider, SYNTHETIC_BILLING_TERMS } from "../../../packages/providers/billing/mock";
 import type { BillingPlan } from "../../../packages/providers/billing/port";
+import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { assertUuid, CrmService, stable } from "./crm-service";
 
 type Schemas = components["schemas"];
@@ -442,5 +443,18 @@ export class BillingService {
         "This provider event ID was already used for a different command or reference.",
       );
     return this.reconcile(event.commandId, event.providerReference);
+  }
+  async openPortal(): Promise<{ body: Schemas["HostedFlow"]; status: number }> {
+    requirePermission(this.context, "billing.manage");
+    const adapter = this.ready();
+    await requireEntitlement(this.client, "billing.manage");
+    const session = await adapter.createPortalSession(this.context.organizationId);
+    await new CrmService(this.client, this.context, this.traceId).audit(
+      "billing.portal_opened",
+      "organization",
+      this.context.organizationId,
+      1,
+    );
+    return { body: { url: session.url, expiresAt: session.expiresAt }, status: 201 };
   }
 }

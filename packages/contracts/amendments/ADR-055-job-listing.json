@@ -1,0 +1,7 @@
+{
+  "amendment": "ADR-055",
+  "description": "Additive job listing endpoint for dispatch worker visibility",
+  "paths": {
+    "/v1/orgs/{orgId}/jobs": true
+  }
+}

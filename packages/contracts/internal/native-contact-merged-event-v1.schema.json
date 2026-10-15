@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example/schemas/internal/contact-merged-event-v1",
+  "title": "Native contact merged reference event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "type",
+    "version",
+    "tenantId",
+    "occurredAt",
+    "ingestedAt",
+    "producer",
+    "aggregateType",
+    "aggregateId",
+    "correlationId",
+    "payload"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "type": { "const": "contact.merged" },
+    "version": { "const": 1 },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "ingestedAt": { "type": "string", "format": "date-time" },
+    "producer": { "const": "crm" },
+    "aggregateType": { "const": "contact" },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "survivorContactId",
+        "survivorVersion",
+        "mergedContactId",
+        "mergedVersion",
+        "channelsMoved",
+        "channelsCombined",
+        "leadsMoved"
+      ],
+      "properties": {
+        "survivorContactId": { "type": "string", "format": "uuid" },
+        "survivorVersion": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "mergedContactId": { "type": "string", "format": "uuid" },
+        "mergedVersion": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "channelsMoved": { "type": "integer", "minimum": 0 },
+        "channelsCombined": { "type": "integer", "minimum": 0 },
+        "leadsMoved": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

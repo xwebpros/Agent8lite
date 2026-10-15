@@ -18,6 +18,8 @@ import {
 import { validateStaff } from "./validation";
 import { SupportService, type StaffSessionView } from "./support-service";
 import { SupportCrmReader } from "./support-crm-read";
+import { StaffPrincipalService } from "./staff-principal-service";
+import { PlatformService } from "./platform-service";
 import type {
   SupportGrantReference,
   SupportResource,
@@ -168,12 +170,21 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
       `^/dev/staff/support/organizations/(${uuid})/crm/(contacts|leads|tasks|deals|pipeline-stages|lead-sources|tags)(?:/(${uuid}))?$`,
     ).exec(path);
     const contextCommand = path === "/dev/staff/support/select" || path === "/dev/staff/support/clear";
+    const principalList = path === "/dev/staff/principals";
+    const principalDetail = new RegExp(`^/dev/staff/principals/(${uuid})$`).exec(path);
+    const principalDeactivate = new RegExp(`^/dev/staff/principals/(${uuid})/deactivate$`).exec(path);
+    const platformHealthSummary = path === "/v1/platform/health-summary";
+    const platformConfiguration = path === "/v1/platform/configuration";
+    const platformPlans = path === "/v1/platform/plans";
+    const platformPlanDetail = new RegExp(`^/v1/platform/plans/(${uuid})$`).exec(path);
+    const platformAuditEvents = path === "/v1/platform/audit-events";
     const owned =
       path === "/dev/staff/session" ||
       path === "/dev/staff/logout" ||
       path === "/v1/platform/organizations" ||
       path.startsWith("/dev/staff/support/") ||
-      Boolean(jobRoute || createGrant || revokeGrant || supportJob || supportRead || contextCommand);
+      Boolean(jobRoute || createGrant || revokeGrant || supportJob || supportRead || contextCommand || principalList || principalDetail || principalDeactivate) ||
+      platformHealthSummary || platformConfiguration || platformPlans || Boolean(platformPlanDetail) || platformAuditEvents;
     if (!owned) return false;
     const traceId = randomUUID();
     response.setHeader("Cache-Control", "private, no-store");
@@ -181,9 +192,9 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
     response.setHeader("X-Trace-Id", traceId);
     try {
       localAccess(request);
-      if (!["GET", "POST"].includes(method))
+      if (!["GET", "POST", "PATCH"].includes(method))
         throw new AccessError(405, "method_unavailable", "Method unavailable.");
-      if (method === "POST") origin(request, options.allowedOrigins);
+      if (method === "POST" || method === "PATCH") origin(request, options.allowedOrigins);
       if (path === "/dev/staff/session" && method === "POST") {
         const input = await body(request);
         validateStaff("SessionRequest", input);
@@ -209,7 +220,7 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
         );
         if (callback.searchParams.get("state") !== state)
           throw new AccessError(401, "staff_identity_unavailable", "Verified staff identity is unavailable.");
-        const verified = identity.verifyIdentityToken(
+        const verified = await identity.verifyIdentityToken(
           identity.exchange({
             clientId,
             redirectUri,
@@ -435,6 +446,139 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
           options.bootstrapPorts,
         );
         respond(response, 202, result);
+        return true;
+      }
+      if (principalList && method === "GET") {
+        const url = new URL(request.url!, options.allowedOrigins[0]);
+        const result = await withStaffTransaction(options.control, opaque, (client, session) =>
+          new StaffPrincipalService(client, session, traceId).list({
+            limit: url.searchParams.get("limit") ?? undefined,
+            cursor: url.searchParams.get("cursor") ?? undefined,
+          }),
+        );
+        respond(response, 200, result);
+        return true;
+      }
+      if (principalList && method === "POST") {
+        const input = await body(request);
+        validateStaff("StaffPrincipalCreate", input);
+        const result = await withStaffTransaction(options.control, opaque, (client, session) => {
+          verifyStaffCsrf(session, value(request, "x-csrf-token"));
+          return new StaffPrincipalService(client, session, traceId).create(
+            (input as { userId: string }).userId,
+            (input as { permissionCodes: string[] }).permissionCodes,
+            value(request, "idempotency-key") ?? "",
+          );
+        });
+        respond(response, 201, result);
+        return true;
+      }
+      if (principalDetail && method === "GET") {
+        const result = await withStaffTransaction(options.control, opaque, (client, session) =>
+          new StaffPrincipalService(client, session, traceId).read(principalDetail[1]),
+        );
+        response.setHeader("ETag", `"${result.rowVersion}"`);
+        respond(response, 200, result);
+        return true;
+      }
+      if (principalDetail && method === "POST") {
+        const input = await body(request);
+        validateStaff("StaffPrincipalUpdate", input);
+        const result = await withStaffTransaction(options.control, opaque, (client, session) => {
+          verifyStaffCsrf(session, value(request, "x-csrf-token"));
+          return new StaffPrincipalService(client, session, traceId).update(
+            principalDetail[1],
+            input as { permissionCodes?: string[]; active?: boolean },
+            (value(request, "if-match") ?? "").replace(/"/g, ""),
+          );
+        });
+        response.setHeader("ETag", `"${result.rowVersion}"`);
+        respond(response, 200, result);
+        return true;
+      }
+      if (principalDeactivate && method === "POST") {
+        validateStaff("EmptyCommand", await body(request));
+        const result = await withStaffTransaction(options.control, opaque, (client, session) => {
+          verifyStaffCsrf(session, value(request, "x-csrf-token"));
+          return new StaffPrincipalService(client, session, traceId).deactivate(
+            principalDeactivate[1],
+            (value(request, "if-match") ?? "").replace(/"/g, ""),
+          );
+        });
+        response.setHeader("ETag", `"${result.rowVersion}"`);
+        respond(response, 200, result);
+        return true;
+      }
+      if (platformHealthSummary && method === "GET") {
+        const result = await withStaffTransaction(options.control, opaque, (client, session) =>
+          new PlatformService(client, session, traceId).healthSummary(),
+        );
+        respond(response, 200, result);
+        return true;
+      }
+      if (platformConfiguration && method === "GET") {
+        const result = await withStaffTransaction(options.control, opaque, (client, session) =>
+          new PlatformService(client, session, traceId).configuration(),
+        );
+        respond(response, 200, result);
+        return true;
+      }
+      if (platformPlans && method === "GET") {
+        const url = new URL(request.url!, options.allowedOrigins[0]);
+        if (
+          [...url.searchParams.keys()].some((key) => !["limit", "cursor"].includes(key)) ||
+          [...new Set(url.searchParams.keys())].some((key) => url.searchParams.getAll(key).length !== 1)
+        )
+          throw new AccessError(422, "query_invalid", "Only a single limit and cursor are supported.");
+        const result = await withStaffTransaction(options.control, opaque, (client, session) =>
+          new PlatformService(client, session, traceId).listPlans({
+            limit: url.searchParams.get("limit") ?? undefined,
+            cursor: url.searchParams.get("cursor") ?? undefined,
+          }),
+        );
+        respond(response, 200, result);
+        return true;
+      }
+      if (platformPlans && method === "POST") {
+        const input = await body(request);
+        const result = await withStaffTransaction(options.control, opaque, (client, session) => {
+          verifyStaffCsrf(session, value(request, "x-csrf-token"));
+          return new PlatformService(client, session, traceId).createPlan(
+            input as Parameters<PlatformService["createPlan"]>[0],
+          );
+        });
+        response.setHeader("ETag", `"${result.version}"`);
+        respond(response, 201, result);
+        return true;
+      }
+      if (platformPlanDetail && method === "PATCH") {
+        const input = await body(request);
+        const result = await withStaffTransaction(options.control, opaque, (client, session) => {
+          verifyStaffCsrf(session, value(request, "x-csrf-token"));
+          return new PlatformService(client, session, traceId).updatePlan(
+            platformPlanDetail[1],
+            input as Parameters<PlatformService["updatePlan"]>[1],
+            (value(request, "if-match") ?? "").replace(/"/g, ""),
+          );
+        });
+        response.setHeader("ETag", `"${result.version}"`);
+        respond(response, 200, result);
+        return true;
+      }
+      if (platformAuditEvents && method === "GET") {
+        const url = new URL(request.url!, options.allowedOrigins[0]);
+        if (
+          [...url.searchParams.keys()].some((key) => !["limit", "cursor"].includes(key)) ||
+          [...new Set(url.searchParams.keys())].some((key) => url.searchParams.getAll(key).length !== 1)
+        )
+          throw new AccessError(422, "query_invalid", "Only a single limit and cursor are supported.");
+        const result = await withStaffTransaction(options.control, opaque, (client, session) =>
+          new PlatformService(client, session, traceId).listAuditEvents({
+            limit: url.searchParams.get("limit") ?? undefined,
+            cursor: url.searchParams.get("cursor") ?? undefined,
+          }),
+        );
+        respond(response, 200, result);
         return true;
       }
       throw new AccessError(404, "route_unavailable", "Route unavailable.");

@@ -13,6 +13,8 @@ import { Badge, Button, Empty } from "../../../packages/ui/components";
 import { CmsDraftController } from "../features/cms/draft-controller";
 import type { CmsDraftClient } from "../features/cms/draft-controller";
 import { CmsDraftEditor } from "../features/cms/draft-editor";
+import { CmsSiteManagement } from "../features/cms/site-management";
+import { CmsDocumentPublication } from "../features/cms/document-publication";
 import { api, ApiError } from "../lib/api";
 import type { Schema } from "../lib/api";
 import styles from "./cms-workspace.module.css";
@@ -414,6 +416,10 @@ export default function CmsWorkspace({
   const canWriteContent = has("content.write");
   const canWriteSites = has("sites.write");
   const canReadProfiles = has("profiles.read");
+  const canManageDomains = has("domains.manage");
+  const canWriteMedia = has("media.write");
+  const canWriteForms = has("forms.write");
+  const canPublishContent = has("content.publish");
   const base = `/v1/orgs/${session.activeOrgId}`;
   const [dataContext, setDataContext] = useState(context);
   const [sites, setSites] = useState<Schema<"Site">[]>([]);
@@ -1228,8 +1234,9 @@ export default function CmsWorkspace({
       <div className={styles.notice}>
         <FlaskConical size={22} aria-hidden="true" />
         <p>
-          This editor saves immutable private draft revisions. Publication, public preview, Puck, media,
-          domains and forms are unavailable in this slice. Links use local paths only.
+          This editor saves immutable private draft revisions. Publication, public preview and Puck are
+          unavailable in this slice. Domain management, media library and form catalogue are available when
+          the corresponding permissions are present. Links use local paths only.
         </p>
       </div>
       {!online && (
@@ -1386,6 +1393,20 @@ export default function CmsWorkspace({
           )}
         </div>
       </section>
+      {siteId && (canManageDomains || canWriteMedia || canWriteForms) && (
+        <CmsSiteManagement
+          siteId={siteId}
+          base={base}
+          csrf={csrf}
+          online={online}
+          canManageDomains={canManageDomains}
+          canWriteMedia={canWriteMedia}
+          canWriteForms={canWriteForms}
+        />
+      )}
+      {documentId && canPublishContent && currentData && (
+        <CmsDocumentPublication documentId={documentId} base={base} csrf={csrf} online={online} />
+      )}
       {form && (
         <section className={styles.card} aria-labelledby="cms-create-title">
           <h3 id="cms-create-title">

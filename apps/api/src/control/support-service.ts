@@ -231,7 +231,7 @@ export class SupportService implements SupportAccessPort {
       !grant ||
       !grant.live ||
       grant.revoked_at ||
-      grant.provenance !== "synthetic-local" ||
+      !["synthetic-local", "oidc-verified"].includes(grant.provenance) ||
       !grant.issuing_staff_user_id ||
       !grant.reason.trim() ||
       grant.reason.length > 1000 ||
@@ -282,7 +282,7 @@ export class SupportService implements SupportAccessPort {
       grantVersion: String(grant.row_version),
       expiresAt: new Date(grant.expires_at).toISOString(),
       permissionCodes: grant.permission_codes,
-      provenance: "synthetic-local",
+      provenance: this.staff.provenance,
     };
   }
   async assertCurrent(context: SupportReadContext, permission: string) {

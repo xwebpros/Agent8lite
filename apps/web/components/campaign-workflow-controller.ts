@@ -13,13 +13,29 @@ import {
   requireWorkflowPage,
   requireWorkflowVersion,
   sameWorkflowDefinition,
-  workflowLinearDefinition,
-  workflowLinearOrder,
   WorkflowResponseError,
   type WorkflowDefinition,
   type WorkflowDraftCommand,
   type WorkflowVersionReceipt,
 } from "./campaign-workflow-protocol";
+import {
+  definitionOutline,
+  findItem,
+  maxConditionDepth,
+  outlineDefinition,
+  outlineInsert,
+  outlineIssues,
+  outlineMove,
+  outlineNodes,
+  outlineRemove,
+  outlineReplaceNode,
+  outlineTargetDepth,
+  type Outline,
+  type OutlineTarget,
+} from "./campaign-workflow-outline";
+
+type LeadFilter = Schema<"LeadFilter">;
+export type ConditionField = keyof LeadFilter;
 
 export interface CampaignWorkflowClient {
   list(cursor?: string | null): Promise<unknown>;
@@ -36,6 +52,8 @@ export type CampaignWorkflowState = Readonly<{
   reading: boolean;
   selected: WorkflowVersionReceipt | null;
   draft: WorkflowDefinition | null;
+  /** Structured source of the draft; the draft is always its serialization. */
+  outline: Outline | null;
   dirty: boolean;
   pending: WorkflowDraftCommand | null;
   receipt: WorkflowVersionReceipt | null;
@@ -103,6 +121,7 @@ export class CampaignWorkflowController {
       reading: false,
       selected: null,
       draft: null,
+      outline: null,
       dirty: false,
       pending: null,
       receipt: null,
@@ -141,6 +160,7 @@ export class CampaignWorkflowController {
       reading: false,
       selected: null,
       draft: null,
+      outline: null,
       dirty: false,
       pending: null,
       receipt: null,
@@ -217,8 +237,12 @@ export class CampaignWorkflowController {
   sourceAccessLost(error: ApiError) {
     this.fail(error);
   }
-  private draftIssues(definition: WorkflowDefinition): readonly WorkflowIssue[] {
+  private draftIssues(
+    definition: WorkflowDefinition,
+    outline: Outline | null = this.state.outline,
+  ): readonly WorkflowIssue[] {
     return [
+      ...(outline ? outlineIssues(outline) : []),
       ...this.options.validate(definition),
       ...definition.nodes.flatMap((node, index) =>
         node.messageDesignId && this.unavailableDesigns.get(node.key) === node.messageDesignId
@@ -239,18 +263,19 @@ export class CampaignWorkflowController {
     this.update({ issues: this.draftIssues(this.state.draft!) });
   }
   chooseDesign(nodeKey: string, receipt: MessageDesignReceipt): boolean {
-    if (!this.mayEdit() || !this.state.draft) return false;
-    const node = this.state.draft.nodes.find((item) => item.key === nodeKey);
+    if (!this.mayEdit() || !this.state.outline) return false;
+    const node = findItem(this.state.outline, nodeKey)?.node;
     if (!node || (node.kind !== "email" && node.kind !== "sms")) return false;
     try {
       const verified = requireWorkflowDesign(receipt.data, receipt.etag, receipt.data.id, node.kind);
       this.unavailableDesigns.delete(nodeKey);
-      this.replaceDraft({
-        ...this.state.draft,
-        nodes: this.state.draft.nodes.map((item) =>
-          item.key === nodeKey ? { key: item.key, kind: item.kind, messageDesignId: verified.data.id } : item,
-        ),
+      const outline = outlineReplaceNode(this.state.outline, {
+        key: node.key,
+        kind: node.kind,
+        messageDesignId: verified.data.id,
       });
+      if (!outline) return false;
+      this.replaceOutline(outline);
       return true;
     } catch {
       this.update({ error: "Choose a current authorized native design for this step's channel." });
@@ -286,6 +311,7 @@ export class CampaignWorkflowController {
         ? {}
         : {
             draft: null,
+            outline: null,
             issues: [],
             phase: ["unavailable", "denied"].includes(this.state.phase) ? this.state.phase : "idle",
           }),
@@ -340,6 +366,7 @@ export class CampaignWorkflowController {
       this.update({
         selected,
         draft: null,
+        outline: null,
         dirty: false,
         phase: "idle",
         issues: [],
@@ -366,6 +393,7 @@ export class CampaignWorkflowController {
     this.unavailableDesigns.clear();
     this.update({
       draft,
+      outline: [],
       dirty: true,
       phase: "editing",
       selected: null,
@@ -374,27 +402,29 @@ export class CampaignWorkflowController {
       previewIssues: [],
       conditionChoices: {},
       error: "",
-      message: "New local workflow draft. Add a wait, task, or authorized message reference before saving.",
+      message:
+        "New local workflow draft. Add a wait, task, condition, or authorized message reference before saving.",
     });
     return true;
   }
   copySelected(): boolean {
     if (!this.mayReplace() || !this.state.canWrite || !this.state.selected) return false;
-    const definition = this.state.selected.data.definition;
-    if (!workflowLinearOrder(definition)) {
+    const definition = copyWorkflowJson(this.state.selected.data.definition);
+    const outline = definitionOutline(definition);
+    if (!outline) {
       this.update({
         message:
-          "This graph remains read-only. Its condition branches, joins or unsupported nodes cannot be authored in the linear editor.",
+          "This graph remains read-only. Its branches or joins cannot be represented in the structured editor without changing it.",
       });
       return false;
     }
-    const draft = copyWorkflowJson(definition);
     this.unavailableDesigns.clear();
     this.update({
-      draft,
+      draft: definition,
+      outline,
       dirty: true,
       phase: "editing",
-      issues: this.draftIssues(draft),
+      issues: this.draftIssues(definition, outline),
       preview: null,
       previewIssues: [],
       conditionChoices: {},
@@ -404,7 +434,20 @@ export class CampaignWorkflowController {
     });
     return true;
   }
-  private replaceDraft(draft: WorkflowDefinition) {
+  private replaceOutline(outline: Outline) {
+    const draft = copyWorkflowJson(outlineDefinition(outline, this.state.draft!));
+    this.update({
+      draft,
+      outline,
+      dirty: true,
+      issues: this.draftIssues(draft, outline),
+      error: "",
+      preview: null,
+      previewIssues: [],
+      conditionChoices: {},
+    });
+  }
+  private replaceDefinitionMetadata(draft: WorkflowDefinition) {
     this.update({
       draft: copyWorkflowJson(draft),
       dirty: true,
@@ -415,50 +458,59 @@ export class CampaignWorkflowController {
       conditionChoices: {},
     });
   }
-  add(kind: "wait" | "task" | "email" | "sms"): boolean {
-    if (!["wait", "task", "email", "sms"].includes(kind)) return false;
-    if (!this.mayEdit() || !this.state.draft || this.state.draft.nodes.length >= 100) return false;
-    const order = this.state.draft.nodes.length ? workflowLinearOrder(this.state.draft) : [];
-    if (!order) return false;
+  add(
+    kind: "wait" | "task" | "email" | "sms" | "condition",
+    target: OutlineTarget = { parent: null },
+  ): boolean {
+    if (!["wait", "task", "email", "sms", "condition"].includes(kind)) return false;
+    const outline = this.state.outline;
+    if (!this.mayEdit() || !outline || outlineNodes(outline).length >= 100) return false;
+    const depth = outlineTargetDepth(outline, target);
+    if (depth === null) return false;
+    if (kind === "condition" && depth + 1 > maxConditionDepth) {
+      this.update({ error: "Conditions can be nested at most three levels deep." });
+      return false;
+    }
     let key: string;
     do {
       key = `step_${++this.nodeSequence}`;
-    } while (this.state.draft.nodes.some((node) => node.key === key));
+    } while (findItem(outline, key));
     const node: Schema<"WorkflowNode"> =
       kind === "wait"
         ? { key, kind, delaySeconds: 0 }
         : kind === "task"
           ? { key, kind, taskTitle: "" }
-          : { key, kind };
-    const nodes = order.map((item) => this.state.draft!.nodes.find((current) => current.key === item)!);
-    this.replaceDraft(workflowLinearDefinition([...nodes, node], this.state.draft));
+          : kind === "condition"
+            ? { key, kind, condition: {} }
+            : { key, kind };
+    const next = outlineInsert(outline, target, node);
+    if (!next) return false;
+    this.replaceOutline(next);
     return true;
   }
   move(key: string, direction: -1 | 1): boolean {
-    if (!this.mayEdit() || !this.state.draft) return false;
-    const order = workflowLinearOrder(this.state.draft);
-    if (!order) return false;
-    const index = order.indexOf(key),
-      target = index + direction;
-    if (index < 0 || target < 0 || target >= order.length) return false;
-    const nodes = order.map((item) => this.state.draft!.nodes.find((current) => current.key === item)!);
-    [nodes[index], nodes[target]] = [nodes[target], nodes[index]];
-    this.replaceDraft(workflowLinearDefinition(nodes, this.state.draft));
+    if (!this.mayEdit() || !this.state.outline) return false;
+    const next = outlineMove(this.state.outline, key, direction);
+    if (!next) return false;
+    this.replaceOutline(next);
     return true;
   }
   remove(key: string): boolean {
-    if (!this.mayEdit() || !this.state.draft) return false;
-    const order = workflowLinearOrder(this.state.draft);
-    if (!order || !order.includes(key)) return false;
-    const nodes = order
-      .filter((item) => item !== key)
-      .map((item) => this.state.draft!.nodes.find((current) => current.key === item)!);
-    this.replaceDraft(workflowLinearDefinition(nodes, this.state.draft));
+    if (!this.mayEdit() || !this.state.outline) return false;
+    const item = findItem(this.state.outline, key);
+    if (item?.type === "condition" && (item.whenTrue.length || item.whenFalse.length)) {
+      this.update({ error: "Remove or move the steps in both branches before removing this condition." });
+      return false;
+    }
+    const next = outlineRemove(this.state.outline, key);
+    if (!next) return false;
+    this.unavailableDesigns.delete(key);
+    this.replaceOutline(next);
     return true;
   }
   editNode(key: string, value: string): boolean {
-    if (!this.mayEdit() || !this.state.draft) return false;
-    const node = this.state.draft.nodes.find((item) => item.key === key);
+    if (!this.mayEdit() || !this.state.outline) return false;
+    const node = findItem(this.state.outline, key)?.node;
     if (!node || !["wait", "task"].includes(node.kind)) return false;
     const replacement = { ...node };
     if (node.kind === "task") {
@@ -476,15 +528,51 @@ export class CampaignWorkflowController {
       }
       replacement.delaySeconds = number;
     }
-    this.replaceDraft({
-      ...this.state.draft,
-      nodes: this.state.draft.nodes.map((item) => (item.key === key ? replacement : item)),
-    });
+    const next = outlineReplaceNode(this.state.outline, replacement);
+    if (!next) return false;
+    this.replaceOutline(next);
+    return true;
+  }
+  /** Set or clear one allowlisted lead-filter predicate; an empty value removes it. */
+  editCondition(key: string, field: ConditionField, value: string | readonly string[] | null): boolean {
+    if (!this.mayEdit() || !this.state.outline) return false;
+    const node = findItem(this.state.outline, key)?.node;
+    if (!node || node.kind !== "condition") return false;
+    const condition: LeadFilter = { ...(node.condition ?? {}) };
+    const empty = value === null || value === "" || (Array.isArray(value) && !value.length);
+    if (field === "tagIds") {
+      if (!empty && (!Array.isArray(value) || value.length > 20)) {
+        this.update({ error: "Choose at most 20 tags for one condition." });
+        return false;
+      }
+      if (empty) delete condition.tagIds;
+      else condition.tagIds = [...(value as readonly string[])];
+    } else if (field === "q") {
+      if (typeof value === "string" && Array.from(value).length > 200) {
+        this.update({ error: "Name text exceeds 200 characters. Earlier fields are retained." });
+        return false;
+      }
+      if (empty) delete condition.q;
+      else if (typeof value === "string") condition.q = value;
+      else return false;
+    } else if (field === "intent") {
+      if (empty) delete condition.intent;
+      else if (value === "buyer" || value === "seller" || value === "both" || value === "unknown")
+        condition.intent = value;
+      else return false;
+    } else if (field === "stageId" || field === "sourceId" || field === "ownerMemberId") {
+      if (empty) delete condition[field];
+      else if (typeof value === "string") condition[field] = value;
+      else return false;
+    } else return false;
+    const next = outlineReplaceNode(this.state.outline, { key: node.key, kind: "condition", condition });
+    if (!next) return false;
+    this.replaceOutline(next);
     return true;
   }
   editTimezone(value: string): boolean {
     if (!this.mayEdit() || !this.state.draft || value.length > 80) return false;
-    this.replaceDraft({ ...this.state.draft, timezone: value });
+    this.replaceDefinitionMetadata({ ...this.state.draft, timezone: value });
     return true;
   }
   editQuietHours(value: WorkflowDefinition["quietHours"]): boolean {
@@ -492,7 +580,7 @@ export class CampaignWorkflowController {
     const draft = { ...this.state.draft };
     if (value) draft.quietHours = copyWorkflowJson(value);
     else delete draft.quietHours;
-    this.replaceDraft(draft);
+    this.replaceDefinitionMetadata(draft);
     return true;
   }
   discard(): boolean {
@@ -501,6 +589,7 @@ export class CampaignWorkflowController {
     this.unavailableDesigns.clear();
     this.update({
       draft: null,
+      outline: null,
       dirty: false,
       phase: "idle",
       issues: [],
@@ -621,6 +710,7 @@ export class CampaignWorkflowController {
         receipt,
         pending: null,
         draft: null,
+        outline: null,
         selected: null,
         dirty: false,
         phase: "acknowledged",

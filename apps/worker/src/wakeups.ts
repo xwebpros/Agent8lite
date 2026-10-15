@@ -135,7 +135,7 @@ function redisOptions(value: string): RedisOptions {
 export class RedisWakeups implements WakeupPublisher {
   private readonly producer: Redis;
   private readonly consumer: Redis;
-  private readonly queue: Queue<WorkerWakeup>;
+  private queue: Queue<WorkerWakeup> | undefined;
   private readonly worker: Worker<WorkerWakeup>;
   private closed = false;
   private closing: Promise<void> | undefined;
@@ -144,7 +144,7 @@ export class RedisWakeups implements WakeupPublisher {
     url: string,
     private readonly registry: TrustedContextRegistry,
     dispatch: ScopedOutboxDispatch,
-    namespace = "estate-synthetic-reference-v1",
+    private readonly namespace = "estate-synthetic-reference-v1",
   ) {
     if (!/^[a-z0-9-]{1,100}$/.test(namespace)) throw new Error("worker_queue_namespace_invalid");
     const connection = redisOptions(url);
@@ -157,18 +157,6 @@ export class RedisWakeups implements WakeupPublisher {
     this.consumer = new Redis({ ...connection, maxRetriesPerRequest: null });
     this.producer.on("error", () => {});
     this.consumer.on("error", () => {});
-    this.queue = new Queue<WorkerWakeup>(QUEUE, {
-      connection: this.producer,
-      prefix: namespace,
-      skipWaitingForReady: true,
-      streams: { events: { maxLen: 100 } },
-      defaultJobOptions: {
-        attempts: 1,
-        removeOnComplete: true,
-        removeOnFail: { age: 3600, count: 100 },
-      },
-    });
-    this.queue.on("error", () => {});
     this.worker = new Worker<WorkerWakeup>(
       QUEUE,
       async (job) => {
@@ -193,11 +181,37 @@ export class RedisWakeups implements WakeupPublisher {
     this.worker.on("error", () => {});
   }
 
+  /**
+   * The producer fails fast (no offline queue), and BullMQ's one-time initialization caches a
+   * failure from commands issued before the connection is ready. Construct the Queue only once
+   * the producer is ready so a Redis outage at start-up cannot permanently disable enqueueing.
+   */
+  private queueWhenReady(): Queue<WorkerWakeup> | undefined {
+    if (this.closed || this.producer.status !== "ready") return undefined;
+    this.queue ??= (() => {
+      const queue = new Queue<WorkerWakeup>(QUEUE, {
+        connection: this.producer,
+        prefix: this.namespace,
+        skipWaitingForReady: true,
+        streams: { events: { maxLen: 100 } },
+        defaultJobOptions: {
+          attempts: 1,
+          removeOnComplete: true,
+          removeOnFail: { age: 3600, count: 100 },
+        },
+      });
+      queue.on("error", () => {});
+      return queue;
+    })();
+    return this.queue;
+  }
+
   async enqueue(hint: WorkerWakeup): Promise<boolean> {
     this.registry.resolve(hint);
-    if (this.closed || this.producer.status !== "ready") return false;
+    const queue = this.queueWhenReady();
+    if (!queue) return false;
     try {
-      await this.queue.add("wake-context", hint, { jobId: hint.contextKey });
+      await queue.add("wake-context", hint, { jobId: hint.contextKey });
       return true;
     } catch {
       return false;
@@ -211,7 +225,7 @@ export class RedisWakeups implements WakeupPublisher {
       const stopped = this.worker.close(true);
       this.producer.disconnect();
       this.consumer.disconnect();
-      await Promise.allSettled([stopped, this.queue.close()]);
+      await Promise.allSettled([stopped, this.queue?.close()]);
     })();
     return this.closing;
   }

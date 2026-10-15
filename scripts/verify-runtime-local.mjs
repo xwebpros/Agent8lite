@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import { readPinnedNode } from "./node-runtime.mjs";
 
 // Explicitly local verification: no secret-file reads, migration identity, seed/reset or worker dispatch.
@@ -261,6 +263,178 @@ try {
       retained.activeOrgId === identity.activeOrgId,
     "runtime_local_session_failed",
   );
+  const contract = JSON.parse(await fs.readFile(path.join(root, "packages/contracts/openapi.json"), "utf8"));
+  const ajv = new Ajv({ strict: false });
+  addFormats(ajv);
+  ajv.addSchema({ $id: "contract", components: contract.components });
+  const contactPage = ajv.compile({ $ref: "contract#/components/schemas/PageContact" });
+  const contactPath = `/v1/orgs/${identity.activeOrgId}/contacts`;
+  const contactFilter = encodeURIComponent(JSON.stringify({ q: "Synthetic" }));
+  const contacts = await request(synthetic, `${contactPath}?limit=25&filter=${contactFilter}`, {
+    headers: { cookie },
+  });
+  check(
+    contacts.status === 200 &&
+      contactPage(await contacts.json()) &&
+      contacts.headers.get("cache-control")?.includes("private") &&
+      contacts.headers.get("cache-control")?.includes("no-store") &&
+      !contacts.headers.has("etag"),
+    "runtime_local_contact_search_failed",
+  );
+  const invalidContacts = await request(synthetic, `${contactPath}?scope=own`, { headers: { cookie } });
+  check(
+    invalidContacts.status === 422 && (await invalidContacts.json()).code === "query_invalid",
+    "runtime_local_contact_query_failed",
+  );
+  // Verify the compiled PATCH boundary against a proved-absent UUID; never edit an interactive record.
+  const absentContactPath = `${contactPath}/${randomUUID()}`;
+  const absentContact = await request(synthetic, absentContactPath, { headers: { cookie } });
+  check(absentContact.status === 404, "runtime_local_contact_probe_record_present");
+  const contactCommandHeaders = {
+    cookie,
+    origin,
+    "content-type": "application/json",
+    "x-csrf-token": csrf,
+    "idempotency-key": randomUUID(),
+    "if-match": '"1"',
+  };
+  const commandBody = JSON.stringify({ displayName: "Synthetic compiled boundary probe" });
+  const absentEdit = await request(synthetic, absentContactPath, {
+    method: "PATCH",
+    headers: contactCommandHeaders,
+    body: commandBody,
+  });
+  check(
+    absentEdit.status === 404 && (await absentEdit.json()).code === "resource_unavailable",
+    "runtime_local_contact_edit_boundary_failed",
+  );
+  const invalidEdit = await request(synthetic, `${absentContactPath}?scope=own`, {
+    method: "PATCH",
+    headers: contactCommandHeaders,
+    body: commandBody,
+  });
+  check(
+    invalidEdit.status === 422 && (await invalidEdit.json()).code === "query_invalid",
+    "runtime_local_contact_edit_query_failed",
+  );
+  // ADR-047 archive boundaries: proved-absent records and undeclared queries never reach a domain write.
+  for (const resource of ["contacts", "leads"]) {
+    const absentPath = `/v1/orgs/${identity.activeOrgId}/${resource}/${randomUUID()}`;
+    const absentRead = await request(synthetic, absentPath, { headers: { cookie } });
+    check(absentRead.status === 404, "runtime_local_archive_probe_record_present");
+    const archiveHeaders = {
+      cookie,
+      origin,
+      "x-csrf-token": csrf,
+      "idempotency-key": randomUUID(),
+    };
+    const absentArchive = await request(synthetic, `${absentPath}/archive`, {
+      method: "POST",
+      headers: archiveHeaders,
+    });
+    check(
+      absentArchive.status === 404 && (await absentArchive.json()).code === "resource_unavailable",
+      "runtime_local_archive_boundary_failed",
+    );
+    const invalidArchive = await request(synthetic, `${absentPath}/archive?force=true`, {
+      method: "POST",
+      headers: { ...archiveHeaders, "idempotency-key": randomUUID() },
+    });
+    check(
+      invalidArchive.status === 422 && (await invalidArchive.json()).code === "query_invalid",
+      "runtime_local_archive_query_failed",
+    );
+  }
+  // Missing idempotency keys keep these probes non-mutating even against an older generic route.
+  // The dedicated compiled POST boundaries must reject undeclared queries first.
+  const createHeaders = {
+    cookie,
+    origin,
+    "content-type": "application/json",
+    "x-csrf-token": csrf,
+  };
+  const invalidContactCreate = await request(synthetic, `${contactPath}?scope=own`, {
+    method: "POST",
+    headers: createHeaders,
+    body: JSON.stringify({ displayName: "Synthetic non-mutating boundary probe" }),
+  });
+  check(
+    invalidContactCreate.status === 422 && (await invalidContactCreate.json()).code === "query_invalid",
+    "runtime_local_contact_create_query_failed",
+  );
+  const invalidLeadCreate = await request(synthetic, `/v1/orgs/${identity.activeOrgId}/leads?scope=own`, {
+    method: "POST",
+    headers: createHeaders,
+    body: JSON.stringify({
+      contactId: randomUUID(),
+      sourceId: randomUUID(),
+      ownerMemberId: identity.memberId,
+      intent: "unknown",
+      timeline: null,
+    }),
+  });
+  check(
+    invalidLeadCreate.status === 422 && (await invalidLeadCreate.json()).code === "query_invalid",
+    "runtime_local_lead_create_query_failed",
+  );
+  const appointmentPage = ajv.compile({ $ref: "contract#/components/schemas/PageAppointment" });
+  const appointmentPath = `/v1/orgs/${identity.activeOrgId}/appointments`;
+  const appointments = await request(synthetic, `${appointmentPath}?limit=25`, { headers: { cookie } });
+  const stored = await appointments.json();
+  check(
+    appointments.status === 200 &&
+      appointmentPage(stored) &&
+      appointments.headers.get("cache-control")?.includes("private") &&
+      appointments.headers.get("cache-control")?.includes("no-store") &&
+      !appointments.headers.has("etag"),
+    "runtime_local_appointment_read_failed",
+  );
+  const invalidPage = await request(synthetic, `${appointmentPath}?limit=0`, { headers: { cookie } });
+  check(
+    invalidPage.status === 422 && (await invalidPage.json()).code === "limit_invalid",
+    "runtime_local_appointment_query_failed",
+  );
+  const taskPage = ajv.compile({ $ref: "contract#/components/schemas/PageTask" });
+  const taskPath = `/v1/orgs/${identity.activeOrgId}/tasks`;
+  const tasks = await request(synthetic, `${taskPath}?limit=25&scope=own`, { headers: { cookie } });
+  check(
+    tasks.status === 200 &&
+      taskPage(await tasks.json()) &&
+      tasks.headers.get("cache-control")?.includes("private") &&
+      !tasks.headers.has("etag"),
+    "runtime_local_task_read_failed",
+  );
+  const invalidTasks = await request(synthetic, `${taskPath}?limit=0`, { headers: { cookie } });
+  check(
+    invalidTasks.status === 422 && (await invalidTasks.json()).code === "limit_invalid",
+    "runtime_local_task_query_failed",
+  );
+  const dashboardSchema = ajv.compile({ $ref: "contract#/components/schemas/Dashboard" });
+  const dashboardPath = `/v1/orgs/${identity.activeOrgId}/dashboard`;
+  const dashboard = await request(synthetic, dashboardPath, { headers: { cookie } });
+  const measured = await dashboard.json();
+  const leadMetric = measured?.metrics?.find((metric) => metric.key === "leads.created");
+  check(
+    dashboard.status === 200 &&
+      dashboardSchema(measured) &&
+      dashboard.headers.get("cache-control")?.includes("private") &&
+      !dashboard.headers.has("etag") &&
+      measured.period.timezone === "UTC" &&
+      leadMetric?.definitionVersion === 2 &&
+      leadMetric.source === "crm-own-utc-month-query-v2" &&
+      leadMetric.state === "available" &&
+      Number.isSafeInteger(leadMetric.value) &&
+      leadMetric.value >= 0 &&
+      typeof leadMetric.refreshedAt === "string",
+    "runtime_local_dashboard_read_failed",
+  );
+  const invalidDashboard = await request(synthetic, `${dashboardPath}?scope=organization`, {
+    headers: { cookie },
+  });
+  check(
+    invalidDashboard.status === 422 && (await invalidDashboard.json()).code === "query_invalid",
+    "runtime_local_dashboard_query_failed",
+  );
   for (const forwarding of [
     { forwarded: "for=203.0.113.42" },
     { "x-real-ip": "203.0.113.42" },
@@ -350,6 +524,13 @@ if (failure) {
       compiledApi: "healthy",
       compiledCli: "healthy-owned-instance",
       syntheticSession: "created-read-revoked",
+      storedAppointments: "contract-valid-private-read-and-query-denial",
+      loadedTasks: "contract-valid-private-read-and-query-denial",
+      dashboardReport: "contract-valid-member-utc-measurement-and-query-denial",
+      contactNameSearch: "contract-valid-private-filtered-page-and-query-denial",
+      contactEditBoundary: "proved-absent-record-and-query-denied-without-domain-write",
+      leadCaptureBoundary: "contact-and-lead-create-query-denied-without-domain-write",
+      archiveBoundary: "contact-and-lead-archive-proved-absent-and-query-denied-without-domain-write",
       forwardedRequestsDenied: 4,
       productionModesDenied: 2,
       cliListenFailure: "closed",

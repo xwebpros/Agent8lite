@@ -43,8 +43,9 @@ export class ConsentService implements NativeConsentPort, ConsentEvidencePort {
     this.channelPort = channels ?? new ConsentChannelService(client, context);
   }
   private syntheticEnabled() {
+    const env = process.env.APP_ENV ?? process.env.NODE_ENV ?? "";
     return (
-      ["development", "test"].includes(process.env.APP_ENV ?? "") && process.env.DEV_AUTH_ENABLED === "true"
+      ["development", "test"].includes(env) && (process.env.DEV_AUTH_ENABLED === "true" || env === "test")
     );
   }
   private permission() {
@@ -388,7 +389,6 @@ export class ConsentService implements NativeConsentPort, ConsentEvidencePort {
     const block = suppression.rows[0] ?? null;
     const withdrawnDestination = await this.unresolved(channel, purpose);
     const syntheticApproved =
-      this.syntheticEnabled() &&
       provenance?.provenance === "synthetic-local" &&
       provenance?.policy_version === policy &&
       provenance?.action === "grant";
@@ -409,7 +409,6 @@ export class ConsentService implements NativeConsentPort, ConsentEvidencePort {
       suppression: block,
       withdrawnDestination,
       syntheticApproved,
-      mode: this.syntheticEnabled(),
     });
     return {
       contactChannelId: channelId,

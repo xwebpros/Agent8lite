@@ -12,6 +12,7 @@ type Props = {
   online: boolean;
   working: boolean;
   leads: Schema<"Lead">[];
+  sources: { id: string; label: string }[];
   leadLabel(lead: Schema<"Lead">): string;
   runCommand: <T>(path: string, body: unknown, method?: string, version?: number) => Promise<T>;
   onDirty(value: boolean): void;
@@ -24,6 +25,7 @@ export default function DealsPanel({
   online,
   working,
   leads,
+  sources,
   leadLabel,
   runCommand,
   onDirty,
@@ -34,6 +36,8 @@ export default function DealsPanel({
   const [options, setOptions] = useState(leads);
   const [leadCursor, setLeadCursor] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [intentFilter, setIntentFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
   const [selected, setSelected] = useState<Schema<"Deal"> | null>(null);
   const [name, setName] = useState("");
   const [leadId, setLeadId] = useState("");
@@ -52,10 +56,14 @@ export default function DealsPanel({
   const canWrite = ["crm.deals.write", "crm.leads.read", "crm.leads.write"].every((permission) =>
     session.permissions.includes(permission),
   );
-  const filter =
-    scope === "own" && memberId
-      ? `&filter=${encodeURIComponent(JSON.stringify({ ownerMemberId: memberId } satisfies Schema<"LeadFilter">))}`
-      : "";
+  const filterObj: Schema<"LeadFilter"> = {
+    ...(scope === "own" && memberId ? { ownerMemberId: memberId } : {}),
+    ...(intentFilter ? { intent: intentFilter as Schema<"LeadFilter">["intent"] } : {}),
+    ...(sourceFilter ? { sourceId: sourceFilter } : {}),
+  };
+  const filter = Object.keys(filterObj).length
+    ? `&filter=${encodeURIComponent(JSON.stringify(filterObj))}`
+    : "";
   const clearPrivate = useCallback(() => {
     setDeals([]);
     setOptions([]);
@@ -252,6 +260,29 @@ export default function DealsPanel({
             </Button>
           )}
         </div>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "8px 0 12px" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
+          Lead intent
+          <select value={intentFilter} onChange={(e) => { setIntentFilter(e.target.value); }}>
+            <option value="">All</option>
+            <option value="buyer">Buyer</option>
+            <option value="seller">Seller</option>
+            <option value="both">Both</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
+        {sources.length > 0 && (
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
+            Lead source
+            <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); }}>
+              <option value="">All sources</option>
+              {sources.map((source) => (
+                <option key={source.id} value={source.id}>{source.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {error && (
         <div className="error" role="alert">

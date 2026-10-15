@@ -366,7 +366,7 @@ describe("MOD-D-003/004 — synthetic native capture and serialized routing", ()
     expect(new Set(results.map((result) => result.decision)).size).toBe(1);
     expect(results[0].value).toMatchObject({
       score: 10,
-      scoreVersion: "synthetic-native-inquiry-v1",
+      scoreVersion: "v1",
       intent: "buyer",
     });
     const inquiry = results[0];
@@ -520,7 +520,7 @@ describe("MOD-D-003/004 — synthetic native capture and serialized routing", ()
     expect(routed.value.ownerMemberId).toBe(outside.member);
     expect(routed.rule).toBe(geo.id);
     expect(routed.reasons).toEqual(["listing_attribution_unavailable", "geography_selected"]);
-    expect(routed.value).toMatchObject({ score: 10, scoreVersion: "synthetic-native-inquiry-v1" });
+    expect(routed.value).toMatchObject({ score: 10, scoreVersion: "v1" });
     const fallback = await captured(command(await person(), { postalCode: "DIFFERENT", intent: "seller" }));
     expect(fallback.value.ownerMemberId).toBe(owner.memberId);
     expect(fallback.reasons).toEqual([

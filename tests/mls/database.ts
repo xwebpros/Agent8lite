@@ -79,6 +79,20 @@ export async function prepareDatabase() {
 }
 
 export async function resetDatabase() {
+  const clock = await admin.query<{ fixture_clock: Date }>(
+    "SELECT date_trunc('milliseconds',clock_timestamp()) AS fixture_clock",
+  );
+  const fixtureClock = clock.rows[0]?.fixture_clock;
+  if (!(fixtureClock instanceof Date) || !Number.isFinite(fixtureClock.getTime()))
+    throw new Error("W07 fixture database clock is unavailable.");
+  // Keep the static sources' relative age, expiry duration and ordering under actual-clock reads.
+  // Source modification timestamps, content and the canonical fixture remain unchanged.
+  const clockOffset = fixtureClock.getTime() - MOCK_CLOCK.getTime();
+  const fixtureTimestamp = (value: string) => {
+    const timestamp = Date.parse(value) + clockOffset;
+    if (!Number.isFinite(timestamp)) throw new Error("W07 fixture timestamp is invalid.");
+    return new Date(timestamp).toISOString();
+  };
   await admin.query(
     "UPDATE app.membership SET role_id=$1,status='active' WHERE tenant_id=$2 AND user_id=$3",
     [originalRole, fixtures.orgA, fixtures.ownerUser],
@@ -139,8 +153,8 @@ export async function resetDatabase() {
           source.addressAllowed,
           source.sourceModifiedAt,
           createHash("sha256").update(JSON.stringify(source)).digest("hex"),
-          source.expiresAt,
-          source.ingestedAt,
+          fixtureTimestamp(source.expiresAt),
+          fixtureTimestamp(source.ingestedAt),
         ],
       );
     }

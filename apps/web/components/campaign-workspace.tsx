@@ -23,6 +23,7 @@ import {
 import styles from "./campaign-workspace.module.css";
 import { workflowContextBinding } from "./campaign-workflow-protocol";
 import CampaignWorkflowWorkspace from "./campaign-workflow-workspace";
+import BroadcastPreviewPanel from "./broadcast-preview-panel";
 import MessageDesignWorkspace from "./message-design-workspace";
 
 export function campaignDraftsProtected(metadata: boolean, workflow: boolean, designs: boolean): boolean {
@@ -77,6 +78,8 @@ export type CampaignWorkspaceProps = {
   online: boolean;
   syntheticFeaturesEnabled: boolean;
   accessRevision: number;
+  /** Verified current member, when known. */
+  memberId?: string;
   onDirty(value: boolean): void;
   onAccessRevoked?(): void;
 };
@@ -96,6 +99,7 @@ type CampaignWorkspaceViewProps = {
   onResolveConflict(keep: boolean): void;
   onOpenWorkflow?(): void;
   onOpenMessageDesigns?(): void;
+  onOpenBroadcast?(): void;
 };
 
 /** Pure presentation is exported for source/static checks; it never serializes private command keys. */
@@ -115,6 +119,7 @@ export function CampaignWorkspaceView({
   onResolveConflict,
   onOpenWorkflow,
   onOpenMessageDesigns,
+  onOpenBroadcast,
 }: CampaignWorkspaceViewProps) {
   const nameId = useId();
   const categoryId = useId();
@@ -179,6 +184,15 @@ export function CampaignWorkspaceView({
           onClick={onOpenMessageDesigns}
         >
           <MessageSquareText size={18} aria-hidden="true" /> Open message design library
+        </Button>
+      )}
+      {onOpenBroadcast && (
+        <Button
+          variant="secondary"
+          disabled={!canOpenCampaignSubview(state, active, online)}
+          onClick={onOpenBroadcast}
+        >
+          <Megaphone size={18} aria-hidden="true" /> Preview broadcast audience
         </Button>
       )}
       <div className={styles.notice}>
@@ -475,6 +489,7 @@ export default function CampaignWorkspace({
   online,
   syntheticFeaturesEnabled,
   accessRevision,
+  memberId,
   onDirty,
   onAccessRevoked,
 }: CampaignWorkspaceProps) {
@@ -498,7 +513,16 @@ export default function CampaignWorkspace({
   const [designLibraryOpen, setDesignLibraryOpen] = useState(false);
   const [designDirty, setDesignDirty] = useState(false);
   const designProtected = useRef(false);
-  const subview = designLibraryOpen ? "designs" : workflowCampaignId ? "workflow" : "metadata";
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const canPreviewBroadcast =
+    session.permissions.includes("campaigns.send") && session.permissions.includes("campaigns.read");
+  const subview = designLibraryOpen
+    ? "designs"
+    : broadcastOpen
+      ? "broadcast"
+      : workflowCampaignId
+        ? "workflow"
+        : "metadata";
   const live = useRef({ binding, online, active, subview });
   live.current = { binding, online, active, subview };
   const controller = useMemo(() => {
@@ -601,6 +625,7 @@ export default function CampaignWorkspace({
       return;
     live.current.subview = "metadata";
     setDesignLibraryOpen(false);
+    setBroadcastOpen(false);
     setWorkflowCampaignId(null);
     controller.setOnline(live.current.online);
   };
@@ -633,6 +658,27 @@ export default function CampaignWorkspace({
         />
       </CampaignSubviewFrame>
     );
+  if (broadcastOpen)
+    return (
+      <CampaignSubviewFrame
+        label="Broadcast audience preview"
+        protectedDraft={childProtection}
+        onBack={returnToLibrary}
+      >
+        <BroadcastPreviewPanel
+          key={`${binding}:broadcast`}
+          session={session}
+          csrf={csrf}
+          online={online}
+          accessRevision={accessRevision}
+          memberId={memberId}
+          onAccessRevoked={() => {
+            if (live.current.binding === binding && live.current.subview === "broadcast")
+              callbacks.current.onAccessRevoked?.();
+          }}
+        />
+      </CampaignSubviewFrame>
+    );
   if (workflowCampaignId)
     return (
       <CampaignSubviewFrame
@@ -648,6 +694,7 @@ export default function CampaignWorkspace({
           syntheticFeaturesEnabled={syntheticFeaturesEnabled}
           accessRevision={accessRevision}
           campaignId={workflowCampaignId}
+          memberId={memberId}
           onProtectedChange={(value) => {
             if (live.current.binding !== binding || live.current.subview !== "workflow") return;
             workflowProtected.current = value;
@@ -689,6 +736,31 @@ export default function CampaignWorkspace({
         setDesignLibraryOpen(true);
         controller.setOnline(false);
       }}
+      onOpenBroadcast={
+        canPreviewBroadcast
+          ? () => {
+              const current = controller.getSnapshot();
+              if (
+                live.current.binding !== binding ||
+                live.current.subview !== "metadata" ||
+                !canOpenCampaignSubview(
+                  current,
+                  live.current.active,
+                  live.current.online,
+                  campaignDraftsProtected(
+                    controller.isProtected(),
+                    workflowProtected.current,
+                    designProtected.current,
+                  ),
+                )
+              )
+                return;
+              live.current.subview = "broadcast";
+              setBroadcastOpen(true);
+              controller.setOnline(false);
+            }
+          : undefined
+      }
       onOpenWorkflow={() => {
         const current = controller.getSnapshot();
         if (

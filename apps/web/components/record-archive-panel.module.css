@@ -1,0 +1,47 @@
+.panel {
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  display: grid;
+  gap: 12px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.panel h3,
+.panel p {
+  margin: 0;
+}
+.panel h3 {
+  font-size: 18px;
+}
+.confirm {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.actions button,
+.panel > button {
+  min-height: 44px;
+  white-space: normal;
+}
+.muted {
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+@media (max-width: 480px) {
+  .actions {
+    display: grid;
+  }
+  .actions button {
+    width: 100%;
+  }
+}

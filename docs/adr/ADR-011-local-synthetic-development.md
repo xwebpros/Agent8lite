@@ -2,6 +2,16 @@
 
 ADR-018 records the reviewed CMS/property/staff route and web integration, explicit BFF identity-context selection, durable run-key cut points and retained privacy/update/rate guards.
 
+## Source ZIP Windows bootstrap — 2026-10-13
+
+The owner requested a click-to-run installer for a source ZIP. `Start-Agent8lite.cmd` invokes `scripts/bootstrap/windows.ps1` with process-scoped PowerShell policy only. On Intel/AMD 64-bit Windows it installs checksum-verified pinned portable Node and project-local pnpm, guides the recipient through Docker Desktop/WSL approvals, validates a local Linux Docker context, and starts a path-derived Compose project with the existing loopback PostgreSQL/PostGIS/Redis services. It then runs the existing forward migration, distinct control/issuer setup and fictional seed, and starts the web/API with a closed synthetic environment. It adds no API/event/schema/migration/dependency contract and enables no live provider or delivery.
+
+Each click revalidates source/runtime pins, port ownership, Docker readiness, dependencies and migration state. Existing services, customer/fixture records, passwords and revocations are preserved; there is no database reset, volume deletion or automatic restart. Private environment files are refused. Inherited production/hosted/provider/remote Docker/database settings cannot redirect this bootstrap. Docker terms and Windows approval remain visible recipient actions.
+
+Application and ordinary setup subprocesses are assigned to a private Windows kill-on-close Job Object before a stdin handshake allows children to start. Browser launch remains outside that Job. Reuse requires current executable/process creation identity, owned API nonce and web readiness. No old PID file is authority to terminate a process. Elevated system installers may use Windows' separate UAC broker; they require their own visible completion/cancellation and are not covered by the ordinary-child cleanup claim.
+
+`docs/runbooks/bootstrap-windows.md` describes install/reboot retry, source packaging, persistent local state and limitations. Vitest bootstrap tests and inert PowerShell inspection verify this tool's boundaries; they do not establish clean-machine Docker installation, production readiness or any milestone completion. CI runs the portable behavioral suite; Windows native-helper/Job acceptance is recorded separately.
+
 ADR-019 defines local synthetic support selection/clear/revoke, requester Job recovery and read-only CRM routes. ADR-020 defines the document-bound synthetic CMS recovery read and closed revision metadata index. Their shared contracts precede dependent consumers; runtime registration follows reviewed policy and acceptance tests.
 
 ADR-021 now registers only frozen campaign metadata GET list/detail, POST create and PATCH update behind synthetic-loopback member context, current organization permission/marketing capability and mutation CSRF. Actual0016 grants draft-only metadata access. Commands commit native draft/event/audit/durable receipt together and preserve historical explicit ETags on replay. No campaign versions, publication, enrollment, schedule or delivery route is enabled by this bounded registration; interactive marketing capability remains unchanged. Registered-route acceptance is recorded separately from direct-service proof.

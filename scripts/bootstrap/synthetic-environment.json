@@ -1,0 +1,20 @@
+{
+  "APP_ENV": "development",
+  "NODE_ENV": "development",
+  "DEV_AUTH_ENABLED": "true",
+  "HOSTED_DEMO_ENABLED": "false",
+  "WEB_ORIGIN": "http://localhost:3000",
+  "API_HOST": "127.0.0.1",
+  "API_PORT": "3001",
+  "API_ORIGIN": "http://127.0.0.1:3001",
+  "DATABASE_URL": "postgresql://estate_runtime:local-runtime-only@127.0.0.1:55432/estate",
+  "MIGRATION_DATABASE_URL": "postgresql://postgres:local-migration-only@127.0.0.1:55432/estate",
+  "WORKER_DATABASE_URL": "postgresql://estate_worker:local-worker-only@127.0.0.1:55432/estate",
+  "CONTROL_DATABASE_URL": "postgresql://estate_control:local-control-only@127.0.0.1:55432/estate",
+  "STAFF_ISSUER_DATABASE_URL": "postgresql://estate_staff_issuer:local-staff-issuer-only@127.0.0.1:55432/estate",
+  "REDIS_URL": "redis://127.0.0.1:56379",
+  "MLS_PROVIDER": "mock",
+  "DELIVERY_PROVIDER": "no-delivery",
+  "NEXT_TELEMETRY_DISABLED": "1",
+  "CI": "true"
+}

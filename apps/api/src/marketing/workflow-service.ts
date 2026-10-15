@@ -22,7 +22,7 @@ type VersionRow = {
   id: string;
   campaign_id: string;
   version: number;
-  state: "draft";
+  state: "draft" | "published";
   definition: WorkflowDefinition;
 };
 type Receipt = {
@@ -59,6 +59,20 @@ function model(row: VersionRow): CampaignWorkflowVersion {
   validateSchema("CampaignVersion", result, true);
   if (result.state !== "draft" || !Number.isInteger(result.version) || result.version > 2147483647)
     throw new AccessError(503, "workflow_revision_unavailable", "Workflow revision is unavailable.");
+  return Object.freeze(result);
+}
+
+function publishedModel(row: VersionRow): CampaignWorkflowVersion {
+  const result: CampaignWorkflowVersion = {
+    id: row.id,
+    campaignId: row.campaign_id,
+    version: Number(row.version),
+    state: row.state,
+    definition: definition(row.definition),
+  };
+  validateSchema("CampaignVersion", result, true);
+  if (result.state !== "published" || !Number.isInteger(result.version) || result.version > 2147483647)
+    throw new AccessError(503, "workflow_revision_unavailable", "Published workflow version is unavailable.");
   return Object.freeze(result);
 }
 
@@ -236,5 +250,75 @@ export class CampaignWorkflowService {
     );
     await this.authority.require("campaigns.write");
     return { body: version, status: 201, etag };
+  }
+
+  /** ADR-059: publish a draft campaign version, activating its parent campaign. Idempotent. */
+  async publish(versionId: string, headers: { key: string | undefined }): Promise<CampaignWorkflowMutation> {
+    assertUuid(versionId);
+    const key = campaignKey(headers.key);
+    const route = `marketing:workflow:publish:${versionId}`;
+    const requestHash = createHash("sha256").update(versionId).digest("hex");
+    await this.authority.require("campaigns.publish");
+    await this.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `${this.context.organizationId}:${this.context.userId}:${route}:${key}`,
+    ]);
+    await this.authority.require("campaigns.publish");
+    const existing = await this.client.query<Receipt>(
+      `SELECT request_hash,response_body,status_code,response_etag FROM app.idempotency_record
+       WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+      [this.context.userId, route, key],
+    );
+    if (existing.rowCount) {
+      const receipt = existing.rows[0];
+      if (receipt.request_hash !== requestHash)
+        throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
+      validateSchema("CampaignVersion", receipt.response_body, true);
+      await this.authority.require("campaigns.publish");
+      return {
+        body: receipt.response_body as CampaignWorkflowVersion,
+        status: 201,
+        etag: receipt.response_etag,
+      };
+    }
+    const draft = await this.version(versionId).catch(async () => {
+      // RLS filters published versions from estate_runtime — check the idempotency log
+      // to distinguish "already published" (lifecycle conflict) from "never existed" (404).
+      const prior = await this.client.query(
+        `SELECT 1 FROM app.idempotency_record
+         WHERE tenant_id=app.current_tenant() AND route_key=$1 LIMIT 1`,
+        [`marketing:workflow:publish:${versionId}`],
+      );
+      if (prior.rowCount)
+        throw new AccessError(409, "campaign_lifecycle_conflict", "Campaign version is already published.");
+      unavailable();
+    });
+    const result = await this.client.query<VersionRow>(
+      `SELECT id,campaign_id,version::int AS version,state,definition
+       FROM app.publish_campaign_version($1,$2)`,
+      [versionId, draft!.campaignId],
+    );
+    if (!result.rowCount)
+      throw new AccessError(
+        409,
+        "campaign_lifecycle_conflict",
+        "Campaign version is already published or the campaign is not in draft state.",
+      );
+    const published = publishedModel(result.rows[0]);
+    const etag = campaignEtag(published.version);
+    await this.audit.audit(
+      "campaign.workflow_published",
+      "campaign_version",
+      published.id,
+      published.version,
+    );
+    await this.authority.require("campaigns.publish");
+    await this.client.query(
+      `INSERT INTO app.idempotency_record
+       (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at)
+       VALUES(app.current_tenant(),$1,$2,$3,$4,$5,201,$6,'infinity'::timestamptz)`,
+      [this.context.userId, route, key, requestHash, workflowJson(published), etag],
+    );
+    await this.authority.require("campaigns.publish");
+    return { body: published, status: 201, etag };
   }
 }

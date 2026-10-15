@@ -9,6 +9,7 @@ import {
   templateThemeVersion,
 } from "../../../../packages/cms";
 import type { CmsProfileReferencePort } from "../../../../packages/cms/ports";
+import type { StoragePort } from "../../../../packages/providers/storage/port";
 import { revisionRecovery } from "../../../../packages/cms/recovery";
 import { requireRevisionHistory } from "../../../../packages/cms/history";
 import type { components } from "../../../../packages/contracts/generated/api";
@@ -23,7 +24,15 @@ import type { PublishPolicy } from "../../../../packages/templates/registry";
 import { validateSchema } from "../contract-validation";
 import { assertUuid, CrmService, stable } from "../crm-service";
 import { cursorBinding, decodeCursor, encodeCursor } from "../cursors";
-import { CmsRepository, type DocumentRow, type RevisionRow, type SiteRow } from "./repository";
+import {
+  CmsRepository,
+  type DocumentRow,
+  type DomainRow,
+  type FormRow,
+  type MediaRow,
+  type RevisionRow,
+  type SiteRow,
+} from "./repository";
 
 type Schemas = components["schemas"];
 type Mutation<T> = { body: T; status: number; etag: string };
@@ -32,6 +41,33 @@ type Query = Record<string, unknown>;
 function unavailable(): never {
   throw new AccessError(404, "resource_unavailable", "Resource unavailable or out of scope.");
 }
+const domainModel = (row: DomainRow): Schemas["Domain"] => ({
+  id: row.id,
+  hostname: row.hostname,
+  verificationState: row.verification_state as Schemas["Domain"]["verificationState"],
+  tlsState: row.tls_state as Schemas["Domain"]["tlsState"],
+  environment: row.environment,
+  requiredDns:
+    row.verification_state === "pending"
+      ? [{ type: "TXT" as const, name: `_verify.${row.hostname}`, value: `estate-verify=${row.id}` }]
+      : [],
+});
+const mediaModel = (row: MediaRow): Schemas["Media"] => ({
+  id: row.id,
+  mimeType: row.mime_type,
+  bytes: Number(row.byte_size),
+  scanState: row.scan_state as Schemas["Media"]["scanState"],
+  altText: row.alt_text ?? null,
+  previewUrl: null,
+  version: Number(row.row_version),
+});
+const formModel = (row: FormRow): Schemas["Form"] => ({
+  id: row.id,
+  version: row.version,
+  name: row.name,
+  fields: (row.definition as { fields: Schemas["FormField"][] }).fields ?? [],
+  state: row.state as Schemas["Form"]["state"],
+});
 const siteModel = (row: SiteRow): Schemas["Site"] => ({
   id: row.id,
   name: row.name,
@@ -92,7 +128,11 @@ export class CmsService {
     private readonly client: PoolClient,
     readonly context: TenantContext,
     traceId: string,
-    private readonly dependencies: { profiles: CmsProfileReferencePort; trustedLinkPolicy: PublishPolicy },
+    private readonly dependencies: {
+      profiles: CmsProfileReferencePort;
+      trustedLinkPolicy: PublishPolicy;
+      storage: StoragePort;
+    },
   ) {
     this.repository = new CmsRepository(client);
     this.audit = new CrmService(client, context, traceId);
@@ -133,15 +173,23 @@ export class CmsService {
     return { body, status, etag: documentEtag(version) };
   }
 
-  /** Current authorization precedes lookup; historical replay precedes the old version precondition. */
+  /** Current authorization precedes lookup; historical replay precedes the old version precondition.
+   * replayStatus overrides the stored status_code returned to clients on replay (e.g. 200 for POST-creates). */
   private async idempotent<T>(
     route: string,
-    permission: "sites.write" | "content.write",
+    permission:
+      | "sites.write"
+      | "content.write"
+      | "content.publish"
+      | "domains.manage"
+      | "media.write"
+      | "forms.write",
     schema: keyof Schemas,
     body: unknown,
     headers: CommandHeaders,
     command: () => Promise<Mutation<T>>,
     reauthorizeReplay: (body: T) => Promise<void>,
+    replayStatus?: number,
   ): Promise<Mutation<T>> {
     const key = headers.key;
     if (!key || key.length > 100 || !/^[\x21-\x7e]+$/.test(key))
@@ -180,7 +228,15 @@ export class CmsService {
     await this.authorize(permission);
     await this.client.query(
       "INSERT INTO app.idempotency_record(tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_etag,expires_at) VALUES(app.current_tenant(),$1,$2,$3,$4,$5,$6,$7,now()+interval '1 day')",
-      [this.context.userId, route, key, hash, JSON.stringify(result.body), result.status, result.etag],
+      [
+        this.context.userId,
+        route,
+        key,
+        hash,
+        JSON.stringify(result.body),
+        replayStatus ?? result.status,
+        result.etag,
+      ],
     );
     await this.authorize(permission);
     return result;
@@ -463,6 +519,427 @@ export class CmsService {
       page.limit,
       page.binding,
       (row) => `${row.code}@${row.version}`,
+    );
+  }
+
+  // ── Domain management (ADR-053 / MOD-C-005) ───────────────────────────────
+
+  async listDomains(siteId: string): Promise<Schemas["PageDomain"]> {
+    await this.authorize("domains.read");
+    assertUuid(siteId);
+    await this.site(siteId);
+    const rows = await this.repository.listDomains(siteId);
+    return { items: rows.map(domainModel), nextCursor: null, hasMore: false };
+  }
+
+  async createDomain(
+    siteId: string,
+    body: Schemas["DomainWrite"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Domain"]>> {
+    await this.authorize("domains.manage");
+    assertUuid(siteId);
+    await this.site(siteId);
+    const hostname = body.hostname.toLowerCase().trim();
+    return this.idempotent(
+      "cms:domain",
+      "domains.manage",
+      "Domain",
+      body,
+      headers,
+      async () => {
+        const existing = await this.repository.domainByHostname(hostname);
+        if (existing) {
+          if (existing.site_id !== siteId || existing.archived_at)
+            throw new AccessError(409, "domain_hostname_conflict", "This hostname is already in use.");
+          const model = domainModel(existing);
+          return { body: model, status: 200, etag: documentEtag(Number(existing.row_version)) };
+        }
+        const row = await this.repository.createDomain(siteId, hostname, body.environment);
+        const model = domainModel(row);
+        return { body: model, status: 201, etag: documentEtag(Number(row.row_version)) };
+      },
+      async () => {},
+      200,
+    );
+  }
+
+  async verifyDomain(id: string): Promise<Mutation<Schemas["Domain"]>> {
+    await this.authorize("domains.manage");
+    assertUuid(id);
+    const row = await this.repository.domain(id, "write");
+    if (!row) unavailable();
+    const nextVersion = Number(row.row_version) + 1;
+    const updated = await this.repository.updateDomainVerification(id, "verified", "active", nextVersion);
+    if (!updated) unavailable();
+    const model = domainModel(updated);
+    validateSchema("Domain", model, true);
+    return { body: model, status: 200, etag: documentEtag(Number(updated.row_version)) };
+  }
+
+  async archiveDomain(id: string): Promise<{ body: Schemas["Job"]; status: number }> {
+    await this.authorize("domains.manage");
+    assertUuid(id);
+    const row = await this.repository.domain(id, "write");
+    if (!row) unavailable();
+    const nextVersion = Number(row.row_version) + 1;
+    await this.repository.archiveDomain(id, nextVersion);
+    const jobBody: Schemas["Job"] = {
+      id: randomUUID(),
+      state: "succeeded",
+      kind: "domain.archived",
+      createdAt: new Date().toISOString(),
+    };
+    validateSchema("Job", jobBody, true);
+    return { body: jobBody, status: 202 };
+  }
+
+  async archiveSite(id: string): Promise<{ body: Schemas["Job"]; status: number }> {
+    await this.authorize("sites.write");
+    assertUuid(id);
+    const site = await this.repository.site(id);
+    if (!site) unavailable();
+    const activeDomains = await this.repository.activeDomainCount(id);
+    if (activeDomains > 0)
+      throw new AccessError(
+        409,
+        "domain_still_active",
+        "Verified domains must be removed before archiving the site.",
+      );
+    const updated = await this.repository.archiveSite(id);
+    if (!updated) throw new AccessError(409, "site_already_archived", "The site is already archived.");
+    const jobBody: Schemas["Job"] = {
+      id: randomUUID(),
+      state: "succeeded",
+      kind: "site.archived",
+      createdAt: new Date().toISOString(),
+    };
+    validateSchema("Job", jobBody, true);
+    return { body: jobBody, status: 202 };
+  }
+
+  // ── Media management (ADR-053 / MOD-C-006) ────────────────────────────────
+
+  async listMedia(query: Query = {}): Promise<Schemas["PageMedia"]> {
+    await this.authorize("media.read");
+    const page = this.page(query, "cms:media");
+    const rows = await this.repository.listMedia(page.after, page.limit + 1);
+    return this.pageResponse("PageMedia", rows.map(mediaModel), page.limit, page.binding, (row) => row.id);
+  }
+
+  async finalizeMedia(
+    body: Schemas["MediaFinalize"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Media"]>> {
+    await this.authorize("media.write");
+    assertUuid(body.assetId);
+    return this.idempotent(
+      "cms:media-finalize",
+      "media.write",
+      "Media",
+      body,
+      headers,
+      async () => {
+        const row = await this.repository.media(body.assetId, "write");
+        if (!row) unavailable();
+        if (row.scan_state === "rejected")
+          throw new AccessError(
+            422,
+            "media_rejected",
+            "This media asset was rejected and cannot be finalized.",
+          );
+        if (row.scan_state === "clean") {
+          const model = mediaModel(row);
+          return { body: model, status: 200, etag: documentEtag(Number(row.row_version)) };
+        }
+        const nextVersion = Number(row.row_version) + 1;
+        const updated = await this.repository.finalizeMedia(
+          body.assetId,
+          body.checksum,
+          body.altText ?? null,
+          nextVersion,
+        );
+        if (!updated) unavailable();
+        return { body: mediaModel(updated), status: 200, etag: documentEtag(Number(updated.row_version)) };
+      },
+      async () => {},
+    );
+  }
+
+  // ── Form management (ADR-053 / MOD-C-007) ────────────────────────────────
+
+  async listForms(siteId: string, query: Query = {}): Promise<Schemas["PageForm"]> {
+    await this.authorize("forms.read");
+    assertUuid(siteId);
+    await this.site(siteId);
+    const page = this.page(query, "cms:forms");
+    const rows = await this.repository.listForms(siteId, page.after, page.limit + 1);
+    return this.pageResponse("PageForm", rows.map(formModel), page.limit, page.binding, (row) => row.name);
+  }
+
+  async createForm(
+    siteId: string,
+    body: Schemas["FormWrite"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Form"]>> {
+    await this.authorize("forms.write");
+    assertUuid(siteId);
+    await this.site(siteId);
+    return this.idempotent(
+      "cms:form",
+      "forms.write",
+      "Form",
+      body,
+      headers,
+      async () => {
+        const definition = {
+          fields: body.fields,
+          confirmation: body.confirmation,
+          leadSourceId: body.leadSourceId,
+        };
+        const row = await this.repository.createForm(siteId, body.name, definition, body.state);
+        return { body: formModel(row), status: 201, etag: documentEtag(Number(row.row_version)) };
+      },
+      async () => {},
+    );
+  }
+
+  // ── Document publication (ADR-055 / MOD-C-003) ───────────────────────────
+
+  async publishDocument(
+    id: string,
+    body: Schemas["PublishRequest"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Job"]>> {
+    await this.authorize("content.publish");
+    assertUuid(id);
+    assertUuid(body.revisionId);
+    const doc = await this.document(id, true);
+    return this.idempotent(
+      "cms:publish",
+      "content.publish",
+      "Job",
+      body,
+      headers,
+      async () => {
+        const revision = await this.repository.revision(body.revisionId);
+        if (!revision || revision.document_id !== doc.id) unavailable();
+        const updated = await this.repository.setPublishedRevision(
+          doc.id,
+          body.revisionId,
+          body.expectedDocumentVersion,
+        );
+        if (!updated)
+          throw new AccessError(
+            412,
+            "revision_changed",
+            "The document version has changed since you last loaded it.",
+          );
+        const jobBody: Schemas["Job"] = {
+          id: randomUUID(),
+          state: "succeeded",
+          kind: "document.published",
+          createdAt: new Date().toISOString(),
+        };
+        validateSchema("Job", jobBody, true);
+        return { body: jobBody, status: 202, etag: documentEtag(Number(updated.row_version)) };
+      },
+      async () => {},
+    );
+  }
+
+  async rollbackDocument(
+    id: string,
+    body: Schemas["PublishRequest"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Job"]>> {
+    await this.authorize("content.publish");
+    assertUuid(id);
+    assertUuid(body.revisionId);
+    const doc = await this.document(id, true);
+    return this.idempotent(
+      "cms:rollback",
+      "content.publish",
+      "Job",
+      body,
+      headers,
+      async () => {
+        const revision = await this.repository.revision(body.revisionId);
+        if (!revision || revision.document_id !== doc.id) unavailable();
+        const updated = await this.repository.setPublishedRevision(
+          doc.id,
+          body.revisionId,
+          body.expectedDocumentVersion,
+        );
+        if (!updated)
+          throw new AccessError(
+            412,
+            "revision_changed",
+            "The document version has changed since you last loaded it.",
+          );
+        const jobBody: Schemas["Job"] = {
+          id: randomUUID(),
+          state: "succeeded",
+          kind: "document.rolledback",
+          createdAt: new Date().toISOString(),
+        };
+        validateSchema("Job", jobBody, true);
+        return { body: jobBody, status: 202, etag: documentEtag(Number(updated.row_version)) };
+      },
+      async () => {},
+    );
+  }
+
+  async archiveDocument(id: string, headers: CommandHeaders): Promise<Mutation<Schemas["Job"]>> {
+    await this.authorize("content.write");
+    assertUuid(id);
+    return this.idempotent(
+      `cms:archive-document:${id}`,
+      "content.write",
+      "Job",
+      {},
+      headers,
+      async () => {
+        const doc = await this.repository.document(id, "write");
+        if (!doc) unavailable();
+        await this.site(doc.site_id);
+        const updated = await this.repository.archiveDocument(doc.id);
+        if (!updated)
+          throw new AccessError(409, "document_already_archived", "The document is already archived.");
+        const jobBody: Schemas["Job"] = {
+          id: randomUUID(),
+          state: "succeeded",
+          kind: "document.archived",
+          createdAt: new Date().toISOString(),
+        };
+        validateSchema("Job", jobBody, true);
+        return { body: jobBody, status: 202, etag: documentEtag(Number(updated.row_version)) };
+      },
+      async () => {},
+    );
+  }
+
+  async updateSite(
+    id: string,
+    body: Schemas["SiteWrite"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Site"]>> {
+    await this.authorize("sites.write");
+    validateSchema("SiteWrite", body);
+    const name = nonempty(body.name);
+    await this.profile(body.businessProfileId);
+    const current = await this.repository.site(id);
+    if (!current || !["draft", "published"].includes(current.state)) unavailable();
+    await this.profile(current.business_profile_id);
+    return this.idempotent(
+      `cms:update-site:${id}`,
+      "sites.write",
+      "Site",
+      body,
+      headers,
+      async () => {
+        const nextVersion = requireDraftVersion(Number(current.row_version), headers.ifMatch);
+        const updated = await this.repository.updateSite(id, name, body.businessProfileId, nextVersion);
+        if (!updated)
+          throw new AccessError(
+            412,
+            "revision_changed",
+            "The site version changed since you last loaded it.",
+          );
+        return this.response("Site", siteModel(updated), 200, nextVersion);
+      },
+      async (historical) => {
+        await this.site(historical.id);
+      },
+    );
+  }
+
+  // ── Media upload grants (ADR-058 / MOD-C-006) ────────────────────────────
+
+  async createUploadGrant(
+    body: Schemas["UploadRequest"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["UploadGrant"]>> {
+    await this.authorize("media.write");
+    validateSchema("UploadRequest", body);
+    return this.idempotent(
+      "cms:upload-grant",
+      "media.write",
+      "UploadGrant",
+      body,
+      headers,
+      async () => {
+        const assetId = randomUUID();
+        const slot = await this.repository.createMediaUploadSlot(
+          assetId,
+          body.mimeType,
+          body.bytes,
+          body.purpose,
+        );
+        const grant = await this.dependencies.storage.createUploadGrant({
+          assetId: slot.id,
+          mimeType: body.mimeType,
+          bytes: body.bytes,
+          purposeKey: body.purpose,
+        });
+        const grantBody: Schemas["UploadGrant"] = {
+          assetId: slot.id,
+          url: grant.url,
+          method: "PUT",
+          expiresAt: grant.expiresAt,
+          requiredHeaders: grant.requiredHeaders,
+        };
+        validateSchema("UploadGrant", grantBody, true);
+        return { body: grantBody, status: 201, etag: documentEtag(Number(slot.row_version)) };
+      },
+      async (historical) => {
+        await this.repository.media(historical.assetId);
+      },
+    );
+  }
+
+  async getForm(id: string): Promise<Schemas["Form"]> {
+    await this.authorize("forms.read");
+    assertUuid(id);
+    const row = await this.repository.form(id);
+    if (!row) unavailable();
+    const model = formModel(row);
+    validateSchema("Form", model, true);
+    return model;
+  }
+
+  async publishFormVersion(
+    id: string,
+    body: Schemas["FormWrite"],
+    headers: CommandHeaders,
+  ): Promise<Mutation<Schemas["Form"]>> {
+    await this.authorize("forms.write");
+    assertUuid(id);
+    const existing = await this.repository.form(id);
+    if (!existing) unavailable();
+    return this.idempotent(
+      "cms:form-version",
+      "forms.write",
+      "Form",
+      body,
+      headers,
+      async () => {
+        const currentMax = await this.repository.maxFormVersion(existing.site_id, existing.name);
+        const definition = {
+          fields: body.fields,
+          confirmation: body.confirmation,
+          leadSourceId: body.leadSourceId,
+        };
+        const row = await this.repository.insertFormVersion(
+          existing.site_id,
+          existing.name,
+          currentMax + 1,
+          definition,
+          body.state,
+        );
+        return { body: formModel(row), status: 201, etag: documentEtag(Number(row.row_version)) };
+      },
+      async () => {},
     );
   }
 }

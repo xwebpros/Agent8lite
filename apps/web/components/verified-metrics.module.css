@@ -1,0 +1,143 @@
+.panel {
+  margin-bottom: 24px;
+  border: 1px solid #dce3ed;
+  border-radius: 16px;
+  padding: 22px;
+  background: var(--color-surface, #fff);
+  min-width: 0;
+}
+.header {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.header > div {
+  flex: 1 1 250px;
+  min-width: 0;
+}
+.header h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  margin: 0;
+}
+.header p,
+.scope,
+.card p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #52637a;
+  overflow-wrap: anywhere;
+}
+.header button {
+  min-height: 44px;
+}
+.panel button:focus-visible {
+  outline: 3px solid #2459b8;
+  outline-offset: 3px;
+}
+.caption {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #52637a;
+  overflow-wrap: anywhere;
+}
+.message {
+  font-size: 16px;
+  line-height: 1.6;
+  padding: 16px 0;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+.card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #dce3ed;
+  border-radius: 12px;
+  background: #fbfcff;
+}
+.card h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.value {
+  font-size: 32px;
+  display: block;
+  margin: 12px 0;
+}
+.card dl {
+  margin: 16px 0 0;
+}
+.card dl div {
+  padding: 8px 0;
+  border-top: 1px solid #e5ebf3;
+}
+.card dt {
+  font-size: 12px;
+  font-weight: 600;
+  color: #52637a;
+}
+.card dd {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.integrations {
+  margin: 18px 0;
+  padding: 16px 0 0;
+  border-top: 1px solid #e5ebf3;
+}
+.integrations h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #52637a;
+}
+.integrationRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 14px;
+}
+.integrationRow strong {
+  text-transform: capitalize;
+}
+.integrationMode {
+  font-size: 12px;
+  color: #52637a;
+}
+@media (max-width: 760px) {
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 480px) {
+  .panel {
+    padding: 16px;
+  }
+  .header button {
+    width: 100%;
+    justify-content: center;
+  }
+  .card {
+    padding: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel *,
+  .panel *::before,
+  .panel *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -60,3 +60,46 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  try {
+    const payload = event.data.json();
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof payload.title !== "string" ||
+      !payload.title.trim()
+    )
+      return;
+    event.waitUntil(
+      self.registration.showNotification(payload.title.slice(0, 120), {
+        body: typeof payload.body === "string" ? payload.body.slice(0, 300) : undefined,
+        icon: "/icons/app-192.png",
+        badge: "/icons/app-192.png",
+        tag: typeof payload.tag === "string" ? payload.tag.slice(0, 100) : undefined,
+        data: {
+          url:
+            typeof payload.url === "string" && payload.url.startsWith("/") && !payload.url.startsWith("//")
+              ? payload.url
+              : "/dashboard",
+        },
+      }),
+    );
+  } catch {
+    /* Malformed push data is silently dropped */
+  }
+});
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/dashboard";
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        for (const client of clients) {
+          if (new URL(client.url).pathname === url && "focus" in client) return client.focus();
+        }
+        return self.clients.openWindow(url);
+      }),
+  );
+});

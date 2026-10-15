@@ -32,9 +32,13 @@ export function cursorBinding(
 }
 export function encodeCursor(id: string, binding: string) {
   if (!cursorKey) throw new AccessError(503, "cursor_unconfigured", "Pagination signing key is unavailable.");
-  const body = Buffer.from(JSON.stringify({ id, binding, expires: Date.now() + 15 * 60 * 1000 })).toString(
-    "base64url",
-  );
+  const expires = Date.now() + 15 * 60 * 1000;
+  if (typeof id !== "string" || typeof binding !== "string" || !Number.isSafeInteger(expires))
+    throw new AccessError(503, "cursor_unavailable", "Pagination cursor is unavailable.");
+  // Preserve the signed wire bytes without consulting inherited object serialization hooks.
+  const body = Buffer.from(
+    `{"id":${JSON.stringify(id)},"binding":${JSON.stringify(binding)},"expires":${JSON.stringify(expires)}}`,
+  ).toString("base64url");
   return `${body}.${createHmac("sha256", cursorKey).update(body).digest("base64url")}`;
 }
 export function decodeCursor(value: unknown, binding: string): string | null {

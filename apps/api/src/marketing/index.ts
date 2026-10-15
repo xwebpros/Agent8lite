@@ -6,7 +6,7 @@ export type {
   CampaignWrite,
 } from "./input";
 export { campaignEtag } from "./model";
-export { CampaignDraftService, type CampaignMutation } from "./service";
+export { CampaignDraftService, type CampaignMutation, type CampaignArchiveMutation } from "./service";
 export { MessageDesignDraftService } from "./message-design-service";
 export { MessageDesignCommandError } from "./message-design-errors";
 export {
@@ -23,3 +23,11 @@ export {
   type CampaignWorkflowPage,
   type CampaignWorkflowVersion,
 } from "./workflow-service";
+export {
+  AutomationService,
+  type AutomationMutation,
+  type EnrollmentMutation,
+  type CancelMutation,
+  type AutomationPage,
+  type EnrollmentPage,
+} from "./automation-service";

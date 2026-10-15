@@ -1888,6 +1888,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{orgId}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * list Jobs
+         * @description Permission: jobs.read. Cursor-paginated list of integration jobs scoped to the requesting member. Optional state and kind query filters.
+         */
+        get: operations["listJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{orgId}/jobs/{jobId}": {
         parameters: {
             query?: never;
@@ -2630,6 +2650,66 @@ export interface paths {
          * @description Permission: published.site. See module requirements for row scope, validation, entitlement and side-effect rules.
          */
         post: operations["collectPublicAnalytics"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{orgId}/contact-duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Contact duplicate candidates
+         * @description Permission: crm.contacts.read. Returns pairs of unarchived Contacts in scope that share a normalized email or phone. Phone-only pairs are listed with phoneOnly:true and are never auto-merged.
+         */
+        get: operations["listContactDuplicates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{orgId}/contacts/{contactId}/merges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge a source Contact into this Contact
+         * @description Permission: crm.contacts.write. Merges a source (duplicate) Contact into the survivor (this Contact). All unarchived Leads of the source must be in crm.leads.write scope. Phone-only matches require acknowledgePhoneOnly:true.
+         */
+        post: operations["mergeContact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/orgs/{orgId}/contact-merges/{mergeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the result of a contact merge
+         * @description Permission: crm.contacts.read. Returns the merge result including consent combination outcomes. The merged source is readable as archived-with-survivor.
+         */
+        get: operations["getContactMerge"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3974,6 +4054,56 @@ export interface components {
             items: components["schemas"]["PushDevice"][];
             nextCursor: string | null;
             hasMore: boolean;
+        };
+        ContactDuplicate: {
+            /** Format: uuid */
+            id: string;
+            contactIds: string[];
+            contactVersions: number[];
+            matchKinds: ("email" | "phone")[];
+            phoneOnly: boolean;
+        };
+        PageContactDuplicate: {
+            items: components["schemas"]["ContactDuplicate"][];
+            nextCursor: string | null;
+            hasMore: boolean;
+        };
+        ContactMergeRequest: {
+            /** Format: uuid */
+            sourceContactId: string;
+            sourceVersion: number;
+            acknowledgePhoneOnly?: boolean;
+        };
+        ConsentMergeOutcome: {
+            /** @enum {string} */
+            channelKind: "email" | "phone";
+            channelOrdinal: number;
+            /** @enum {string} */
+            purpose: "email_marketing" | "sms_marketing" | "listing_alert";
+            /** @enum {string} */
+            survivorState: "unknown" | "granted" | "withdrawn";
+            /** @enum {string} */
+            mergedState: "unknown" | "granted" | "withdrawn";
+            /** @enum {string} */
+            resultState: "unknown" | "granted" | "withdrawn";
+            conflict: boolean;
+            /** @enum {string} */
+            reason: "withdrawal_wins" | "later_verified_grant" | "same_state" | "unknown_kept_unknown";
+        };
+        ContactMerge: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            survivorContactId: string;
+            /** Format: uuid */
+            mergedContactId: string;
+            survivorVersion: number;
+            /** Format: date-time */
+            createdAt: string;
+            channelsMoved: number;
+            channelsCombined: number;
+            leadsMoved: number;
+            consentOutcomes: components["schemas"]["ConsentMergeOutcome"][];
         };
     };
     responses: never;
@@ -8305,6 +8435,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token": string;
+                "If-Match": string;
             };
             path: {
                 orgId: string;
@@ -18474,6 +18605,73 @@ export interface operations {
             };
         };
     };
+    listJobs: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                state?: string;
+                kind?: string;
+            };
+            header?: never;
+            path: {
+                orgId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful authorized response. */
+            200: {
+                headers: {
+                    /** @description Correlation ID; contains no contact data. */
+                    "X-Trace-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJob"];
+                };
+            };
+            /** @description Malformed request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentication required or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Permission, entitlement, policy or signature denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Quota exceeded; Retry-After required */
+            429: {
+                headers: {
+                    /** @description Seconds until quota resets. */
+                    "Retry-After": number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getJob: {
         parameters: {
             query?: never;
@@ -23331,6 +23529,336 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listContactDuplicates: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                orgId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful authorized response. */
+            200: {
+                headers: {
+                    /** @description Correlation ID; contains no contact data. */
+                    "X-Trace-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageContactDuplicate"];
+                };
+            };
+            /** @description Bad request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Precondition failed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable entity. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Rate limited. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    mergeContact: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "X-CSRF-Token": string;
+                "If-Match": string;
+            };
+            path: {
+                orgId: string;
+                contactId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted durable operation; poll the job or follow resultUrl to getContactMerge. */
+            202: {
+                headers: {
+                    /** @description Correlation ID; contains no contact data. */
+                    "X-Trace-Id"?: string;
+                    /** @description Survivor contact version after merge. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Bad request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Precondition failed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable entity. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Rate limited. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getContactMerge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orgId: string;
+                mergeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful authorized response. */
+            200: {
+                headers: {
+                    /** @description Correlation ID; contains no contact data. */
+                    "X-Trace-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactMerge"];
+                };
+            };
+            /** @description Bad request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Precondition failed. */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable entity. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Rate limited. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };

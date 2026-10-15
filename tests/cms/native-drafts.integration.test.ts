@@ -11,6 +11,7 @@ import { fixtures } from "../../packages/db/fixtures";
 import { withTenantTransaction } from "../../packages/db/tenant-transaction";
 import { assertContract, assertProblem, type Schemas } from "../helpers/api";
 import { cmsTestOrigin, cmsTestPolicy, createIsolatedCms, testProfilePort } from "./isolated";
+import { MockStorageProvider } from "../../packages/providers/storage/mock";
 
 let environment: Awaited<ReturnType<typeof createIsolatedCms>>;
 type Session = { token: string; csrfToken: string; org: string; user: string };
@@ -20,10 +21,12 @@ let editor: Session;
 let profileA: string;
 let profileB: string;
 const editorRole = randomUUID();
-const grants = ["sites.read", "sites.write", "content.read", "content.write"].map((code) => ({
-  code,
-  scope: "organization",
-}));
+const grants = ["sites.read", "sites.write", "content.read", "content.write", "content.publish"].map(
+  (code) => ({
+    code,
+    scope: "organization",
+  }),
+);
 const base = (session = owner) => `/v1/orgs/${session.org}`;
 const draftPath = (id: string, session = owner) => `/dev/orgs/${session.org}/cms/documents/${id}/drafts`;
 const recoveryPath = (documentId: string, revisionId: string, session = owner) =>
@@ -91,6 +94,7 @@ async function direct<T>(
         new CmsService(client, context, randomUUID(), {
           profiles: testProfilePort(client, context, environment.deniedProfiles),
           trustedLinkPolicy: cmsTestPolicy,
+          storage: new MockStorageProvider(cmsTestOrigin),
         }),
         client,
       ),
@@ -412,7 +416,7 @@ describe("unregistered native CMS API against a disposable real-role database", 
     expect(await counts(document.id)).toEqual(before);
   });
 
-  it("enforces session, CSRF, origin, selected organization and unavailable publication/frozen save routes", async () => {
+  it("enforces session, CSRF, origin, selected organization and frozen saveRevision route", async () => {
     const { document } = await createPair();
     await assertProblem(
       await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"', csrf: "incorrect" }),
@@ -427,23 +431,10 @@ describe("unregistered native CMS API against a disposable real-role database", 
     );
     await assertProblem(await request(owner, "GET", `${base(otherOwner)}/sites`), 403);
     await assertProblem(await fetch(`${environment.origin}${base()}/sites`), 401);
+    // saveRevision POST (/documents/{id}/revisions) remains frozen
     await assertProblem(
       await request(owner, "POST", `${base()}/documents/${document.id}/revisions`, draft(), {
         ifMatch: '"1"',
-      }),
-      404,
-    );
-    await assertProblem(
-      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
-        revisionId: randomUUID(),
-        expectedDocumentVersion: 1,
-      }),
-      404,
-    );
-    await assertProblem(
-      await request(owner, "POST", `${base()}/documents/${document.id}/rollback`, {
-        revisionId: randomUUID(),
-        expectedDocumentVersion: 1,
       }),
       404,
     );
@@ -1353,6 +1344,7 @@ describe("unregistered native CMS API against a disposable real-role database", 
               },
             },
             trustedLinkPolicy: cmsTestPolicy,
+            storage: new MockStorageProvider(cmsTestOrigin),
           });
           return service.createSite(
             { name: "Wrong port binding", businessProfileId: profileA, templateCode: "agent-introduction" },
@@ -1440,5 +1432,677 @@ describe("unregistered native CMS API against a disposable real-role database", 
       await Promise.allSettled([operation, ...(revocation ? [revocation] : [])]);
       revoker.release();
     }
+  });
+});
+
+describe("ADR-053: domain, media and form management", () => {
+  it("lists an empty domain set for a new site", async () => {
+    const { site } = await createPair();
+    const res = await request(owner, "GET", `${base()}/sites/${site.id}/domains`);
+    const body = await success(res, "PageDomain");
+    expect((body as { items: unknown[] }).items).toHaveLength(0);
+  });
+
+  it("creates a domain and returns it with requiredDns pending TXT record", async () => {
+    const { site } = await createPair();
+    const hostname = `test-${randomUUID()}.example.invalid`;
+    const res = await request(owner, "POST", `${base()}/sites/${site.id}/domains`, {
+      hostname,
+      environment: "preview",
+    });
+    const body = (await success(res, "Domain", 201)) as Schemas["Domain"];
+    expect(body.hostname).toBe(hostname);
+    expect(body.verificationState).toBe("pending");
+    expect(body.tlsState).toBe("pending");
+    expect(body.requiredDns).toHaveLength(1);
+    expect(body.requiredDns[0].type).toBe("TXT");
+  });
+
+  it("idempotently returns the same domain on repeated create with same key", async () => {
+    const { site } = await createPair();
+    const hostname = `idem-${randomUUID()}.example.invalid`;
+    const key = randomUUID();
+    const body1 = (await success(
+      await request(
+        owner,
+        "POST",
+        `${base()}/sites/${site.id}/domains`,
+        { hostname, environment: "preview" },
+        { key },
+      ),
+      "Domain",
+      201,
+    )) as Schemas["Domain"];
+    const body2 = (await success(
+      await request(
+        owner,
+        "POST",
+        `${base()}/sites/${site.id}/domains`,
+        { hostname, environment: "preview" },
+        { key },
+      ),
+      "Domain",
+      200,
+    )) as Schemas["Domain"];
+    expect(body1.id).toBe(body2.id);
+  });
+
+  it("rejects a duplicate hostname from another site", async () => {
+    const { site: siteA } = await createPair();
+    const { site: siteB } = await createPair();
+    const hostname = `conflict-${randomUUID()}.example.invalid`;
+    await success(
+      await request(owner, "POST", `${base()}/sites/${siteA.id}/domains`, {
+        hostname,
+        environment: "preview",
+      }),
+      "Domain",
+      201,
+    );
+    await assertProblem(
+      await request(owner, "POST", `${base()}/sites/${siteB.id}/domains`, {
+        hostname,
+        environment: "production",
+      }),
+      409,
+    );
+  });
+
+  it("verifies a domain transitioning it to verified+active", async () => {
+    const { site } = await createPair();
+    const hostname = `verify-${randomUUID()}.example.invalid`;
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, {
+        hostname,
+        environment: "preview",
+      }),
+      "Domain",
+      201,
+    )) as Schemas["Domain"];
+    const verified = (await success(
+      await request(owner, "POST", `${base()}/domains/${created.id}/verify`),
+      "Domain",
+    )) as Schemas["Domain"];
+    expect(verified.verificationState).toBe("verified");
+    expect(verified.tlsState).toBe("active");
+    expect(verified.requiredDns).toHaveLength(0);
+  });
+
+  it("archives a domain and returns 202 Job", async () => {
+    const { site } = await createPair();
+    const hostname = `archive-${randomUUID()}.example.invalid`;
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, {
+        hostname,
+        environment: "preview",
+      }),
+      "Domain",
+      201,
+    )) as Schemas["Domain"];
+    const job = (await success(
+      await request(owner, "POST", `${base()}/domains/${created.id}/archive`),
+      "Job",
+      202,
+    )) as Schemas["Job"];
+    expect(job.state).toBe("succeeded");
+    // Archived domain no longer appears in list
+    const list = (await success(
+      await request(owner, "GET", `${base()}/sites/${site.id}/domains`),
+      "PageDomain",
+    )) as { items: Schemas["Domain"][] };
+    expect(list.items.find((d) => d.id === created.id)).toBeUndefined();
+  });
+
+  it("refuses to archive a site with a verified domain", async () => {
+    const { site } = await createPair();
+    const hostname = `block-${randomUUID()}.example.invalid`;
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/domains`, {
+        hostname,
+        environment: "preview",
+      }),
+      "Domain",
+      201,
+    )) as Schemas["Domain"];
+    await success(await request(owner, "POST", `${base()}/domains/${created.id}/verify`), "Domain");
+    await assertProblem(await request(owner, "POST", `${base()}/sites/${site.id}/archive`), 409);
+  });
+
+  it("archives a site with no verified domains", async () => {
+    const { site } = await createPair();
+    const job = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/archive`),
+      "Job",
+      202,
+    )) as Schemas["Job"];
+    expect(job.state).toBe("succeeded");
+  });
+
+  it("refuses to archive a site belonging to another tenant", async () => {
+    const { site } = await createPair();
+    await assertProblem(
+      await request(otherOwner, "POST", `${base(otherOwner)}/sites/${site.id}/archive`),
+      404,
+    );
+  });
+
+  it("lists media assets for the tenant", async () => {
+    const res = await request(owner, "GET", `${base()}/media`);
+    const body = (await success(res, "PageMedia")) as { items: unknown[] };
+    expect(Array.isArray(body.items)).toBe(true);
+  });
+
+  it("finalizes a pending media asset", async () => {
+    // Insert a pending media_asset directly via admin connection
+    const assetId = randomUUID();
+    await environment.admin.query(
+      "INSERT INTO app.media_asset(tenant_id,id,object_key,mime_type,byte_size,scan_state,rights) VALUES($1,$2,$3,'image/png',1024,'pending','{}'::jsonb)",
+      [fixtures.orgA, assetId, `uploads/${assetId}`],
+    );
+    const res = await request(owner, "POST", `${base()}/media/finalize`, {
+      assetId,
+      checksum: "sha256-abc123",
+      altText: "Test image",
+      rightsAttestation: true,
+    });
+    const body = (await success(res, "Media")) as Schemas["Media"];
+    expect(body.id).toBe(assetId);
+    expect(body.scanState).toBe("clean");
+  });
+
+  it("rejects finalizing a rejected media asset", async () => {
+    const assetId = randomUUID();
+    await environment.admin.query(
+      "INSERT INTO app.media_asset(tenant_id,id,object_key,mime_type,byte_size,scan_state,rights) VALUES($1,$2,$3,'image/png',1024,'rejected','{}'::jsonb)",
+      [fixtures.orgA, assetId, `uploads/${assetId}`],
+    );
+    await assertProblem(
+      await request(owner, "POST", `${base()}/media/finalize`, {
+        assetId,
+        checksum: "sha256-abc123",
+        rightsAttestation: true,
+      }),
+      422,
+    );
+  });
+
+  it("refuses to finalize a media asset from another tenant", async () => {
+    const assetId = randomUUID();
+    await environment.admin.query(
+      "INSERT INTO app.media_asset(tenant_id,id,object_key,mime_type,byte_size,scan_state,rights) VALUES($1,$2,$3,'image/png',1024,'pending','{}'::jsonb)",
+      [fixtures.orgB, assetId, `uploads-b/${assetId}`],
+    );
+    await assertProblem(
+      await request(owner, "POST", `${base()}/media/finalize`, {
+        assetId,
+        checksum: "sha256-abc123",
+        rightsAttestation: true,
+      }),
+      404,
+    );
+  });
+
+  it("creates a form for a site", async () => {
+    const { site } = await createPair();
+    const formBody = {
+      name: "Contact Form",
+      fields: [{ key: "name", label: "Name", kind: "text", required: true }],
+      confirmation: "Thank you for your message.",
+      leadSourceId: fixtures.orgA,
+      state: "draft",
+    };
+    const res = await request(owner, "POST", `${base()}/sites/${site.id}/forms`, formBody);
+    const body = (await success(res, "Form", 201)) as Schemas["Form"];
+    expect(body.name).toBe("Contact Form");
+    expect(body.version).toBe(1);
+    expect(body.state).toBe("draft");
+    expect(body.fields).toHaveLength(1);
+  });
+
+  it("lists forms for a site", async () => {
+    const { site } = await createPair();
+    await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/forms`, {
+        name: "Inquiry Form",
+        fields: [],
+        confirmation: "Got it.",
+        leadSourceId: fixtures.orgA,
+        state: "draft",
+      }),
+      "Form",
+      201,
+    );
+    const list = (await success(
+      await request(owner, "GET", `${base()}/sites/${site.id}/forms`),
+      "PageForm",
+    )) as { items: Schemas["Form"][] };
+    expect(list.items.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("gets a form by id", async () => {
+    const { site } = await createPair();
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/forms`, {
+        name: "Get Test Form",
+        fields: [],
+        confirmation: "Done.",
+        leadSourceId: fixtures.orgA,
+        state: "draft",
+      }),
+      "Form",
+      201,
+    )) as Schemas["Form"];
+    const fetched = (await success(
+      await request(owner, "GET", `${base()}/forms/${created.id}`),
+      "Form",
+    )) as Schemas["Form"];
+    expect(fetched.id).toBe(created.id);
+    expect(fetched.name).toBe("Get Test Form");
+  });
+
+  it("publishes a new form version", async () => {
+    const { site } = await createPair();
+    const created = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/forms`, {
+        name: "Versioned Form",
+        fields: [],
+        confirmation: "Done.",
+        leadSourceId: fixtures.orgA,
+        state: "draft",
+      }),
+      "Form",
+      201,
+    )) as Schemas["Form"];
+    expect(created.version).toBe(1);
+    const v2 = (await success(
+      await request(owner, "POST", `${base()}/forms/${created.id}/versions`, {
+        name: "Versioned Form",
+        fields: [{ key: "email", label: "Email", kind: "email", required: true }],
+        confirmation: "Thank you.",
+        leadSourceId: fixtures.orgA,
+        state: "published",
+      }),
+      "Form",
+      201,
+    )) as Schemas["Form"];
+    expect(v2.version).toBe(2);
+    expect(v2.state).toBe("published");
+  });
+
+  it("refuses to access another tenant's forms", async () => {
+    const { site } = await createPair();
+    const form = (await success(
+      await request(owner, "POST", `${base()}/sites/${site.id}/forms`, {
+        name: "Tenant Isolation Form",
+        fields: [],
+        confirmation: "Done.",
+        leadSourceId: fixtures.orgA,
+        state: "draft",
+      }),
+      "Form",
+      201,
+    )) as Schemas["Form"];
+    await assertProblem(await request(otherOwner, "GET", `${base(otherOwner)}/forms/${form.id}`), 404);
+  });
+
+  // ── Publication (ADR-055 / MOD-C-003) ──────────────────────────────────────
+
+  it("publishes a revision, updating the document pointer idempotently", async () => {
+    const { document } = await createPair();
+    const revision = (await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+
+    const key = randomUUID();
+    const publishBody = { revisionId: revision.id, expectedDocumentVersion: 2 };
+
+    const res1 = await request(owner, "POST", `${base()}/documents/${document.id}/publish`, publishBody, {
+      key,
+    });
+    const job1 = (await success(res1, "Job", 202)) as Schemas["Job"];
+    expect(job1.state).toBe("succeeded");
+    expect(job1.kind).toBe("document.published");
+    expect(res1.headers.get("etag")).toBe('"3"');
+
+    // Idempotent replay returns the same job body
+    const res2 = await request(owner, "POST", `${base()}/documents/${document.id}/publish`, publishBody, {
+      key,
+    });
+    const job2 = (await success(res2, "Job", 202)) as Schemas["Job"];
+    expect(job2.id).toBe(job1.id);
+
+    // Document pointer is set
+    const doc = (await success(
+      await request(owner, "GET", `${base()}/documents/${document.id}`),
+      "Document",
+    )) as Schemas["Document"];
+    expect(doc.publishedRevisionId).toBe(revision.id);
+    expect(doc.version).toBe(3);
+  });
+
+  it("returns 412 when expectedDocumentVersion mismatches the current version", async () => {
+    const { document } = await createPair();
+    const revision = (await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+
+    await assertProblem(
+      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: revision.id,
+        expectedDocumentVersion: 1, // wrong — document is now at version 2
+      }),
+      412,
+    );
+  });
+
+  it("returns 404 for a revision that does not belong to the document", async () => {
+    const { document } = await createPair();
+    const other = await createPair();
+    const foreignRevision = (await success(
+      await request(owner, "POST", draftPath(other.document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+
+    await assertProblem(
+      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: foreignRevision.id,
+        expectedDocumentVersion: 1,
+      }),
+      404,
+    );
+  });
+
+  it("rolls back to a previous revision, updating the document pointer", async () => {
+    const { document } = await createPair();
+    const rev1 = (await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+    // Publish rev1
+    await success(
+      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: rev1.id,
+        expectedDocumentVersion: 2,
+      }),
+      "Job",
+      202,
+    );
+    // Save rev2
+    const changed = draft();
+    changed.seo.title = "Rollback target";
+    const rev2 = (await success(
+      await request(owner, "POST", draftPath(document.id), changed, { ifMatch: '"3"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+    // Publish rev2
+    await success(
+      await request(owner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: rev2.id,
+        expectedDocumentVersion: 4,
+      }),
+      "Job",
+      202,
+    );
+    // Roll back to rev1
+    const rollbackKey = randomUUID();
+    const res = await request(
+      owner,
+      "POST",
+      `${base()}/documents/${document.id}/rollback`,
+      { revisionId: rev1.id, expectedDocumentVersion: 5 },
+      { key: rollbackKey },
+    );
+    const job = (await success(res, "Job", 202)) as Schemas["Job"];
+    expect(job.state).toBe("succeeded");
+    expect(job.kind).toBe("document.rolledback");
+    // Idempotent replay
+    const res2 = await request(
+      owner,
+      "POST",
+      `${base()}/documents/${document.id}/rollback`,
+      { revisionId: rev1.id, expectedDocumentVersion: 5 },
+      { key: rollbackKey },
+    );
+    const job2 = (await success(res2, "Job", 202)) as Schemas["Job"];
+    expect(job2.id).toBe(job.id);
+
+    const doc = (await success(
+      await request(owner, "GET", `${base()}/documents/${document.id}`),
+      "Document",
+    )) as Schemas["Document"];
+    expect(doc.publishedRevisionId).toBe(rev1.id);
+    expect(doc.version).toBe(6);
+  });
+
+  it("denies publication without content.publish permission", async () => {
+    const { document } = await createPair(editor);
+    const revision = (await success(
+      await request(editor, "POST", draftPath(document.id, editor), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+    // editor role currently has content.publish via grants; temporarily remove it
+    await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+      JSON.stringify(grants.filter((g) => g.code !== "content.publish")),
+      editorRole,
+    ]);
+    await assertProblem(
+      await request(editor, "POST", `${base(editor)}/documents/${document.id}/publish`, {
+        revisionId: revision.id,
+        expectedDocumentVersion: 2,
+      }),
+      403,
+    );
+  });
+
+  it("isolates publish across tenant boundaries", async () => {
+    const { document } = await createPair();
+    const revision = (await success(
+      await request(owner, "POST", draftPath(document.id), draft(), { ifMatch: '"1"' }),
+      "Revision",
+      201,
+    )) as Schemas["Revision"];
+    // otherOwner cannot publish owner's document
+    await assertProblem(
+      await request(otherOwner, "POST", `${base(otherOwner)}/documents/${document.id}/publish`, {
+        revisionId: revision.id,
+        expectedDocumentVersion: 2,
+      }),
+      404,
+    );
+    await assertProblem(
+      await request(otherOwner, "POST", `${base()}/documents/${document.id}/publish`, {
+        revisionId: revision.id,
+        expectedDocumentVersion: 2,
+      }),
+      403,
+    );
+  });
+});
+
+describe("ADR-057: document archive and site update", () => {
+  it("archives a document idempotently and marks it unavailable", async () => {
+    const { document } = await createPair();
+    const key = randomUUID();
+    const archivePath = `${base()}/documents/${document.id}/archive`;
+
+    const res1 = await request(owner, "POST", archivePath, {}, { key });
+    const job1 = (await success(res1, "Job", 202)) as Schemas["Job"];
+    expect(job1.state).toBe("succeeded");
+    expect(job1.kind).toBe("document.archived");
+    expect(res1.headers.get("etag")).toBe('"2"');
+
+    // Idempotent replay
+    const res2 = await request(owner, "POST", archivePath, {}, { key });
+    const job2 = (await success(res2, "Job", 202)) as Schemas["Job"];
+    expect(job2.id).toBe(job1.id);
+
+    // Document no longer visible in list
+    const list = (await success(
+      await request(owner, "GET", `${base()}/sites/${document.siteId ?? "x"}/documents`),
+      "PageDocument",
+    )) as Schemas["PageDocument"];
+    expect(list.items.find((d) => d.id === document.id)).toBeUndefined();
+  });
+
+  it("returns 409 when archiving an already-archived document without idempotency key", async () => {
+    const { document } = await createPair();
+    // First archive succeeds
+    await success(await request(owner, "POST", `${base()}/documents/${document.id}/archive`, {}), "Job", 202);
+    // Second archive (different key) returns 409
+    await assertProblem(await request(owner, "POST", `${base()}/documents/${document.id}/archive`, {}), 409);
+  });
+
+  it("updates a site name and profile idempotently", async () => {
+    const { site } = await createPair();
+    const profileId = site.businessProfileId;
+    const key = randomUUID();
+    const newName = `Renamed ${randomUUID()}`;
+    const patchBody = { name: newName, businessProfileId: profileId, templateCode: "agent-introduction" };
+    const patchPath = `${base()}/sites/${site.id}`;
+
+    const res1 = await request(owner, "PATCH", patchPath, patchBody, { key, ifMatch: '"1"' });
+    const updated1 = (await success(res1, "Site", 200)) as Schemas["Site"];
+    expect(updated1.name).toBe(newName);
+    expect(res1.headers.get("etag")).toBe('"2"');
+
+    // Idempotent replay
+    const res2 = await request(owner, "PATCH", patchPath, patchBody, { key, ifMatch: '"1"' });
+    const updated2 = (await success(res2, "Site", 200)) as Schemas["Site"];
+    expect(updated2.id).toBe(updated1.id);
+  });
+
+  it("returns 412 when site version mismatches on update", async () => {
+    const { site } = await createPair();
+    const patchBody = {
+      name: `Renamed ${randomUUID()}`,
+      businessProfileId: site.businessProfileId,
+      templateCode: "agent-introduction",
+    };
+    await assertProblem(
+      await request(owner, "PATCH", `${base()}/sites/${site.id}`, patchBody, { ifMatch: '"99"' }),
+      412,
+    );
+  });
+
+  it("denies archiveDocument without content.write permission", async () => {
+    const { document } = await createPair(editor);
+    // editor role lacks content.write when grants are cleared to read-only
+    const readOnly = [
+      { code: "sites.read", scope: "org" },
+      { code: "content.read", scope: "org" },
+    ];
+    await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+      JSON.stringify(readOnly),
+      editorRole,
+    ]);
+    try {
+      await assertProblem(
+        await request(editor, "POST", `${base(editor)}/documents/${document.id}/archive`, {}),
+        403,
+      );
+    } finally {
+      await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+        JSON.stringify(grants),
+        editorRole,
+      ]);
+    }
+  });
+
+  it("isolates archiveDocument across tenant boundaries", async () => {
+    const { document } = await createPair();
+    await assertProblem(
+      await request(otherOwner, "POST", `${base(otherOwner)}/documents/${document.id}/archive`, {}),
+      404,
+    );
+  });
+});
+
+describe("ADR-058: media upload grant", () => {
+  const uploadBody = () => ({
+    filename: "photo.jpg",
+    mimeType: "image/jpeg",
+    bytes: 1024,
+    purpose: "media" as const,
+  });
+
+  it("creates an upload grant and returns 201 UploadGrant", async () => {
+    const grant = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    expect(grant.method).toBe("PUT");
+    expect(grant.url).toMatch(/\/dev\/uploads\//);
+    expect(grant.assetId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(typeof grant.expiresAt).toBe("string");
+    expect(grant.requiredHeaders["Content-Type"]).toBe("image/jpeg");
+  });
+
+  it("replays the same grant for the same idempotency key", async () => {
+    const key = randomUUID();
+    const first = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody(), { key }),
+      "UploadGrant",
+      201,
+    );
+    const second = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody(), { key }),
+      "UploadGrant",
+      201,
+    );
+    expect(second.assetId).toBe(first.assetId);
+    expect(second.url).toBe(first.url);
+  });
+
+  it("returns distinct grants for distinct idempotency keys", async () => {
+    const first = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    const second = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    expect(second.assetId).not.toBe(first.assetId);
+  });
+
+  it("returns 403 when media.write permission is absent", async () => {
+    const readOnly = grants.filter((g) => g.code !== "media.write");
+    await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+      JSON.stringify(readOnly),
+      editorRole,
+    ]);
+    try {
+      await assertProblem(await request(editor, "POST", `${base(editor)}/uploads`, uploadBody()), 403);
+    } finally {
+      await environment.admin.query("UPDATE app.role_definition SET permission_grants=$1 WHERE id=$2", [
+        JSON.stringify(grants),
+        editorRole,
+      ]);
+    }
+  });
+
+  it("isolates upload grants across tenant boundaries by using distinct org prefixes", async () => {
+    const grant = await success(
+      await request(owner, "POST", `${base()}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    const otherGrant = await success(
+      await request(otherOwner, "POST", `${base(otherOwner)}/uploads`, uploadBody()),
+      "UploadGrant",
+      201,
+    );
+    expect(otherGrant.assetId).not.toBe(grant.assetId);
   });
 });

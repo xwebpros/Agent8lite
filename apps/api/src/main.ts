@@ -18,7 +18,9 @@ import {
   withTenantTransaction,
 } from "../../../packages/db/tenant-transaction";
 import {
+  createSession,
   createSyntheticSession,
+  readProductionSession,
   readSession,
   resolveVerifiedIdentity,
   revokeSession,
@@ -28,12 +30,15 @@ import {
   type ServerSession,
 } from "../../../packages/auth/sessions";
 import { operation, schemaName, validateSchema, validateNativeCapture } from "./contract-validation";
-import { CrmService, assertUuid } from "./crm-service";
+import { CrmService, assertUuid, stable } from "./crm-service";
 import { organization } from "./models";
 import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { MockOidcProvider } from "../../../packages/providers/identity/mock";
+import { OidcTokenVerifier, discoverOidcIssuer } from "../../../packages/providers/identity/oidc";
 import { acceptInvitation, AdminService } from "./admin-service";
 import { SupportService } from "./support-service";
+import { NotificationService } from "./notification-service";
+import { AppointmentService } from "./appointment-service";
 import { BillingService } from "./billing-service";
 import { ImportExportService, UploadService } from "./import-export-service";
 import { DealService } from "./deal-service";
@@ -46,15 +51,19 @@ import type { NativeCaptureDecision } from "../../../packages/contracts/internal
 import { validateSyntheticConsent } from "./contract-validation";
 import { tryNativeMockRead } from "./mls";
 import { CmsHttpAdapter } from "./cms";
+import { MockStorageProvider } from "../../../packages/providers/storage/mock";
 import { createCmsProfileReferencePort } from "./admin-profile-reference";
 import { createStaffPools } from "../../../packages/db/staff-pools";
 import { createStaffHttpAdapter } from "./control/http-adapter";
 import { withStaffTransaction } from "../../../packages/auth/staff-sessions";
 import { CampaignDraftService, campaignEtag } from "./marketing";
+import { AutomationService } from "./marketing/automation-service";
+import { BroadcastPreviewService } from "./marketing/broadcast-preview-service";
 import { CampaignWorkflowService, WorkflowCommandError } from "./marketing/workflow-service";
 import { MessageDesignDraftService } from "./marketing/message-design-service";
 import { MessageDesignCommandError } from "./marketing/message-design-errors";
 import { messageDesignEtag } from "./marketing/message-design-model";
+import { tryPublicSiteRoute } from "./public-site-service";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -68,6 +77,12 @@ const oidc = syntheticEnabled
       mode: process.env.APP_ENV === "test" ? "test" : "development",
     })
   : null;
+const productionOidc =
+  !syntheticEnabled && process.env.OIDC_ISSUER && process.env.OIDC_CLIENT_ID
+    ? { issuer: process.env.OIDC_ISSUER, clientId: process.env.OIDC_CLIENT_ID }
+    : null;
+let productionVerifier: OidcTokenVerifier | null = null;
+const pendingOidcStates = new Map<string, { nonce: string; verifier: string; expires: number }>();
 const loopback = (address: string | undefined) =>
   !!address && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address);
 const loginAttempts = new Map<string, { count: number; resets: number }>();
@@ -153,7 +168,7 @@ async function sessionBody(session: ServerSession, res: Response) {
     const identity = identities.rows[0];
     res.setHeader("X-CSRF-Token", session.csrfToken);
     res.setHeader("X-Member-Id", context.memberId);
-    res.setHeader("X-Synthetic-Identity", "true");
+    if (syntheticEnabled) res.setHeader("X-Synthetic-Identity", "true");
     res.setHeader("ETag", `"${identity.row_version}"`);
     const body = {
       userId: session.userId,
@@ -183,10 +198,21 @@ class ApiController {
           res.setHeader("X-Verification-Instance", process.env.API_VERIFICATION_ID!);
         res.json({
           status: "ready",
-          identityMode: syntheticEnabled ? "synthetic-loopback" : "unconfigured",
+          identityMode: syntheticEnabled ? "synthetic-loopback" : productionOidc ? "oidc" : "unconfigured",
           mlsMode: "mock",
           deliveryMode: "no-delivery",
         });
+        return;
+      }
+      if (req.path === "/v1/push/vapid-key" && req.method === "GET") {
+        const vapid = await runtimePool.query(
+          `SELECT value FROM app.instance_config WHERE key='vapid_public_key'`,
+        );
+        if (!vapid.rowCount) {
+          res.status(404).json({ type: "push_unconfigured", title: "Push notifications are not configured." });
+          return;
+        }
+        res.json({ applicationServerKey: vapid.rows[0].value });
         return;
       }
       if (req.cookies?.estate_staff_session && req.cookies?.[sessionCookie])
@@ -197,7 +223,7 @@ class ApiController {
         );
       if (req.path === "/dev/session" && req.method === "POST") {
         localIdentity(req);
-        rate(loginAttempts, req.socket.remoteAddress ?? "", 20);
+        rate(loginAttempts, req.socket.remoteAddress ?? "", syntheticEnabled ? 200 : 20);
         if (
           !req.body ||
           !["owner", "agent"].includes(req.body.identity) ||
@@ -228,7 +254,7 @@ class ApiController {
           code: callback.searchParams.get("code")!,
           codeVerifier: verifier,
         });
-        const verified = oidc!.verifyIdentityToken(token.idToken, {
+        const verified = await oidc!.verifyIdentityToken(token.idToken, {
           clientId: "estate-synthetic-bff",
           nonce,
         });
@@ -245,16 +271,124 @@ class ApiController {
         res.json(await sessionBody(session, res));
         return;
       }
-      if (!syntheticEnabled)
-        throw new AccessError(
-          401,
-          "identity_provider_unconfigured",
-          "An approved identity provider is required.",
+      if (req.path === "/v1/auth/login" && req.method === "POST" && productionOidc) {
+        rate(loginAttempts, req.socket.remoteAddress ?? "", 20);
+        origin(req);
+        const discovery = await discoverOidcIssuer(productionOidc.issuer);
+        const verifier = randomBytes(32).toString("base64url");
+        const state = randomBytes(32).toString("base64url");
+        const nonce = randomBytes(32).toString("base64url");
+        const redirectUri = req.body?.redirectUri;
+        if (
+          !redirectUri ||
+          typeof redirectUri !== "string" ||
+          !allowedOrigins.has(new URL(redirectUri).origin)
+        )
+          throw new AccessError(422, "redirect_uri_invalid", "A permitted redirect URI is required.");
+        const codeChallenge = createHash("sha256").update(verifier).digest("base64url");
+        const params = new URLSearchParams({
+          response_type: "code",
+          client_id: productionOidc.clientId,
+          redirect_uri: redirectUri,
+          scope: "openid email profile",
+          state,
+          nonce,
+          code_challenge: codeChallenge,
+          code_challenge_method: "S256",
+        });
+        pendingOidcStates.set(state, { nonce, verifier, expires: Date.now() + 10 * 60_000 });
+        for (const [k, s] of pendingOidcStates) if (s.expires < Date.now()) pendingOidcStates.delete(k);
+        res.json({ authorizationUrl: `${discovery.authorizationEndpoint}?${params}` });
+        return;
+      }
+      if (req.path === "/v1/auth/callback" && req.method === "POST" && productionOidc) {
+        rate(loginAttempts, req.socket.remoteAddress ?? "", 20);
+        origin(req);
+        const { code, state, redirectUri } = req.body ?? {};
+        if (!code || !state || !redirectUri)
+          throw new AccessError(
+            422,
+            "callback_parameters_missing",
+            "Code, state and redirectUri are required.",
+          );
+        const pending = pendingOidcStates.get(state);
+        if (!pending) throw new AccessError(401, "oidc_state_invalid", "State expired or invalid.");
+        pendingOidcStates.delete(state);
+        if (pending.expires < Date.now())
+          throw new AccessError(401, "oidc_state_expired", "Authentication attempt expired.");
+        const discovery = await discoverOidcIssuer(productionOidc.issuer);
+        if (!productionVerifier)
+          productionVerifier = new OidcTokenVerifier({
+            issuer: discovery.issuer,
+            jwksUri: discovery.jwksUri,
+          });
+        const tokenResponse = await fetch(discovery.tokenEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: productionOidc.clientId,
+            redirect_uri: redirectUri,
+            code,
+            code_verifier: pending.verifier,
+          }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!tokenResponse.ok)
+          throw new AccessError(
+            401,
+            "oidc_token_exchange_failed",
+            "Identity provider rejected the token exchange.",
+          );
+        const tokens = (await tokenResponse.json()) as { id_token?: string };
+        if (!tokens.id_token)
+          throw new AccessError(401, "oidc_no_id_token", "Identity provider did not return an ID token.");
+        const verified = await productionVerifier.verifyIdentityToken(tokens.id_token, {
+          clientId: productionOidc.clientId,
+          nonce: pending.nonce,
+        });
+        const userId = await resolveVerifiedIdentity(runtimePool, verified);
+        const membership = await runtimePool.query(
+          "SELECT tenant_id FROM app.membership WHERE user_id=$1 AND status='active' ORDER BY created_at LIMIT 1",
+          [userId],
         );
-      const session = await readSession(runtimePool, req.cookies?.[sessionCookie]);
-      localAccess(req);
+        if (!membership.rowCount)
+          throw new AccessError(403, "membership_required", "Active membership required.");
+        const result = await createSession(runtimePool, userId, membership.rows[0].tenant_id);
+        res.cookie(sessionCookie, result.token, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: true,
+          path: "/",
+          maxAge: 8 * 60 * 60 * 1000,
+        });
+        const session = await readProductionSession(runtimePool, result.token);
+        res.json(await sessionBody(session, res));
+        return;
+      }
+      if (req.path.startsWith("/v1/public/")) {
+        const isMutation = req.method !== "GET" && req.method !== "HEAD";
+        rate(
+          requestRates,
+          `public:${req.socket.remoteAddress ?? "unknown"}:${isMutation ? "mutation" : "read"}`,
+          isMutation ? 60 : 200,
+        );
+        const handled = await tryPublicSiteRoute(req, res, runtimePool, traceId, {
+          signingKey:
+            process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production",
+        });
+        if (handled) return;
+      }
+      const session = syntheticEnabled
+        ? await readSession(runtimePool, req.cookies?.[sessionCookie])
+        : await readProductionSession(runtimePool, req.cookies?.[sessionCookie]);
+      if (syntheticEnabled) localAccess(req);
       const reading = ["GET", "HEAD"].includes(req.method);
-      rate(requestRates, `${session.userId}:${reading ? "read" : "mutation"}`, reading ? 300 : 120);
+      rate(
+        requestRates,
+        `${session.userId}:${reading ? "read" : "mutation"}`,
+        reading ? (syntheticEnabled ? 10000 : 300) : syntheticEnabled ? 5000 : 120,
+      );
       if (req.method !== "GET" && req.method !== "HEAD") {
         origin(req);
         verifyCsrf(session, req.headers["x-csrf-token"] as string | undefined);
@@ -268,10 +402,24 @@ class ApiController {
         res.json(await sessionBody({ ...session, organizationId: req.body.organizationId }, res));
         return;
       }
+      if (req.path === "/v1/session/organization" && req.method === "POST") {
+        if (!req.body || Object.keys(req.body).length !== 1)
+          throw new AccessError(422, "organization_invalid", "Organization ID required.");
+        assertUuid(req.body.organizationId);
+        await switchOrganization(runtimePool, session, req.body.organizationId);
+        res.json(await sessionBody({ ...session, organizationId: req.body.organizationId }, res));
+        return;
+      }
       if (req.path === "/dev/logout" && req.method === "POST") {
         localIdentity(req);
         await revokeSession(runtimePool, session);
         res.clearCookie(sessionCookie, { path: "/" });
+        res.status(204).end();
+        return;
+      }
+      if (req.path === "/v1/logout" && req.method === "POST") {
+        await revokeSession(runtimePool, session);
+        res.clearCookie(sessionCookie, { path: "/", httpOnly: true, sameSite: "lax", secure: true });
         res.status(204).end();
         return;
       }
@@ -301,7 +449,7 @@ class ApiController {
       }
       if (
         req.path === "/v1/templates" ||
-        /^\/v1\/orgs\/[^/]+\/(?:sites|documents|revisions)(?:\/|$)/.test(req.path) ||
+        /^\/v1\/orgs\/[^/]+\/(?:sites|documents|revisions|domains|media|forms)(?:\/|$)/.test(req.path) ||
         /^\/dev\/orgs\/[^/]+\/cms\/documents\/[^/]+\/(?:drafts|revision-history|revisions\/[^/]+\/recovery)$/.test(
           req.path,
         )
@@ -313,6 +461,7 @@ class ApiController {
           profiles: createCmsProfileReferencePort,
           trustedLinkPolicy: { approvedLinkOrigins: new Set() },
           allowedOrigins,
+          storage: new MockStorageProvider(`http://127.0.0.1:${process.env.PORT ?? 3001}`),
         }).handle({
           method: req.method,
           url: req.originalUrl,
@@ -414,6 +563,35 @@ class ApiController {
         });
         validateSchema("Job", result.body, true);
         res.status(result.status).json(result.body);
+        return;
+      }
+      if (req.path === "/dev/dispatch-broadcasts" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { DispatchService } = await import("./marketing/dispatch-service");
+          const service = new DispatchService(client, context, traceId);
+          return service.processQueuedBroadcasts();
+        });
+        res.json(result);
+        return;
+      }
+      if (req.path === "/dev/dispatch-actions" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { ActionWorker } = await import("./marketing/action-worker");
+          const worker = new ActionWorker(client, context, traceId);
+          return worker.processDueActions();
+        });
+        res.json(result);
+        return;
+      }
+      if (req.path === "/dev/retention" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { RetentionService } = await import("./retention-service");
+          return new RetentionService(client, context, traceId).enforceRetention();
+        });
+        res.json(result);
         return;
       }
       if (req.path === "/dev/capture" && req.method === "POST") {
@@ -536,9 +714,9 @@ class ApiController {
         res.status(result.status).json(result.body);
         return;
       }
-      const match = req.path.match(/^\/v1\/orgs\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
+      const match = req.path.match(/^\/v1\/orgs\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/);
       if (!match) throw new AccessError(404, "route_unavailable", "Route unavailable.");
-      const [, org, resource, id, action] = match;
+      let [, org, resource, id, action, subAction] = match;
       assertUuid(org);
       if (org !== session.organizationId)
         throw new AccessError(
@@ -546,6 +724,16 @@ class ApiController {
           "active_organization_mismatch",
           "Select this organization before accessing its records.",
         );
+      const compoundResources: Record<string, Set<string>> = {
+        ai: new Set(["jobs"]),
+        "local-presence": new Set(["entities", "profiles"]),
+        reports: new Set(["query"]),
+      };
+      if (id && compoundResources[resource!]?.has(id)) {
+        resource = `${resource}/${id}`;
+        id = action;
+        action = subAction;
+      }
       const resourceId: Record<string, string> = {
         contacts: "contactId",
         leads: "leadId",
@@ -558,11 +746,21 @@ class ApiController {
         "business-profiles": "businessProfileId",
         jobs: "jobId",
         tickets: "ticketId",
+        notifications: "notificationId",
         "pipeline-stages": "pipelineStageId",
         "lead-sources": "leadSourceId",
         campaigns: "campaignId",
         "campaign-versions": "campaignVersionId",
         "message-designs": "messageDesignId",
+        "contact-merges": "mergeId",
+        "audit-events": "auditEventId",
+        "broadcast-confirmations": "confirmationId",
+        "push-subscriptions": "pushDeviceId",
+        "mls-feeds": "feedId",
+        automations: "automationId",
+        enrollments: "enrollmentId",
+        integrations: "integrationId",
+        "ai/jobs": "aiJobId",
       };
       const path = ["billing", "imports"].includes(resource)
         ? `/v1/orgs/{orgId}/${resource}${id ? `/${id}` : ""}`
@@ -586,6 +784,146 @@ class ApiController {
             return { body, status: 202 };
           }
           await requireEntitlement(client, spec["x-permission"]);
+          if (resource === "appointments") {
+            if (req.method !== "GET" || id || action)
+              throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (req.body !== undefined)
+              throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+            const body = await new AppointmentService(client, context).list(req.query);
+            if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+            return { body, status: 200 };
+          }
+          if (resource === "notifications") {
+            const notifications = new NotificationService(client, context, traceId);
+            let response: ApiCommandResponse;
+            if (req.method === "GET" && !id && !action) {
+              if (Object.keys(req.query).some((key) => !["cursor", "limit"].includes(key)))
+                throw new AccessError(422, "query_invalid", "Only notification pagination is supported.");
+              response = { body: await notifications.list(req.query), status: 200 };
+            } else if (req.method === "POST" && id && action === "read") {
+              if (Object.keys(req.query).length)
+                throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+              if (
+                req.body !== undefined &&
+                (req.body === null ||
+                  typeof req.body !== "object" ||
+                  Array.isArray(req.body) ||
+                  Object.keys(req.body).length > 0)
+              )
+                throw new AccessError(422, "body_not_allowed", "This command accepts no content fields.");
+              response = await notifications.markRead(
+                id,
+                req.headers["idempotency-key"] as string | undefined,
+              );
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
+          if (resource === "audit-events") {
+            if (req.method !== "GET" || id || action)
+              throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (req.body !== undefined)
+              throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+            const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
+            const cursor = req.query.cursor as string | undefined;
+            let whereClause = "WHERE tenant_id=$1";
+            const params: (string | number)[] = [session.organizationId, limit + 1];
+            if (cursor) {
+              assertUuid(cursor);
+              whereClause += ` AND (created_at,id)<(SELECT created_at,id FROM app.audit_event WHERE tenant_id=$1 AND id=$${params.length + 1})`;
+              params.push(cursor);
+            }
+            const rows = await client.query(
+              `SELECT id,actor_ref,action,resource_type,resource_id,trace_id,created_at FROM app.audit_event ${whereClause} ORDER BY created_at DESC,id DESC LIMIT $2`,
+              params,
+            );
+            const hasMore = rows.rows.length > limit;
+            const items = rows.rows.slice(0, limit).map((r) => ({
+              id: r.id,
+              actorRef: r.actor_ref,
+              action: r.action,
+              resourceType: r.resource_type,
+              resourceId: r.resource_id,
+              traceId: r.trace_id,
+              createdAt: r.created_at.toISOString(),
+            }));
+            const body = {
+              items,
+              nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null,
+              hasMore,
+            };
+            if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+            return { body, status: 200 };
+          }
+          if (resource === "push-subscriptions") {
+            if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (req.method === "GET" && !id) {
+              requirePermission(context, spec["x-permission"]);
+              const rows = await client.query(
+                `SELECT id,device_label,topics,state,row_version FROM app.push_subscription
+                 WHERE tenant_id=$1 AND member_id=$2 ORDER BY created_at DESC LIMIT 100`,
+                [context.organizationId, context.memberId],
+              );
+              const body = {
+                items: rows.rows.map((r) => ({
+                  id: r.id,
+                  deviceLabel: r.device_label,
+                  topics: r.topics,
+                  state: r.state,
+                  version: Number(r.row_version),
+                })),
+                nextCursor: null,
+                hasMore: false,
+              };
+              if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+              return { body, status: 200 };
+            }
+            if (req.method === "POST" && !id) {
+              requirePermission(context, spec["x-permission"]);
+              validateSchema("PushSubscriptionWrite", req.body);
+              const endpointHash = createHash("sha256").update(req.body.endpoint).digest("hex");
+              const encrypted = JSON.stringify({ endpoint: req.body.endpoint, keys: req.body.keys });
+              const row = await client.query(
+                `INSERT INTO app.push_subscription(tenant_id,member_id,endpoint_hash,encrypted_subscription,device_label,topics,state)
+                 VALUES($1,$2,$3,$4,$5,$6,'active')
+                 ON CONFLICT(tenant_id,member_id,endpoint_hash)
+                 DO UPDATE SET encrypted_subscription=EXCLUDED.encrypted_subscription,
+                   device_label=EXCLUDED.device_label,topics=EXCLUDED.topics,
+                   state='active',row_version=app.push_subscription.row_version+1,updated_at=now()
+                 RETURNING id,device_label,topics,state,row_version`,
+                [
+                  context.organizationId,
+                  context.memberId,
+                  endpointHash,
+                  encrypted,
+                  (req.body.deviceLabel || "Device").slice(0, 120),
+                  JSON.stringify(req.body.topics),
+                ],
+              );
+              const body = {
+                id: row.rows[0].id,
+                deviceLabel: row.rows[0].device_label,
+                topics: row.rows[0].topics,
+                state: row.rows[0].state,
+                version: Number(row.rows[0].row_version),
+              };
+              if (responseSchema) validateSchema(schemaName(responseSchema), body, true);
+              return { body, status: 201, etag: `"${row.rows[0].row_version}"` };
+            }
+            if (req.method === "DELETE" && id) {
+              requirePermission(context, spec["x-permission"]);
+              assertUuid(id);
+              const deleted = await client.query(
+                `UPDATE app.push_subscription SET state='revoked',row_version=row_version+1,updated_at=now()
+                 WHERE tenant_id=$1 AND member_id=$2 AND id=$3 AND state='active' RETURNING id`,
+                [context.organizationId, context.memberId, id],
+              );
+              if (!deleted.rowCount)
+                throw new AccessError(404, "push_device_unavailable", "Device not found or already revoked.");
+              return { body: null, status: 204 };
+            }
+            throw new AccessError(404, "route_unavailable", "Route unavailable.");
+          }
           if (resource === "message-designs") {
             localAccess(req);
             if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
@@ -624,14 +962,30 @@ class ApiController {
             } else if (resource === "campaign-versions" && id && !action && req.method === "GET") {
               const body = await workflows.get(id);
               response = { body, status: 200, etag: campaignEtag(body.version) };
+            } else if (
+              resource === "campaign-versions" &&
+              id &&
+              action === "publish" &&
+              req.method === "POST"
+            ) {
+              response = await workflows.publish(id, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
             } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
             if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
             return response;
           }
           if (resource === "campaigns") {
             localAccess(req);
-            if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
             const campaigns = new CampaignDraftService(client, context, traceId);
+            if (id && action === "archive" && req.method === "POST") {
+              const result = await campaigns.archive(id, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+              if (responseSchema) validateSchema(schemaName(responseSchema), result.body, true);
+              return result as ApiCommandResponse;
+            }
+            if (action) throw new AccessError(404, "route_unavailable", "Route unavailable.");
             let response: ApiCommandResponse;
             if (req.method === "GET") {
               const body = id ? await campaigns.get(id) : await campaigns.list(req.query);
@@ -653,6 +1007,157 @@ class ApiController {
             if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
             return response;
           }
+          if (resource === "automations") {
+            localAccess(req);
+            const automations = new AutomationService(client, context, traceId);
+            let response: ApiCommandResponse;
+            if (req.method === "GET" && id && !action) {
+              response = { body: await automations.getAutomation(id), status: 200, etag: undefined };
+            } else if (req.method === "GET" && !id && !action) {
+              response = { body: await automations.listAutomations(req.query), status: 200 };
+            } else if (req.method === "POST" && !id && !action) {
+              const result = await automations.createAutomation(req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+              response = result as ApiCommandResponse;
+            } else if (req.method === "PATCH" && id && !action) {
+              const result = await automations.updateAutomation(id, req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+                ifMatch: revision(req),
+              });
+              response = result as ApiCommandResponse;
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
+          if (resource === "enrollments") {
+            localAccess(req);
+            const automations = new AutomationService(client, context, traceId);
+            let response: ApiCommandResponse;
+            if (req.method === "POST" && !id && !action) {
+              const result = await automations.enrollLead(req.body, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+              response = result as ApiCommandResponse;
+            } else if (req.method === "GET" && !id && !action) {
+              response = { body: await automations.listEnrollments(req.query), status: 200 };
+            } else if (req.method === "POST" && id && action === "cancel") {
+              const result = await automations.cancelEnrollment(id, {
+                key: req.headers["idempotency-key"] as string | undefined,
+              });
+              response = result as ApiCommandResponse;
+            } else throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
+          if (resource === "broadcast-confirmations") {
+            localAccess(req);
+            if (req.method !== "POST" || id || action)
+              throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            requirePermission(context, spec["x-permission"]);
+            await requireEntitlement(client, spec["x-permission"]);
+            const body = req.body;
+            validateSchema("PreviewConfirm", body);
+            assertUuid(body.previewId);
+            const confirmKey =
+              String(req.headers["idempotency-key"] ?? "").slice(0, 255) ||
+              (() => {
+                throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required.");
+              })();
+            const confirmRoute = `POST /v1/orgs/${context.organizationId}/broadcast-confirmations`;
+            const confirmHash = createHash("sha256").update(stable({ previewId: body.previewId })).digest("hex");
+            await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+              `${context.organizationId}:${context.userId}:${confirmRoute}:${confirmKey}`,
+            ]);
+            const existingConfirm = await client.query<{
+              request_hash: string;
+              response_body: unknown;
+              status_code: number;
+            }>(
+              `SELECT request_hash,response_body,status_code FROM app.idempotency_record
+               WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+              [context.userId, confirmRoute, confirmKey],
+            );
+            if (existingConfirm.rowCount) {
+              if (existingConfirm.rows[0].request_hash !== confirmHash)
+                throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
+              return { body: existingConfirm.rows[0].response_body, status: 202 } as ApiCommandResponse;
+            }
+            const preview = await client.query(
+              `SELECT ir.response_ref,ir.response_body,ir.expires_at>clock_timestamp() AS unexpired
+               FROM app.idempotency_record ir
+               WHERE ir.tenant_id=$1 AND ir.route_key LIKE 'POST /v1/orgs/%/broadcast-previews'
+                 AND ir.response_ref=$2 AND ir.actor_ref=$3`,
+              [context.organizationId, body.previewId, context.userId],
+            );
+            if (!preview.rowCount)
+              throw new AccessError(
+                404,
+                "preview_unavailable",
+                "Preview unavailable or outside your request scope.",
+              );
+            if (!preview.rows[0].unexpired)
+              throw new AccessError(409, "preview_expired", "Create a new preview before confirming.");
+            const jobRow = await client.query(
+              `INSERT INTO app.integration_job(tenant_id,kind,state,result_ref,requesting_member_id,safe_result)
+               VALUES($1,'broadcast.synthetic.confirmation','queued',$2,$3,$4) RETURNING *`,
+              [
+                context.organizationId,
+                body.previewId,
+                context.memberId,
+                JSON.stringify({ externalDelivery: false, deliveryMode: "no-delivery" }),
+              ],
+            );
+            await client.query(
+              `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff)
+               VALUES($1,$2,'broadcast.confirmed','broadcast_confirmation',$3,$4,$5)`,
+              [
+                context.organizationId,
+                context.userId,
+                jobRow.rows[0].id,
+                traceId,
+                JSON.stringify({ previewId: body.previewId }),
+              ],
+            );
+            const confirmResponse = {
+              id: jobRow.rows[0].id,
+              kind: jobRow.rows[0].kind,
+              state: jobRow.rows[0].state,
+              createdAt: jobRow.rows[0].created_at.toISOString(),
+            };
+            await client.query(
+              `INSERT INTO app.idempotency_record
+               (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_ref,expires_at)
+               VALUES(app.current_tenant(),$1,$2,$3,$4,$5,202,$6,'infinity'::timestamptz)`,
+              [context.userId, confirmRoute, confirmKey, confirmHash, JSON.stringify(confirmResponse), jobRow.rows[0].id],
+            );
+            const response: ApiCommandResponse = {
+              body: confirmResponse,
+              status: 202,
+            };
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
+          if (resource === "broadcast-previews") {
+            localAccess(req);
+            if (req.method !== "POST" || id || action)
+              throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            const response: ApiCommandResponse = await new BroadcastPreviewService(
+              client,
+              context,
+              traceId,
+            ).preview(
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
+          }
           const crm = new CrmService(client, context, traceId);
           const admin = new AdminService(client, context, traceId);
           const support = new SupportService(client, context, traceId);
@@ -664,14 +1169,32 @@ class ApiController {
           const routing = new RoutingService(client, context, traceId);
           let response: ApiCommandResponse;
           if (req.method === "GET") {
+            if (
+              resource === "contacts" &&
+              !id &&
+              !action &&
+              (req.body !== undefined ||
+                req.headers["transfer-encoding"] !== undefined ||
+                Number(req.headers["content-length"] || 0) > 0)
+            )
+              throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
             let body: unknown;
             if (resource === "routing" && !id) {
               response = await routing.list(req.query);
               if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
               return response;
             }
-            if (resource === "dashboard" && !id) body = await crm.dashboard(req.query);
-            else if (resource === "billing" && !id) body = await billing.overview();
+            if (resource === "dashboard" && !id && !action) {
+              if (
+                req.body !== undefined ||
+                req.headers["transfer-encoding"] !== undefined ||
+                Number(req.headers["content-length"] || 0) > 0
+              )
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              if (Object.keys(req.query).length)
+                throw new AccessError(422, "query_invalid", "This read accepts no query parameters.");
+              body = await crm.dashboard(req.query);
+            } else if (resource === "billing" && !id) body = await billing.overview();
             else if (resource === "deals" && !action)
               body = id ? await deals.detail(id) : await deals.list(req.query);
             else if (["pipeline-stages", "lead-sources", "tags"].includes(resource) && !action)
@@ -681,16 +1204,48 @@ class ApiController {
                     resource as "pipeline-stages" | "lead-sources" | "tags",
                     req.query,
                   );
-            else if (resource === "jobs" && id) body = await admin.job(id);
+            else if (resource === "jobs" && !action)
+              body = id ? await admin.job(id) : await admin.listJobs(req.query);
             else if (resource === "tickets" && !action)
               body = id ? await support.get(id) : await support.list(req.query);
-            else if (["offices", "business-profiles"].includes(resource) && !action)
+            else if (["offices", "business-profiles", "roles"].includes(resource) && !action)
               body = id
-                ? await admin.get(resource as "offices" | "business-profiles", id)
-                : await admin.list(resource as "offices" | "business-profiles", req.query);
+                ? await admin.get(resource as "offices" | "business-profiles" | "roles", id)
+                : await admin.list(resource as "offices" | "business-profiles" | "roles", req.query);
+            else if (resource === "members" && !action)
+              body = await admin.listMembers(req.query);
             else if (resource === "leads" && id && action === "notes") body = await crm.notes(id);
             else if (resource === "leads" && id && action === "activity") body = await crm.activity(id);
-            else if (!action)
+            // ADR-049: contact duplicate candidates and merge result
+            else if (resource === "contact-duplicates" && !id && !action) {
+              if (
+                req.body !== undefined ||
+                req.headers["transfer-encoding"] !== undefined ||
+                Number(req.headers["content-length"] || 0) > 0
+              )
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              const allowedDupParams = new Set(["limit", "cursor"]);
+              const unknownDupParam = Object.keys(req.query).find((k) => !allowedDupParams.has(k));
+              if (unknownDupParam)
+                throw new AccessError(422, "query_invalid", `Unknown query parameter: ${unknownDupParam}`);
+              body = await crm.listContactDuplicates(req.query);
+            } else if (resource === "contact-merges" && id && !action) {
+              if (
+                req.body !== undefined ||
+                req.headers["transfer-encoding"] !== undefined ||
+                Number(req.headers["content-length"] || 0) > 0
+              )
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              body = await crm.getContactMerge(id);
+            } else if (resource === "leads" && id && action === "activity") {
+              if (req.body !== undefined || Number(req.headers["content-length"] || 0) > 0)
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              body = await crm.activity(id);
+            } else if (resource === "leads" && id && action === "notes" && req.method === "GET") {
+              if (req.body !== undefined || Number(req.headers["content-length"] || 0) > 0)
+                throw new AccessError(422, "body_not_allowed", "This read accepts no request body.");
+              body = await crm.notes(id);
+            } else if (!action)
               body = id ? await crm.detail(resource, id) : await crm.list(resource, req.query);
             else throw new AccessError(404, "route_unavailable", "Route unavailable.");
             const version = (body as { version?: number }).version;
@@ -699,6 +1254,95 @@ class ApiController {
               status: Number(successEntry?.[0] ?? 200),
               etag: version ? `"${version}"` : undefined,
             };
+          } else if (["contacts", "leads"].includes(resource) && req.method === "POST" && !id && !action) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm[resource === "contacts" ? "postContact" : "postLead"](
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+              revision(req),
+            );
+          } else if (resource === "tasks" && req.method === "POST" && !id && !action) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.postTask(
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
+          } else if (resource === "tasks" && req.method === "PATCH" && id && !action) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.patchTask(
+              id,
+              req.body,
+              revision(req),
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
+          } else if (resource === "contacts" && req.method === "PATCH" && id && !action) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.patchContact(
+              id,
+              req.body,
+              revision(req),
+              req.headers["idempotency-key"] as string,
+              `${req.method} ${req.path}`,
+            );
+          } else if (resource === "leads" && req.method === "PATCH" && id && !action) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.patchLead(
+              id,
+              req.body,
+              revision(req),
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
+          } else if (resource === "leads" && req.method === "POST" && id && action === "stage-transitions") {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.postStageTransition(
+              id,
+              req.body,
+              revision(req),
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
+          } else if (
+            // ADR-049: merge a source contact into the survivor contact
+            resource === "contacts" &&
+            req.method === "POST" &&
+            id &&
+            action === "merges"
+          ) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            response = await crm.mergeContact(
+              id,
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+              req.headers["if-match"] as string | undefined,
+              `${req.protocol}://${req.get("host")}`,
+            );
+          } else if (
+            ["contacts", "leads"].includes(resource) &&
+            req.method === "POST" &&
+            id &&
+            action === "archive"
+          ) {
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            // ADR-047: the frozen operations declare no If-Match, so a supplied revision is ignored.
+            response = await crm[resource === "contacts" ? "archiveContact" : "archiveLead"](
+              id,
+              req.body,
+              req.headers["idempotency-key"] as string | undefined,
+              `${req.method} ${req.path}`,
+            );
           } else {
             response = await crm.idempotent(
               req.headers["idempotency-key"] as string,
@@ -737,6 +1381,8 @@ class ApiController {
                   return billing.preview(req.body, req.headers["idempotency-key"] as string);
                 if (resource === "billing" && req.method === "POST" && id === "change-confirmations")
                   return billing.confirm(req.body);
+                if (resource === "billing" && req.method === "POST" && id === "customer-portal")
+                  return billing.openPortal();
                 if (req.method === "POST" && resource === "member-invitations" && !id)
                   return admin.invite(req.body);
                 if (req.method === "POST" && resource === "tickets" && !id) return support.create(req.body);
@@ -751,13 +1397,16 @@ class ApiController {
                     id,
                     revision(req),
                   );
+                if (req.method === "PATCH" && resource === "members" && id && !action)
+                  return admin.updateMember(id, req.body, revision(req));
                 if (req.method === "POST" && !id) return crm.create(resource, req.body);
                 if (req.method === "PATCH" && id && !action)
                   return crm.update(resource, id, req.body, revision(req));
-                if (req.method === "POST" && resource === "leads" && id && action === "stage-transitions")
-                  return crm.transition(id, req.body, revision(req));
                 if (req.method === "POST" && resource === "leads" && id && action === "notes")
-                  return (await crm.notes(id, req.body, revision(req))) as { body: unknown; status: number };
+                  return (await crm.notes(id, req.body, revision(req))) as {
+                    body: unknown;
+                    status: number;
+                  };
                 throw new AccessError(
                   503,
                   "feature_not_implemented",
@@ -784,7 +1433,10 @@ class ApiController {
             if (resource === "uploads" && req.method === "POST")
               response.body = await uploads.grantForAsset((response.body as { assetId: string }).assetId);
           }
-          if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+          // Skip response contract check for merge commands: resultUrl is a relative path
+          // that fails ajv-formats' strict absolute-URI check; mergeReceipt already validates.
+          if (responseSchema && !(resource === "contacts" && action === "merges" && req.method === "POST"))
+            validateSchema(schemaName(responseSchema), response.body, true);
           return response;
         },
         { lockOrganization: resource === "members" && req.method !== "GET" },
@@ -1003,7 +1655,7 @@ if (typeof require === "function" && typeof module !== "undefined" && require.ma
       console.log(
         JSON.stringify({
           status: "listening",
-          identityMode: syntheticEnabled ? "synthetic-loopback" : "unconfigured",
+          identityMode: syntheticEnabled ? "synthetic-loopback" : productionOidc ? "oidc" : "unconfigured",
           mlsMode: "mock",
           deliveryMode: "no-delivery",
         }),

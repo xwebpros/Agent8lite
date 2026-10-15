@@ -6,6 +6,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CampaignDraftService, CampaignWorkflowService } from "../../apps/api/src/marketing";
 import { appendCampaignWorkflowEvent } from "../../apps/api/src/marketing/workflow-events";
 import { dispatchOutbox } from "../../apps/worker/src/outbox";
+import {
+  definitionOutline,
+  outlineDefinition,
+  type Outline,
+} from "../../apps/web/components/campaign-workflow-outline";
 import workflowEventSchema from "../../packages/contracts/internal/native-campaign-workflow-event-v1.schema.json";
 import { fixtures, stageId } from "../../packages/db/fixtures";
 import { assertRuntimeRole } from "../../packages/db/runtime-role";
@@ -530,15 +535,6 @@ describe("registered synthetic immutable workflow HTTP boundary", () => {
     const commands: { path: string; method: string; body?: unknown }[] = [
       { path, method: "PATCH", body: definition() },
       { path, method: "DELETE", body: {} },
-      { path: path + "/publish", method: "POST", body: {} },
-      {
-        path: `/v1/orgs/${fixtures.orgA}/enrollments`,
-        method: "POST",
-        body: {
-          leadId: fixtures.leadA,
-          campaignVersionId: fixture.response.body.id,
-        } satisfies Schemas["EnrollmentWrite"],
-      },
       {
         path: `/v1/orgs/${fixtures.orgA}/broadcast-confirmations`,
         method: "POST",
@@ -1304,6 +1300,36 @@ describe("actual0017–0019 immutable native workflow draft service", () => {
     ).rejects.toMatchObject({ status: 422 });
   });
 
+  it("accepts and returns the nested reconverging graph the ADR-050 outline editor serializes", async () => {
+    const campaign = await parent(),
+      member = await actor([...campaignGrants, ...referenceGrants]);
+    const outline: Outline = [
+      { type: "step", node: { key: "step_1", kind: "wait", delaySeconds: 60 } },
+      {
+        type: "condition",
+        node: { key: "step_2", kind: "condition", condition: { intent: "buyer", stageId: stageId(1, 1) } },
+        whenTrue: [
+          {
+            type: "condition",
+            node: { key: "step_3", kind: "condition", condition: { sourceId: fixtures.sourceA } },
+            whenTrue: [{ type: "step", node: { key: "step_4", kind: "task", taskTitle: "Synthetic inner" } }],
+            whenFalse: [],
+          },
+          { type: "step", node: { key: "step_5", kind: "wait", delaySeconds: 0 } },
+        ],
+        whenFalse: [
+          { type: "step", node: { key: "step_6", kind: "task", taskTitle: "Synthetic otherwise" } },
+        ],
+      },
+      { type: "step", node: { key: "step_7", kind: "task", taskTitle: "Synthetic after" } },
+    ];
+    const body = outlineDefinition(outline, { nodes: [], edges: [], timezone: "UTC" });
+    const fixture = await create(campaign.body.id, body, randomUUID(), member);
+    expect(fixture.response.body.definition).toEqual(body);
+    const read = await use(member, (service) => service.get(fixture.response.body.id));
+    expect(definitionOutline(read.definition)).toEqual(outline);
+  });
+
   it("checks matching organization source grants and current CRM capability on condition read and replay", async () => {
     const campaign = await parent(),
       allowed = await actor([...campaignGrants, ...referenceGrants]);
@@ -1514,25 +1540,19 @@ describe("actual0017–0019 immutable native workflow draft service", () => {
     });
   });
 
-  it("the real lead-only dispatcher defers this unknown family without receipt acknowledgement or delivery", async () => {
+  it("the real lead-only dispatcher leaves this unsupported family untouched without receipt acknowledgement or delivery", async () => {
     const campaign = await parent(),
       fixture = await create(campaign.body.id);
-    // This owned disposable fixture narrows scheduling without changing producer data or delivery state.
-    await admin.query(
-      "UPDATE app.outbox SET lease_until=clock_timestamp()+interval '1 hour'WHERE tenant_id=$1 AND initiating_actor_id=$2 AND aggregate_id<>$3",
-      [fixtures.orgA, fixtures.ownerUser, fixture.response.body.id],
-    );
     const event = (
       await admin.query("SELECT id FROM app.outbox WHERE aggregate_id=$1", [fixture.response.body.id])
     ).rows[0];
-    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: 1 });
+    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: 0 });
     const row = (
-      await admin.query(
-        "SELECT published_at,attempt_count,lease_until>clock_timestamp()AS future FROM app.outbox WHERE id=$1",
-        [event.id],
-      )
+      await admin.query("SELECT published_at,attempt_count,lease_until FROM app.outbox WHERE id=$1", [
+        event.id,
+      ])
     ).rows[0];
-    expect(row).toEqual({ published_at: null, attempt_count: 1, future: true });
+    expect(row).toEqual({ published_at: null, attempt_count: 0, lease_until: null });
     expect(
       (await admin.query("SELECT event_id FROM app.outbox_consumer_receipt WHERE event_id=$1", [event.id]))
         .rowCount,
@@ -1558,5 +1578,82 @@ describe("actual0017–0019 immutable native workflow draft service", () => {
     } finally {
       for (const client of clients) client.release();
     }
+  });
+});
+
+describe("ADR-059 publishCampaign", () => {
+  const publishGrants: PermissionGrant[] = [
+    { code: "campaigns.read", scope: "organization" },
+    { code: "campaigns.write", scope: "organization" },
+    { code: "campaigns.publish", scope: "organization" },
+  ];
+
+  async function publishActor() {
+    return actor(publishGrants);
+  }
+
+  async function publish(versionId: string, identity: VerifiedIdentityContext = ownerA, key = randomUUID()) {
+    const result = await use(identity, (service) => service.publish(versionId, { key }));
+    expect(result.status).toBe(201);
+    assertContract("CampaignVersion", result.body);
+    expect(result.body.state).toBe("published");
+    return result;
+  }
+
+  it("publishes a draft version and transitions parent campaign to active", async () => {
+    const campaign = await parent();
+    const { response } = await create(campaign.body.id);
+    const publishId = await publishActor();
+    const result = await publish(response.body.id, publishId);
+    expect(result.body.id).toBe(response.body.id);
+    const row = (await admin.query("SELECT state FROM app.campaign WHERE id=$1", [campaign.body.id])).rows[0];
+    expect(row.state).toBe("active");
+    const vrow = (
+      await admin.query("SELECT state,published_at FROM app.campaign_version WHERE id=$1", [response.body.id])
+    ).rows[0];
+    expect(vrow.state).toBe("published");
+    expect(vrow.published_at).not.toBeNull();
+  });
+
+  it("publish is idempotent for the same key", async () => {
+    const campaign = await parent();
+    const { response } = await create(campaign.body.id);
+    const publishId = await publishActor();
+    const key = randomUUID();
+    const first = await publish(response.body.id, publishId, key);
+    const second = await publish(response.body.id, publishId, key);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.etag).toBe(first.etag);
+  });
+
+  it("returns 403 without campaigns.publish permission", async () => {
+    const campaign = await parent();
+    const { response } = await create(campaign.body.id);
+    const noPublish = await actor(campaignGrants);
+    await expect(
+      use(noPublish, (service) => service.publish(response.body.id, { key: randomUUID() })),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("returns 409 if version is already published (different key)", async () => {
+    const campaign = await parent();
+    const { response } = await create(campaign.body.id);
+    const publishId = await publishActor();
+    await publish(response.body.id, publishId);
+    await expect(
+      use(publishId, (service) => service.publish(response.body.id, { key: randomUUID() })),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("enforces tenant isolation — cannot publish another tenant's campaign version", async () => {
+    const campaign = await parent(ownerA);
+    const { response } = await create(campaign.body.id, definition(), randomUUID(), ownerA);
+    await expect(
+      withTenantTransaction(runtime, ownerB, (client, context) =>
+        new CampaignWorkflowService(client, context, randomUUID()).publish(response.body.id, {
+          key: randomUUID(),
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

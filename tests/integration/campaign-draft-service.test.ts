@@ -5,6 +5,7 @@ import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CampaignDraftService,
+  type CampaignArchiveMutation,
   type CampaignMutation,
   type CampaignWrite,
 } from "../../apps/api/src/marketing";
@@ -510,29 +511,10 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
     const fixture = await create(),
       id = fixture.response.body.id;
     const paths: { path: string; method: string; body?: unknown }[] = [
-      { path: `${campaignPath()}/${id}/publish`, method: "POST", body: {} },
-      { path: `${campaignPath()}/${id}/archive`, method: "POST", body: {} },
       {
         path: `/v1/orgs/${ownerHttp.orgId}/campaign-versions/${randomUUID()}/publish`,
         method: "POST",
         body: {},
-      },
-      {
-        path: `/v1/orgs/${ownerHttp.orgId}/enrollments`,
-        method: "POST",
-        body: {
-          leadId: fixtures.leadA,
-          campaignVersionId: randomUUID(),
-        } satisfies Schemas["EnrollmentWrite"],
-      },
-      {
-        path: `/v1/orgs/${ownerHttp.orgId}/broadcast-previews`,
-        method: "POST",
-        body: {
-          messageDesignId: randomUUID(),
-          filter: {},
-          timezone: "UTC",
-        } satisfies Schemas["BroadcastRequest"],
       },
       {
         path: `/v1/orgs/${ownerHttp.orgId}/broadcast-confirmations`,
@@ -560,6 +542,14 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
         problem.code,
       );
     }
+    // ADR-051 deliberately implemented broadcast previews; an empty segment is a validation failure.
+    const previewResponse = await ownerHttp.command(`/v1/orgs/${ownerHttp.orgId}/broadcast-previews`, {
+      messageDesignId: randomUUID(),
+      filter: {},
+      timezone: "UTC",
+    } satisfies Schemas["BroadcastRequest"]);
+    expect(previewResponse.status).toBe(422);
+    expect((await campaignProblem(previewResponse, 422)).code).toBe("broadcast_invalid");
     expect((await campaignHttp(await ownerHttp.request(`${campaignPath()}/${id}`))).body.state).toBe("draft");
     expect(await references(id)).toEqual({ campaigns: 1, receipts: 1, audits: 1, events: 1 });
     for (const table of [
@@ -1119,7 +1109,7 @@ describe("actual0016 native campaign draft service", () => {
     });
   });
 
-  it("the real lead-only dispatcher defers the unknown campaign family without acknowledgments or delivery", async () => {
+  it("the real lead-only dispatcher leaves the unsupported campaign family untouched without acknowledgments or delivery", async () => {
     const events = (
       await admin.query(
         "SELECT id FROM app.outbox WHERE tenant_id=$1 AND initiating_actor_id=$2 AND event_type='campaign.draft_metadata_changed'AND published_at IS NULL",
@@ -1128,14 +1118,14 @@ describe("actual0016 native campaign draft service", () => {
     ).rows.map((row) => row.id);
     expect(events.length).toBeGreaterThan(0);
     expect(events.length).toBeLessThanOrEqual(100);
-    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: events.length });
+    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: 0 });
     const rows = (
       await admin.query(
-        "SELECT published_at,attempt_count,lease_until>clock_timestamp()AS future FROM app.outbox WHERE id=ANY($1::uuid[])",
+        "SELECT published_at,attempt_count,lease_until FROM app.outbox WHERE id=ANY($1::uuid[])",
         [events],
       )
     ).rows;
-    for (const row of rows) expect(row).toEqual({ published_at: null, attempt_count: 1, future: true });
+    for (const row of rows) expect(row).toEqual({ published_at: null, attempt_count: 0, lease_until: null });
     expect(
       (
         await admin.query("SELECT event_id FROM app.outbox_consumer_receipt WHERE event_id=ANY($1::uuid[])", [
@@ -1165,5 +1155,72 @@ describe("actual0016 native campaign draft service", () => {
     } finally {
       for (const client of clients) client.release();
     }
+  });
+});
+
+describe("ADR-059 archiveCampaign", () => {
+  async function archive(
+    id: string,
+    identity: VerifiedIdentityContext = ownerA,
+    key = randomUUID(),
+  ): Promise<CampaignArchiveMutation> {
+    const result = await use(identity, (service) => service.archive(id, { key }));
+    expect(result.status).toBe(202);
+    assertContract("Job", result.body);
+    return result;
+  }
+
+  it("archives a draft campaign and returns a 202 Job", async () => {
+    const { response } = await create();
+    const result = await archive(response.body.id);
+    expect(result.body.state).toBe("succeeded");
+    const row = (await admin.query("SELECT state FROM app.campaign WHERE id=$1", [response.body.id])).rows[0];
+    expect(row.state).toBe("archived");
+  });
+
+  it("archive is idempotent for the same key", async () => {
+    const { response } = await create();
+    const key = randomUUID();
+    const first = await archive(response.body.id, ownerA, key);
+    const second = await archive(response.body.id, ownerA, key);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.etag).toBe(first.etag);
+  });
+
+  it("rejects a second key after archive with a different key", async () => {
+    const { response } = await create();
+    await archive(response.body.id, ownerA, randomUUID());
+    const result2 = await use(ownerA, (service) =>
+      service.archive(response.body.id, { key: randomUUID() }).catch((e) => e),
+    );
+    expect(result2.status).toBe(404);
+  });
+
+  it("returns 403 without campaigns.write permission", async () => {
+    const { response } = await create();
+    const noWrite = await actor("organization", null);
+    await expect(
+      use(noWrite, (service) => service.archive(response.body.id, { key: randomUUID() })),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("enforces tenant isolation — cannot archive another tenant's campaign", async () => {
+    const { response } = await create(ownerA);
+    await expect(
+      withTenantTransaction(runtime, ownerB, (client, context) =>
+        new CampaignDraftService(client, context, randomUUID()).archive(response.body.id, {
+          key: randomUUID(),
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("rejects already-archived campaign (idempotency key conflict path)", async () => {
+    const { response } = await create();
+    await archive(response.body.id);
+    const err = await use(ownerA, (service) =>
+      service.archive(response.body.id, { key: randomUUID() }).catch((e) => e),
+    );
+    expect(err.status).toBe(404);
   });
 });

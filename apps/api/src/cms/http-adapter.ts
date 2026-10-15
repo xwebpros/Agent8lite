@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { CmsProfileReferencePort } from "../../../../packages/cms/ports";
+import type { StoragePort } from "../../../../packages/providers/storage/port";
 import { DraftConflictError, TemplateUnavailableError } from "../../../../packages/cms";
 import { RecoveryEnvelopeError } from "../../../../packages/cms/recovery";
 import { HistoryEnvelopeError } from "../../../../packages/cms/history";
@@ -55,6 +56,7 @@ export class CmsHttpAdapter {
       profiles: (client: PoolClient, context: TenantContext) => CmsProfileReferencePort;
       trustedLinkPolicy: PublishPolicy;
       allowedOrigins: ReadonlySet<string>;
+      storage: StoragePort;
     },
   ) {}
 
@@ -118,6 +120,7 @@ export class CmsHttpAdapter {
         const service = new CmsService(client, context, traceId, {
           profiles: this.dependencies.profiles(client, context),
           trustedLinkPolicy: this.dependencies.trustedLinkPolicy,
+          storage: this.dependencies.storage,
         });
         const path = url.pathname;
         const prefix = `/v1/orgs/${context.organizationId}`;
@@ -181,7 +184,79 @@ export class CmsHttpAdapter {
         const revision = new RegExp(`^${prefix}/revisions/([^/]+)$`).exec(path);
         if (revision && method === "GET")
           return { body: await service.getRevision(revision[1]), status: 200 };
-        // In particular, frozen saveRevision POST/publish/rollback remain unavailable.
+
+        // ADR-053: domain management
+        const siteDomains = new RegExp(`^${prefix}/sites/([^/]+)/domains$`).exec(path);
+        if (siteDomains) {
+          if (method === "GET") return { body: await service.listDomains(siteDomains[1]), status: 200 };
+          if (method === "POST")
+            return service.createDomain(
+              siteDomains[1],
+              request.body as Schemas["DomainWrite"],
+              commandHeaders,
+            );
+        }
+        const siteArchive = new RegExp(`^${prefix}/sites/([^/]+)/archive$`).exec(path);
+        if (siteArchive && method === "POST") return service.archiveSite(siteArchive[1]);
+        const domainVerify = new RegExp(`^${prefix}/domains/([^/]+)/verify$`).exec(path);
+        if (domainVerify && method === "POST") return service.verifyDomain(domainVerify[1]);
+        const domainArchive = new RegExp(`^${prefix}/domains/([^/]+)/archive$`).exec(path);
+        if (domainArchive && method === "POST") return service.archiveDomain(domainArchive[1]);
+
+        // ADR-053: media management
+        if (path === `${prefix}/media`) {
+          if (method === "GET") return { body: await service.listMedia(query), status: 200 };
+        }
+        if (path === `${prefix}/media/finalize` && method === "POST")
+          return service.finalizeMedia(request.body as Schemas["MediaFinalize"], commandHeaders);
+
+        // ADR-053: form management
+        const siteForms = new RegExp(`^${prefix}/sites/([^/]+)/forms$`).exec(path);
+        if (siteForms) {
+          if (method === "GET") return { body: await service.listForms(siteForms[1], query), status: 200 };
+          if (method === "POST")
+            return service.createForm(siteForms[1], request.body as Schemas["FormWrite"], commandHeaders);
+        }
+        const formById = new RegExp(`^${prefix}/forms/([^/]+)$`).exec(path);
+        if (formById && method === "GET") return { body: await service.getForm(formById[1]), status: 200 };
+        const formVersions = new RegExp(`^${prefix}/forms/([^/]+)/versions$`).exec(path);
+        if (formVersions && method === "POST")
+          return service.publishFormVersion(
+            formVersions[1],
+            request.body as Schemas["FormWrite"],
+            commandHeaders,
+          );
+
+        // ADR-055: document publication
+        const docPublish = new RegExp(`^${prefix}/documents/([^/]+)/publish$`).exec(path);
+        if (docPublish && method === "POST")
+          return service.publishDocument(
+            docPublish[1],
+            request.body as Schemas["PublishRequest"],
+            commandHeaders,
+          );
+
+        const docRollback = new RegExp(`^${prefix}/documents/([^/]+)/rollback$`).exec(path);
+        if (docRollback && method === "POST")
+          return service.rollbackDocument(
+            docRollback[1],
+            request.body as Schemas["PublishRequest"],
+            commandHeaders,
+          );
+
+        // ADR-057: document archive and site update
+        const docArchive = new RegExp(`^${prefix}/documents/([^/]+)/archive$`).exec(path);
+        if (docArchive && method === "POST") return service.archiveDocument(docArchive[1], commandHeaders);
+
+        const siteById = new RegExp(`^${prefix}/sites/([^/]+)$`).exec(path);
+        if (siteById && method === "PATCH")
+          return service.updateSite(siteById[1], request.body as Schemas["SiteWrite"], commandHeaders);
+
+        // ADR-058: media upload grant
+        if (path === `${prefix}/uploads` && method === "POST")
+          return service.createUploadGrant(request.body as Schemas["UploadRequest"], commandHeaders);
+
+        // frozen saveRevision POST remains unavailable
         throw new AccessError(404, "route_unavailable", "Route unavailable.");
       });
       if ("etag" in result && result.etag) headers.etag = result.etag;

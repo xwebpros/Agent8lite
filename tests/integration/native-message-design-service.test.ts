@@ -1037,7 +1037,7 @@ describe("actual-role native message-design commands and storage invariants", ()
     expect(last).toEqual({ items: ordered.slice(4), nextCursor: null, hasMore: false });
     for (const entity of [...first.items, ...last.items]) expect(entity.content).toBe("😀".repeat(31_000));
   });
-  it("the real lead-only worker defers native-design events without receipt, ack or delivery", async () => {
+  it("the real lead-only worker leaves native-design events untouched without receipt, ack or delivery", async () => {
     const all = (
       await admin.query(
         "SELECT id,event_type FROM app.outbox WHERE tenant_id=$1 AND initiating_actor_id=$2 AND published_at IS NULL",
@@ -1047,14 +1047,14 @@ describe("actual-role native message-design commands and storage invariants", ()
     const ids = all.filter((row) => row.event_type === "message_design.draft_changed").map((row) => row.id);
     expect(ids.length).toBeGreaterThan(0);
     expect(all.length).toBeLessThanOrEqual(100);
-    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: all.length });
+    expect(await dispatchOutbox(worker, ownerA, 100)).toEqual({ dispatched: 0, deferred: 0 });
     const rows = (
       await admin.query(
-        "SELECT published_at,attempt_count,lease_until>clock_timestamp()AS future FROM app.outbox WHERE id=ANY($1::uuid[])",
+        "SELECT published_at,attempt_count,lease_until FROM app.outbox WHERE id=ANY($1::uuid[])",
         [ids],
       )
     ).rows;
-    for (const row of rows) expect(row).toEqual({ published_at: null, attempt_count: 1, future: true });
+    for (const row of rows) expect(row).toEqual({ published_at: null, attempt_count: 0, lease_until: null });
     expect(
       (
         await admin.query("SELECT event_id FROM app.outbox_consumer_receipt WHERE event_id=ANY($1::uuid[])", [

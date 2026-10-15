@@ -6,11 +6,17 @@ The local application includes organization switching and administration, contac
 
 Use Node24.19.0 and pnpm11.25.0. Start the dedicated PostgreSQL/PostGIS service, migrate and seed explicitly enabled synthetic data, then run `pnpm dev`. The existing Windows workspace uses a dedicated portable database on loopback port55432. Follow the [local development runbook](docs/runbooks/local-development.md) for setup, role separation and verification commands.
 
-Open the local application at http://localhost:3000. Synthetic sign-in offers fictional owner and agent identities. No app-store distribution is required; actual iPhone/Android installation acceptance needs HTTPS staging and physical-device checks.
+For a clean source ZIP on 64-bit Intel/AMD Windows, extract it and double-click **Start-Agent8lite.cmd**. The launcher installs portable pinned Node/pnpm, guides Docker setup, initializes its own local synthetic database and opens the app when ready. Windows/Docker approval or a restart may be needed on the first run. See the [Windows bootstrap runbook](docs/runbooks/bootstrap-windows.md) for retry, data preservation and source-package instructions.
+
+Open the application at `http://localhost:3000`. Synthetic sign-in offers fictional owner and agent identities. No app-store distribution is required; actual iPhone/Android installation acceptance needs HTTPS staging and physical-device checks.
 
 Run `pnpm contracts:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test:isolated` and `pnpm build` for non-browser verification. The isolated runner creates/removes only its own databases, API processes and private-object directories. Browser tests use the approved Playwright harness when browser access is available.
 
-For GoDaddy Node.js hosting, root `npm run build` and `npm start` use the assigned PORT. An explicit password-protected temporary demo runs without PostgreSQL or production identity. See the [GoDaddy launch runbook](docs/runbooks/godaddy-nodejs.md) for environment variables and preview limitations. Agents remain paused; deployment is a separate owner action.
+Trestle is the selected future MLS provider. Live feeds, outbound messaging, charges and production deployment remain disabled until their documented authorization and integration gates are satisfied.
+
+See the [repository cleanup record](docs/runbooks/repository-cleanup.md) for the project layout, archived reference material, protected local data and source-package exclusions.
+
+For GoDaddy Node.js hosting, root `npm run build` and `npm start` now use the assigned `PORT`. An explicit password-protected temporary demo can run without PostgreSQL or production identity. See the [GoDaddy launch runbook](docs/runbooks/godaddy-nodejs.md) for required environment variables and the preview's limitations. Agents remain paused; deployment is a separate owner action.
 
 If the host automatically selects `npm run dev`, hosting environment markers select that same production launcher before any local development settings load. Prefer `npm start`; keep PORT at its assigned value. The runbook covers the local-port EACCES failure and redeployment steps.
 

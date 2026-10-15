@@ -12,6 +12,14 @@ import { cursorBinding, decodeCursor, encodeCursor } from "./cursors";
 type Schemas = components["schemas"];
 type Row = Record<string, any>;
 type Mutation = { body: unknown; status: number; etag?: string };
+const memberModel = (row: Row): Schemas["Member"] => ({
+  id: row.id,
+  displayName: row.display_name,
+  roleId: row.role_id,
+  status: row.status,
+  version: Number(row.row_version),
+});
+
 const signingKey =
   process.env.INVITATION_SIGNING_KEY ??
   (["development", "test"].includes(process.env.APP_ENV ?? "") ? "local-synthetic-invitations-only" : "");
@@ -113,34 +121,42 @@ export class AdminService {
     );
     return { body: organization(updated.rows[0]), status: 200, etag: `"${updated.rows[0].row_version}"` };
   }
-  async list(resource: "offices" | "business-profiles", query: Record<string, unknown>) {
-    requirePermission(this.context, resource === "offices" ? "offices.read" : "profiles.read");
+  async list(resource: "offices" | "business-profiles" | "roles", query: Record<string, unknown>) {
+    requirePermission(
+      this.context,
+      resource === "offices" ? "offices.read" : resource === "roles" ? "roles.read" : "profiles.read",
+    );
     const limit = query.limit === undefined ? 25 : Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new AccessError(422, "limit_invalid", "Limit must be between 1 and 100.");
     const binding = cursorBinding(this.context, resource, "organization", {});
     const cursor = decodeCursor(query.cursor, binding);
     if (cursor) assertUuid(cursor);
-    const table = resource === "offices" ? "office" : "business_profile";
+    const table = resource === "offices" ? "office" : resource === "roles" ? "role_definition" : "business_profile";
     const result = await this.client.query(
       `SELECT * FROM app.${table} WHERE ($1::uuid IS NULL OR id>$1::uuid) ORDER BY id LIMIT $2`,
       [cursor, limit + 1],
     );
     const hasMore = result.rows.length > limit;
     const rows = result.rows.slice(0, limit);
+    const mapper = resource === "roles" ? role : resource === "offices" ? officeModel : profileModel;
     return {
-      items: rows.map((row) => (resource === "offices" ? officeModel(row) : profileModel(row))),
+      items: rows.map((row) => mapper(row)),
       nextCursor: hasMore ? encodeCursor(rows.at(-1)!.id, binding) : null,
       hasMore,
     };
   }
-  async get(resource: "offices" | "business-profiles", id: string) {
-    requirePermission(this.context, resource === "offices" ? "offices.read" : "profiles.read");
+  async get(resource: "offices" | "business-profiles" | "roles", id: string) {
+    requirePermission(
+      this.context,
+      resource === "offices" ? "offices.read" : resource === "roles" ? "roles.read" : "profiles.read",
+    );
     assertUuid(id);
-    const table = resource === "offices" ? "office" : "business_profile";
+    const table = resource === "offices" ? "office" : resource === "roles" ? "role_definition" : "business_profile";
     const rows = await this.client.query(`SELECT * FROM app.${table} WHERE id=$1`, [id]);
     if (!rows.rowCount) throw new AccessError(404, "resource_unavailable", "Resource unavailable.");
-    return (resource === "offices" ? officeModel : profileModel)(rows.rows[0]);
+    const mapper = resource === "roles" ? role : resource === "offices" ? officeModel : profileModel;
+    return mapper(rows.rows[0]);
   }
   async write(
     resource: "offices" | "business-profiles" | "roles",
@@ -291,6 +307,81 @@ export class AdminService {
     await this.foundation.audit("member.invited", "member_invitation", invitationId, 1);
     return { body: jobModel(job.rows[0]), status: 202 };
   }
+  async listMembers(query: Record<string, unknown>): Promise<Schemas["PageMember"]> {
+    requirePermission(this.context, "members.read");
+    const limit = query.limit === undefined ? 25 : Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new AccessError(422, "limit_invalid", "Limit must be between 1 and 100.");
+    const binding = cursorBinding(this.context, "members", "organization", {});
+    const cursor = decodeCursor(query.cursor, binding);
+    if (cursor) assertUuid(cursor);
+    const result = await this.client.query(
+      `SELECT * FROM app.membership WHERE tenant_id=app.current_tenant() AND ($1::uuid IS NULL OR id>$1::uuid) ORDER BY id LIMIT $2`,
+      [cursor, limit + 1],
+    );
+    const hasMore = result.rows.length > limit;
+    const rows = result.rows.slice(0, limit);
+    return {
+      items: rows.map(memberModel),
+      nextCursor: hasMore ? encodeCursor(rows.at(-1)!.id, binding) : null,
+      hasMore,
+    };
+  }
+  async updateMember(
+    memberId: string,
+    body: Schemas["MemberPatch"],
+    expected: string | undefined,
+  ): Promise<Mutation> {
+    requirePermission(this.context, "members.manage");
+    assertUuid(memberId);
+    const current = await this.client.query("SELECT * FROM app.membership WHERE id=$1 FOR UPDATE", [memberId]);
+    if (!current.rowCount) throw new AccessError(404, "resource_unavailable", "Member not found.");
+    const row = current.rows[0];
+    version(row, expected);
+    if (memberId === this.context.memberId && body.status === "disabled")
+      throw new AccessError(422, "self_disable_denied", "Cannot disable your own membership.");
+    if (body.roleId) {
+      assertUuid(body.roleId);
+      const role = await this.client.query("SELECT * FROM app.role_definition WHERE id=$1", [body.roleId]);
+      if (!role.rowCount)
+        throw new AccessError(422, "role_invalid", "Role must belong to this organization.");
+      if (role.rows[0].name === "Owner" && this.context.roleName !== "Owner")
+        throw new AccessError(403, "owner_change_denied", "Only an owner may assign the Owner role.");
+      assertDelegation(this.context, role.rows[0].permission_grants);
+    }
+    const newRoleId = body.roleId ?? row.role_id;
+    const newStatus = body.status ?? row.status;
+    if (newStatus === "disabled" && row.status === "active") {
+      const currentRole = await this.client.query("SELECT name FROM app.role_definition WHERE id=$1", [row.role_id]);
+      if (currentRole.rows[0]?.name === "Owner") {
+        const otherOwners = await this.client.query(
+          `SELECT count(*)::int AS n FROM app.membership m JOIN app.role_definition r ON r.id=m.role_id AND r.tenant_id=m.tenant_id WHERE m.id!=$1 AND m.status='active' AND r.name='Owner'`,
+          [memberId],
+        );
+        if ((otherOwners.rows[0]?.n ?? 0) < 1)
+          throw new AccessError(422, "final_owner_protected", "The last active owner cannot be disabled.");
+      }
+    }
+    const updated = await this.client.query(
+      `UPDATE app.membership SET role_id=$1,status=$2,row_version=row_version+1,updated_at=now() WHERE id=$3 RETURNING *`,
+      [newRoleId, newStatus, memberId],
+    );
+    if (body.officeIds !== undefined) {
+      await this.client.query("DELETE FROM app.office_member WHERE member_id=$1", [memberId]);
+      for (const officeId of body.officeIds) {
+        assertUuid(officeId);
+        const office = await this.client.query("SELECT id FROM app.office WHERE id=$1", [officeId]);
+        if (!office.rowCount)
+          throw new AccessError(422, "office_invalid", "Office must belong to this organization.");
+        await this.client.query(
+          "INSERT INTO app.office_member(tenant_id,office_id,member_id)VALUES($1,$2,$3)",
+          [this.context.organizationId, officeId, memberId],
+        );
+      }
+    }
+    await this.foundation.audit("membership.updated", "membership", memberId, Number(updated.rows[0].row_version));
+    return { body: memberModel(updated.rows[0]), status: 200, etag: `"${updated.rows[0].row_version}"` };
+  }
   async job(id: string) {
     requirePermission(this.context, "jobs.read");
     assertUuid(id);
@@ -301,6 +392,37 @@ export class AdminService {
     if (!result.rowCount)
       throw new AccessError(404, "resource_unavailable", "Job unavailable or outside your request scope.");
     return jobModel(result.rows[0]);
+  }
+  async listJobs(query: { cursor?: string; limit?: number; state?: string; kind?: string } = {}) {
+    requirePermission(this.context, "jobs.read");
+    const limit = Math.min(Math.max(1, Number(query.limit) || 20), 100);
+    const binding = cursorBinding(this.context, "admin:jobs", "own", { limit });
+    const after = decodeCursor(query.cursor, binding);
+    if (after) assertUuid(after);
+    const conditions = ["tenant_id=app.current_tenant()", "requesting_member_id=$1"];
+    const params: unknown[] = [this.context.memberId];
+    if (query.state && /^[a-z]{2,30}$/.test(query.state)) {
+      params.push(query.state);
+      conditions.push(`state=$${params.length}`);
+    }
+    if (query.kind && /^[a-z][a-z0-9_.]{1,80}$/.test(query.kind)) {
+      params.push(query.kind);
+      conditions.push(`kind=$${params.length}`);
+    }
+    params.push(after);
+    conditions.push(`($${params.length}::uuid IS NULL OR id<$${params.length})`);
+    params.push(limit + 1);
+    const result = await this.client.query(
+      `SELECT * FROM app.integration_job WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
+      params,
+    );
+    const items = result.rows.slice(0, limit).map(jobModel);
+    const hasMore = result.rows.length > limit;
+    return {
+      items,
+      hasMore,
+      nextCursor: hasMore ? encodeCursor(items.at(-1)!.id, binding) : null,
+    };
   }
   async invitationTokenForJob(id: string) {
     const result = await this.client.query(
