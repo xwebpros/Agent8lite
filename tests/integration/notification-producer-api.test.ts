@@ -49,6 +49,21 @@ async function listNotifications(session: ApiSession): Promise<Schemas["Notifica
   return body.items;
 }
 
+async function waitForNotification(
+  session: ApiSession,
+  beforeIds: Set<string>,
+  kind: string,
+  retries = 8,
+): Promise<Schemas["Notification"] | undefined> {
+  for (let i = 0; i < retries; i++) {
+    const items = await listNotifications(session);
+    const found = items.find((n: Schemas["Notification"]) => !beforeIds.has(n.id) && n.kind === kind);
+    if (found) return found;
+    if (i < retries - 1) await new Promise((r) => setTimeout(r, 300));
+  }
+  return undefined;
+}
+
 describe("notification producer", () => {
   it("creates a notification when a lead is assigned to another member", async () => {
     const contact = await createContact(owner);
@@ -64,10 +79,7 @@ describe("notification producer", () => {
     );
     expect(patch.status).toBe(200);
 
-    const after = await listNotifications(agent);
-    const notification = after.find(
-      (n: Schemas["Notification"]) => !beforeIds.has(n.id) && n.kind === "lead.assigned",
-    );
+    const notification = await waitForNotification(agent, beforeIds, "lead.assigned");
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
     expect(notification!.title).toContain("assigned");
@@ -112,10 +124,7 @@ describe("notification producer", () => {
     } satisfies Schemas["TaskWrite"]);
     expect(task.status).toBe(201);
 
-    const after = await listNotifications(agent);
-    const notification = after.find(
-      (n: Schemas["Notification"]) => !beforeIds.has(n.id) && n.kind === "task.assigned",
-    );
+    const notification = await waitForNotification(agent, beforeIds, "task.assigned");
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
     expect(notification!.title).toContain("Synthetic notification task");
@@ -138,10 +147,7 @@ describe("notification producer", () => {
     );
     expect(transition.status).toBe(201);
 
-    const after = await listNotifications(agent);
-    const notification = after.find(
-      (n: Schemas["Notification"]) => !beforeIds.has(n.id) && n.kind === "lead.stage_changed",
-    );
+    const notification = await waitForNotification(agent, beforeIds, "lead.stage_changed");
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
     expect(notification!.title).toContain("stage");
