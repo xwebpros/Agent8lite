@@ -32,7 +32,7 @@ describe("reviewed listing participant attribution contact", () => {
     for (const schema of Object.keys(mergeAmendment.schemas)) {
       delete (implementation.components.schemas as Record<string, unknown>)[schema];
     }
-    // Strip additive job listing endpoint added for dispatch worker visibility.
+    // Strip ADR-055 additive job listing endpoint.
     delete (implementation.paths as Record<string, unknown>)["/v1/orgs/{orgId}/jobs"];
     expect(implementation).toEqual(original);
     expect(validate(required)).toBe(true);

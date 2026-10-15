@@ -1888,6 +1888,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orgs/{orgId}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * list Jobs
+         * @description Permission: jobs.read. Cursor-paginated list of integration jobs scoped to the requesting member. Optional state and kind query filters.
+         */
+        get: operations["listJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orgs/{orgId}/jobs/{jobId}": {
         parameters: {
             query?: never;
@@ -18577,6 +18597,73 @@ export interface operations {
             /** @description Provider unavailable or stale data exceeds policy */
             503: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listJobs: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                state?: string;
+                kind?: string;
+            };
+            header?: never;
+            path: {
+                orgId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful authorized response. */
+            200: {
+                headers: {
+                    /** @description Correlation ID; contains no contact data. */
+                    "X-Trace-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJob"];
+                };
+            };
+            /** @description Malformed request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authentication required or expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Permission, entitlement, policy or signature denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Quota exceeded; Retry-After required */
+            429: {
+                headers: {
+                    /** @description Seconds until quota resets. */
+                    "Retry-After": number;
                     [name: string]: unknown;
                 };
                 content: {

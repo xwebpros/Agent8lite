@@ -133,8 +133,33 @@ for (const file of [
         throw new Error(`ADR-049 amendment schema unexpectedly present in original: ${name}`);
       expected.components.schemas[name] = schema;
     }
+    // Apply ADR-055 additive amendment: job listing endpoint (inserted in key order)
+    const jobListingAmendment = JSON.parse(
+      await fs.readFile("packages/contracts/amendments/ADR-055-job-listing.json", "utf8"),
+    );
+    for (const addedPath of Object.keys(jobListingAmendment.paths)) {
+      if (Object.hasOwn(expected.paths, addedPath))
+        throw new Error(`ADR-055 amendment path unexpectedly present in original: ${addedPath}`);
+    }
+    {
+      const ordered = {};
+      for (const [p, v] of Object.entries(expected.paths)) {
+        // Insert the jobs listing path right before /v1/orgs/{orgId}/jobs/{jobId}
+        if (p === "/v1/orgs/{orgId}/jobs/{jobId}") {
+          for (const addedPath of Object.keys(jobListingAmendment.paths)) {
+            ordered[addedPath] = api.paths[addedPath];
+          }
+        }
+        ordered[p] = v;
+      }
+      // If insertion point wasn't found, append
+      for (const addedPath of Object.keys(jobListingAmendment.paths)) {
+        if (!Object.hasOwn(ordered, addedPath)) ordered[addedPath] = api.paths[addedPath];
+      }
+      expected.paths = ordered;
+    }
     if (JSON.stringify(expected) !== JSON.stringify(api))
-      throw new Error("Unreviewed OpenAPI drift beyond ADR-022, ADR-043 and ADR-049 amendments.");
+      throw new Error("Unreviewed OpenAPI drift beyond ADR-022, ADR-043, ADR-049 and ADR-055 amendments.");
   } else if (!source.equals(copied)) throw new Error(`Unreviewed contract drift: ${file}`);
 }
 if (process.argv.includes("--generated")) {
@@ -155,5 +180,5 @@ if (process.argv.includes("--generated")) {
   if (before !== after) throw new Error("Generated API types drifted. Run pnpm contracts:generate.");
 }
 console.log(
-  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022/043/049 amendments${process.argv.includes("--generated") ? ", generated types" : ""}.`,
+  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022/043/049/055 amendments${process.argv.includes("--generated") ? ", generated types" : ""}.`,
 );
