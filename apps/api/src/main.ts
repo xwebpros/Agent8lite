@@ -31,7 +31,7 @@ import {
   type ServerSession,
 } from "../../../packages/auth/sessions";
 import { operation, schemaName, validateSchema, validateNativeCapture } from "./contract-validation";
-import { CrmService, assertUuid } from "./crm-service";
+import { CrmService, assertUuid, stable } from "./crm-service";
 import { organization } from "./models";
 import { requireEntitlement } from "../../../packages/auth/entitlements";
 import { MockOidcProvider } from "../../../packages/providers/identity/mock";
@@ -212,6 +212,17 @@ class ApiController {
           mlsMode: "mock",
           deliveryMode: "no-delivery",
         });
+        return;
+      }
+      if (req.path === "/v1/push/vapid-key" && req.method === "GET") {
+        const vapid = await runtimePool.query(
+          `SELECT value FROM app.instance_config WHERE key='vapid_public_key'`,
+        );
+        if (!vapid.rowCount) {
+          res.status(404).json({ type: "push_unconfigured", title: "Push notifications are not configured." });
+          return;
+        }
+        res.json({ applicationServerKey: vapid.rows[0].value });
         return;
       }
       if (req.cookies?.estate_staff_session && req.cookies?.[sessionCookie])
@@ -602,6 +613,35 @@ class ApiController {
         res.status(result.status).json(result.body);
         return;
       }
+      if (req.path === "/dev/dispatch-broadcasts" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { DispatchService } = await import("./marketing/dispatch-service");
+          const service = new DispatchService(client, context, traceId);
+          return service.processQueuedBroadcasts();
+        });
+        res.json(result);
+        return;
+      }
+      if (req.path === "/dev/dispatch-actions" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { ActionWorker } = await import("./marketing/action-worker");
+          const worker = new ActionWorker(client, context, traceId);
+          return worker.processDueActions();
+        });
+        res.json(result);
+        return;
+      }
+      if (req.path === "/dev/retention" && req.method === "POST") {
+        localIdentity(req);
+        const result = await withTenantTransaction(runtimePool, session, async (client, context) => {
+          const { RetentionService } = await import("./retention-service");
+          return new RetentionService(client, context, traceId).enforceRetention();
+        });
+        res.json(result);
+        return;
+      }
       if (req.path === "/dev/capture" && req.method === "POST") {
         localIdentity(req);
         validateNativeCapture(req.body);
@@ -767,6 +807,8 @@ class ApiController {
         "broadcast-confirmations": "confirmationId",
         "push-subscriptions": "pushDeviceId",
         "mls-feeds": "feedId",
+        automations: "automationId",
+        enrollments: "enrollmentId",
         integrations: "integrationId",
         "ai/jobs": "aiJobId",
       };
@@ -1059,8 +1101,94 @@ class ApiController {
             return response;
           }
           if (resource === "broadcast-confirmations") {
-            // ADR-051 approves preview only; confirmation needs reviewed current consent/provider gates.
-            throw new AccessError(404, "route_unavailable", "Broadcast confirmation is unavailable.");
+            localAccess(req);
+            if (req.method !== "POST" || id || action)
+              throw new AccessError(404, "route_unavailable", "Route unavailable.");
+            if (Object.keys(req.query).length)
+              throw new AccessError(422, "query_invalid", "This command has no query parameters.");
+            requirePermission(context, spec["x-permission"]);
+            await requireEntitlement(client, spec["x-permission"]);
+            const body = req.body;
+            validateSchema("PreviewConfirm", body);
+            assertUuid(body.previewId);
+            const confirmKey =
+              String(req.headers["idempotency-key"] ?? "").slice(0, 255) ||
+              (() => {
+                throw new AccessError(400, "idempotency_key_required", "Idempotency-Key is required.");
+              })();
+            const confirmRoute = `POST /v1/orgs/${context.organizationId}/broadcast-confirmations`;
+            const confirmHash = createHash("sha256").update(stable({ previewId: body.previewId })).digest("hex");
+            await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+              `${context.organizationId}:${context.userId}:${confirmRoute}:${confirmKey}`,
+            ]);
+            const existingConfirm = await client.query<{
+              request_hash: string;
+              response_body: unknown;
+              status_code: number;
+            }>(
+              `SELECT request_hash,response_body,status_code FROM app.idempotency_record
+               WHERE tenant_id=app.current_tenant() AND actor_ref=$1 AND route_key=$2 AND key=$3`,
+              [context.userId, confirmRoute, confirmKey],
+            );
+            if (existingConfirm.rowCount) {
+              if (existingConfirm.rows[0].request_hash !== confirmHash)
+                throw new AccessError(409, "idempotency_conflict", "The command key was used with different input.");
+              return { body: existingConfirm.rows[0].response_body, status: 202 } as ApiCommandResponse;
+            }
+            const preview = await client.query(
+              `SELECT ir.response_ref,ir.response_body,ir.expires_at>clock_timestamp() AS unexpired
+               FROM app.idempotency_record ir
+               WHERE ir.tenant_id=$1 AND ir.route_key LIKE 'POST /v1/orgs/%/broadcast-previews'
+                 AND ir.response_ref=$2 AND ir.actor_ref=$3`,
+              [context.organizationId, body.previewId, context.userId],
+            );
+            if (!preview.rowCount)
+              throw new AccessError(
+                404,
+                "preview_unavailable",
+                "Preview unavailable or outside your request scope.",
+              );
+            if (!preview.rows[0].unexpired)
+              throw new AccessError(409, "preview_expired", "Create a new preview before confirming.");
+            const jobRow = await client.query(
+              `INSERT INTO app.integration_job(tenant_id,kind,state,result_ref,requesting_member_id,safe_result)
+               VALUES($1,'broadcast.synthetic.confirmation','queued',$2,$3,$4) RETURNING *`,
+              [
+                context.organizationId,
+                body.previewId,
+                context.memberId,
+                JSON.stringify({ externalDelivery: false, deliveryMode: "no-delivery" }),
+              ],
+            );
+            await client.query(
+              `INSERT INTO app.audit_event(tenant_id,actor_ref,action,resource_type,resource_id,trace_id,safe_diff)
+               VALUES($1,$2,'broadcast.confirmed','broadcast_confirmation',$3,$4,$5)`,
+              [
+                context.organizationId,
+                context.userId,
+                jobRow.rows[0].id,
+                traceId,
+                JSON.stringify({ previewId: body.previewId }),
+              ],
+            );
+            const confirmResponse = {
+              id: jobRow.rows[0].id,
+              kind: jobRow.rows[0].kind,
+              state: jobRow.rows[0].state,
+              createdAt: jobRow.rows[0].created_at.toISOString(),
+            };
+            await client.query(
+              `INSERT INTO app.idempotency_record
+               (tenant_id,actor_ref,route_key,key,request_hash,response_body,status_code,response_ref,expires_at)
+               VALUES(app.current_tenant(),$1,$2,$3,$4,$5,202,$6,'infinity'::timestamptz)`,
+              [context.userId, confirmRoute, confirmKey, confirmHash, JSON.stringify(confirmResponse), jobRow.rows[0].id],
+            );
+            const response: ApiCommandResponse = {
+              body: confirmResponse,
+              status: 202,
+            };
+            if (responseSchema) validateSchema(schemaName(responseSchema), response.body, true);
+            return response;
           }
           if (resource === "broadcast-previews") {
             localAccess(req);
@@ -1126,7 +1254,8 @@ class ApiController {
                     resource as "pipeline-stages" | "lead-sources" | "tags",
                     req.query,
                   );
-            else if (resource === "jobs" && id) body = await admin.job(id);
+            else if (resource === "jobs" && !action)
+              body = id ? await admin.job(id) : await admin.listJobs(req.query);
             else if (resource === "tickets" && !action)
               body = id ? await support.get(id) : await support.list(req.query);
             else if (["offices", "business-profiles", "roles"].includes(resource) && !action)

@@ -42,6 +42,8 @@ describe("reviewed listing participant attribution contact", () => {
       expect((implementation.components.schemas as Record<string, unknown>)[schema]).toEqual(definition);
       delete (implementation.components.schemas as Record<string, unknown>)[schema];
     }
+    // Strip ADR-055 additive job listing endpoint.
+    delete (implementation.paths as Record<string, unknown>)["/v1/orgs/{orgId}/jobs"];
     expect(implementation).toEqual(original);
     expect(validate(required)).toBe(true);
     expect(validate({ ...required, contact: null })).toBe(true);

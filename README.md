@@ -18,6 +18,6 @@ Trestle is the selected future MLS provider. Live feeds, outbound messaging, cha
 
 See the [repository cleanup record](docs/runbooks/repository-cleanup.md) for the project layout, archived reference material, protected local data and source-package exclusions.
 
-For GoDaddy Node.js hosting, root `npm run build` and `npm start` now use the assigned `PORT`. An explicit password-protected temporary demo can run without PostgreSQL or production identity. See the [GoDaddy launch runbook](docs/runbooks/godaddy-nodejs.md) for required environment variables and the preview's limitations.
+For GoDaddy Node.js hosting, root `npm run build` and `npm start` now use the assigned `PORT`. An explicit password-protected temporary demo can run without PostgreSQL or production identity. See the [GoDaddy launch runbook](docs/runbooks/godaddy-nodejs.md) for required environment variables and the preview's limitations. Agents remain paused; deployment is a separate owner action.
 
 If the host automatically selects `npm run dev`, hosting environment markers select that same production launcher before any local development settings load. Prefer `npm start`; keep PORT at its assigned value. The runbook covers the local-port EACCES failure and redeployment steps.

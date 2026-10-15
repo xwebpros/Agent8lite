@@ -30,6 +30,7 @@ import {
   Users,
   WifiOff,
   X,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -38,9 +39,11 @@ import { api, ApiError } from "../lib/api";
 import type { Schema } from "../lib/api";
 import SettingsAdmin from "./settings-admin";
 import LeadTimeline from "./lead-timeline";
+import PushSettings from "./push-settings";
 import VerifiedMetrics from "./verified-metrics";
 import SupportPanel from "./support-panel";
 import BillingPanel from "./billing-panel";
+import JobsPanel from "./jobs-panel";
 import DataTransfer from "./data-transfer";
 import InvitationsPanel from "./invitations-panel";
 import type { InvitationTransfer } from "./invitations-panel";
@@ -54,6 +57,7 @@ import ConsentPanel from "./consent-panel";
 import { PropertiesFeature } from "../features/properties";
 import CmsWorkspace from "./cms-workspace";
 import CampaignWorkspace from "./campaign-workspace";
+import AutomationWorkspace from "./automation-workspace";
 import NotificationCenter from "./notification-center";
 import { safeNotificationHref } from "./notification-controller";
 import AppointmentAgenda from "./appointment-agenda";
@@ -158,6 +162,7 @@ type View =
   | "properties"
   | "websites"
   | "campaigns"
+  | "automations"
   | "notifications"
   | "settings";
 type InstallEvent = Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> };
@@ -169,6 +174,7 @@ const navigation = [
   { id: "properties", name: "Properties", icon: House },
   { id: "websites", name: "Websites", icon: Layers3 },
   { id: "campaigns", name: "Campaigns", icon: Mail },
+  { id: "automations", name: "Automations", icon: Zap },
   { id: "notifications", name: "Notifications", icon: Bell },
   { id: "settings", name: "Settings", icon: Settings2 },
 ] as const;
@@ -244,6 +250,8 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
   const cmsProtected = useRef(false);
   const [campaignDirty, setCampaignDirty] = useState(false);
   const campaignProtected = useRef(false);
+  const [automationDirty, setAutomationDirty] = useState(false);
+  const automationProtected = useRef(false);
   const [notificationPending, setNotificationPending] = useState(false);
   const notificationProtected = useRef(false);
   const [invitationTransfer, setInvitationTransfer] = useState<InvitationTransfer | null>(null);
@@ -394,6 +402,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     tagDirty ||
     cmsDirty ||
     campaignDirty ||
+    automationDirty ||
     notificationPending ||
     taskPending ||
     contactPending ||
@@ -718,6 +727,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     busy ||
     cmsProtected.current ||
     campaignProtected.current ||
+    automationProtected.current ||
     notificationProtected.current ||
     Boolean(taskEdit.current.getSnapshot().command) ||
     Boolean(contactEdit.current.getSnapshot().command) ||
@@ -736,6 +746,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     campaignProtected.current = value;
     if (value) reloadProtected.current = true;
     setCampaignDirty(value);
+  }, []);
+  const protectAutomation = useCallback((value: boolean) => {
+    automationProtected.current = value;
+    if (value) reloadProtected.current = true;
+    setAutomationDirty(value);
   }, []);
   const protectNotification = useCallback((value: boolean) => {
     notificationProtected.current = value;
@@ -807,6 +822,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     if (item.id === "websites")
       return syntheticEnabled && permission("sites.read") && permission("content.read");
     if (item.id === "campaigns") return syntheticEnabled && permission("campaigns.read");
+    if (item.id === "automations") return syntheticEnabled && permission("automations.read");
     if (item.id === "notifications") return permission("self.notifications.read");
     return true;
   });
@@ -815,6 +831,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
     "account",
     "billing",
     "support",
+    "jobs",
     "data",
     "workspace",
     "invitations",
@@ -5067,6 +5084,7 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
           {view !== "properties" &&
             view !== "websites" &&
             view !== "campaigns" &&
+            view !== "automations" &&
             view !== "notifications" && (
               <div className="scope-line">
                 <span>
@@ -5280,6 +5298,22 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   onAccessRevoked={() => {
                     router.replace("/dashboard");
                     setError("Campaign access changed. Refresh workspace access before reopening Campaigns.");
+                  }}
+                />
+              )}
+              {view === "automations" && (
+                <AutomationWorkspace
+                  key={`${session.userId}:${session.activeOrgId}:${member}:${accessRevision}`}
+                  session={session}
+                  csrf={csrf}
+                  online={online}
+                  syntheticFeaturesEnabled={syntheticEnabled && !changingOrganization}
+                  accessRevision={accessRevision}
+                  memberId={member}
+                  onDirty={protectAutomation}
+                  onAccessRevoked={() => {
+                    router.replace("/dashboard");
+                    setError("Automation access changed. Refresh workspace access before reopening Automations.");
                   }}
                 />
               )}
@@ -5903,6 +5937,11 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       label: "Support",
                       allowed: permission("support.read") || permission("support.write"),
                     },
+                    {
+                      id: "jobs",
+                      label: "Jobs",
+                      allowed: permission("jobs.read"),
+                    },
                   ]
                     .filter((item) => item.allowed)
                     .map((item) => (
@@ -5995,14 +6034,21 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                       <strong>App update</strong>
                       <Badge>{waiting ? "Ready" : "No waiting update"}</Badge>
                     </div>
-                    <div className="settings-fact">
-                      <strong>Push notifications</strong>
-                      <Badge>Unavailable</Badge>
-                    </div>
-                    <p className="muted">
-                      Push opt-in will be available after encrypted member-scoped device subscriptions and
-                      no-delivery provider tests are implemented.
-                    </p>
+                    {session.activeOrgId && permission("self.push.write") && (
+                      <PushSettings
+                        organizationId={session.activeOrgId}
+                        csrf={csrf}
+                        online={online && !changingOrganization}
+                        working={busy}
+                        setWorking={setBusy}
+                      />
+                    )}
+                    {(!session.activeOrgId || !permission("self.push.write")) && (
+                      <div className="settings-fact">
+                        <strong>Push notifications</strong>
+                        <Badge>Unavailable</Badge>
+                      </div>
+                    )}
                     <Button variant="secondary" disabled={!online || busy} onClick={() => void logout()}>
                       <LogOut size={17} />
                       Sign out
@@ -6060,6 +6106,13 @@ export default function Workspace({ syntheticFeaturesEnabled }: { syntheticFeatu
                   onDirty={setDirty}
                   setWorking={setBusy}
                   ticketId={query.get("ticket")}
+                />
+              )}
+              {view === "settings" && settingsPanel === "jobs" && (
+                <JobsPanel
+                  key={session.activeOrgId}
+                  session={session}
+                  online={online}
                 />
               )}
               {view === "settings" && settingsPanel === "billing" && (

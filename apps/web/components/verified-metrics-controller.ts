@@ -131,6 +131,46 @@ const definitions = Object.freeze([
     denominator: "Not applicable to this count.",
   }),
   Object.freeze({
+    key: "contacts.created",
+    version: 1,
+    source: "crm-scope-utc-month-query-v1",
+    unit: "contacts",
+    title: "Contacts created in the UTC month",
+    description:
+      "Currently unarchived contacts created within the returned UTC period, intersected with your current contact-read permission scope.",
+    denominator: "Not applicable to this count.",
+  }),
+  Object.freeze({
+    key: "deals.created",
+    version: 1,
+    source: "crm-own-utc-month-query-v1",
+    unit: "deals",
+    title: "Your deals created in the UTC month",
+    description:
+      "Deals assigned to you, created within the returned UTC period. Reassignment or archival can change this count.",
+    denominator: "Not applicable to this count.",
+  }),
+  Object.freeze({
+    key: "deals.pipeline_value",
+    version: 1,
+    source: "crm-own-utc-month-query-v1",
+    unit: "USD",
+    title: "Your pipeline value in the UTC month",
+    description:
+      "Sum of deal values assigned to you, created within the returned UTC period. Only deals with non-negative values are counted.",
+    denominator: "Total of qualifying deal values.",
+  }),
+  Object.freeze({
+    key: "tasks.completed",
+    version: 1,
+    source: "crm-own-utc-month-query-v1",
+    unit: "tasks",
+    title: "Your tasks completed in the UTC month",
+    description:
+      "Tasks assigned to you that were marked completed within the returned UTC period.",
+    denominator: "Not applicable to this count.",
+  }),
+  Object.freeze({
     key: "revenue",
     version: 1,
     source: "billing-unconfigured",

@@ -404,6 +404,37 @@ export class AdminService {
       throw new AccessError(404, "resource_unavailable", "Job unavailable or outside your request scope.");
     return jobModel(result.rows[0]);
   }
+  async listJobs(query: { cursor?: string; limit?: number; state?: string; kind?: string } = {}) {
+    requirePermission(this.context, "jobs.read");
+    const limit = Math.min(Math.max(1, Number(query.limit) || 20), 100);
+    const binding = cursorBinding(this.context, "admin:jobs", "own", { limit });
+    const after = decodeCursor(query.cursor, binding);
+    if (after) assertUuid(after);
+    const conditions = ["tenant_id=app.current_tenant()", "requesting_member_id=$1"];
+    const params: unknown[] = [this.context.memberId];
+    if (query.state && /^[a-z]{2,30}$/.test(query.state)) {
+      params.push(query.state);
+      conditions.push(`state=$${params.length}`);
+    }
+    if (query.kind && /^[a-z][a-z0-9_.]{1,80}$/.test(query.kind)) {
+      params.push(query.kind);
+      conditions.push(`kind=$${params.length}`);
+    }
+    params.push(after);
+    conditions.push(`($${params.length}::uuid IS NULL OR id<$${params.length})`);
+    params.push(limit + 1);
+    const result = await this.client.query(
+      `SELECT * FROM app.integration_job WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
+      params,
+    );
+    const items = result.rows.slice(0, limit).map(jobModel);
+    const hasMore = result.rows.length > limit;
+    return {
+      items,
+      hasMore,
+      nextCursor: hasMore ? encodeCursor(items.at(-1)!.id, binding) : null,
+    };
+  }
   async invitationTokenForJob(id: string) {
     const result = await this.client.query(
       `SELECT result_ref FROM app.integration_job WHERE id=$1 AND requesting_member_id=$2 AND kind='member.invitation.created.no-delivery'`,

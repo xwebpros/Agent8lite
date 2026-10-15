@@ -415,7 +415,7 @@ describe("read-only bounded contact transport", () => {
     vi.stubGlobal("fetch", fetcher);
     await contactSearchRequest(org, {});
     expect(String(fetcher.mock.calls[0][0])).toMatch(/contacts\?limit=25$/);
-    for (const filter of [{ tagIds: ["not-a-uuid"] }, { stageId: "not-a-uuid" }])
+    for (const filter of [{ tagIds: ["not-a-uuid"] }, { stageId: "not-a-uuid" }, { unsupportedField: "value" } as Record<string, unknown>])
       await expect(contactSearchRequest(org, filter)).rejects.toThrow();
     await expect(contactSearchRequest("PRIVATE_INVALID_ORG", {})).rejects.toThrow();
     expect(fetcher).toHaveBeenCalledTimes(1);

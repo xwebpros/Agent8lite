@@ -1,4 +1,217 @@
-# Implementation status — 2026-10-13
+# Implementation status — 2026-10-16
+
+## Phase 4–5 provider readiness and notification fix — 2026-10-16
+
+**Committed:**
+- `2251e5b` docs: update evidence ledger and status with Phase 0-3 results
+- `efc4853` feat: add consent event validation boundary tests
+- `b59a550` fix: add retry logic for async notification producer tests
+- `9deea30` fix: use DB-direct queries in notification producer tests
+
+**Bug fixes:**
+- Notification producer tests: root-caused flaky pagination failure — API orders by UUID not created_at, so new notifications fall outside first page when >100 exist. Fixed by querying DB directly with `ORDER BY created_at DESC`.
+
+**New tests:** 3 consent event validation boundary tests in `consent-sms-api.test.ts`:
+- Missing fields rejection (400/422), unknown contact rejection, unauthenticated rejection
+
+**Provider audit (Phase 5):**
+| Provider | Port | Mock | Real Adapter | Status |
+|----------|------|------|-------------|--------|
+| Billing | Yes | Yes | No | M6 gate |
+| Email | Yes | Yes | No | no-delivery mode |
+| Identity | Yes | Yes | OIDC adapter | Functional |
+| MLS | Yes | Yes | Trestle adapter (W07) | M6 gate |
+| Storage | Yes | Yes | No | M6 gate |
+| AI jobs | Inline CRM | — | No | M6 gate |
+| Push | Inline routes | — | No | M6 gate |
+| SMS | None | None | None | Future |
+
+**Full verification sweep:**
+- Build: pass (146 files, 18 JSON resources)
+- Runtime verification: pass
+- Contract validation: pass (174 operations, 174 schemas, ADR-022/043/049/055)
+- TypeScript: clean in owned code (6 pre-existing errors in W07 trestle files only)
+- Unit tests: 81 suites, 2550 pass
+- Shared-DB integration: 48 suites, 342 pass
+- Disposable-DB control: 4 suites, 66 pass
+- **Total: 133 suites, 2958 tests pass**
+
+---
+
+## Phase 0–3 baseline, test expansion, PWA and contract fixes — 2026-10-16
+
+**Committed:**
+- `0d528bb` fix: notification producer pagination and contract comparison
+- `1b61bc2` feat: add scoring unit tests, routing rules and scoring edge case suites
+- `51422cc` feat: add PWA manifest validation and push subscription boundary tests
+- `fab983e` fix: register ADR-055 job listing amendment in contract checker
+
+**Bug fixes:**
+- Notification producer tests: switched from count-based to ID-based comparison to handle paginated results (100-item limit)
+- Contract attribution test: stripped ADR-055 job listing path before frozen-contract comparison
+- Contract checker: registered ADR-055 amendment with correct key ordering; regenerated API types
+
+**New tests:** 27 tests across 5 new suites:
+- `scoring-compute.test.ts` (9 unit tests): empty events, known/unknown weights, aggregation, cap, sort, all 13 event types
+- `routing-rules-api.test.ts` (4 integration tests): owner list, agent denial, unauth rejection, concurrency control
+- `scoring-edge-api.test.ts` (5 integration tests): initial score, cross-type events, unknown events, independent leads, cap overflow
+- `pwa-manifest.test.ts` (8 unit tests): name, display, start URL, scope, icons, maskable, colors, app ID
+- `push-subscription-boundary-api.test.ts` (4 integration tests): agent self-subscribe, cross-member denial, unauth, CSRF
+
+**Disposable DB verified:** First local execution of `tests/control/run.mjs` — 66/66 tests across 4 suites pass.
+
+**Build & runtime:** Application build passes, runtime verification passes (146 files, 18 JSON resources).
+
+**Contract check:** 174 operations, 174 schemas, ADR-022/043/049/055 amendments verified.
+
+**Test totals:** 339 shared-DB integration (47 suites), 66 disposable-DB (4 suites), 3287 unit (96 suites).
+
+---
+
+## Enrollment and organization integration tests — 2026-10-13
+
+**Committed:**
+- `6774b0e` feat: add enrollment and organization integration tests, fix enrollment path mapping
+
+**New tests:** 10 shared-DB integration tests across 2 new suites:
+- `organization-api.test.ts` (5 tests): GET org with ETag, fabricated org denial (403), PATCH org name, stale revision (412), fabricated org PATCH denial
+- `enrollments-api.test.ts` (5 tests): enroll lead in published campaign version, list enrollments, cancel active enrollment, double-cancel rejection (409), fabricated lead rejection
+
+**Bug fix:** Added `enrollments: "enrollmentId"` to resourceId map in `main.ts` so contract validation matches the OpenAPI path for enrollment cancel operations.
+
+**Test evidence:** 318/318 integration tests (shared DB, 43 suites), 737/737 package tests, TypeScript clean.
+
+---
+
+## Error handling, cross-resource and notification tests — 2026-10-13
+
+**Committed:**
+- `0119da7` feat: add notification mark-read and health endpoint integration tests
+- `2697b5b` feat: add error handling and cross-resource consistency tests
+
+**New tests:** 20 shared-DB integration tests across 4 suites:
+- `notification-read-api.test.ts` (3 tests): mark-read, nonexistent rejection, listing with seeded data
+- `health-api.test.ts` (2 tests): status check, delivery mode
+- `error-handling-api.test.ts` (6 tests): unknown route/resource 404, problem+json, no-store headers, oversized body, invalid JSON
+- `cross-resource-api.test.ts` (9 tests): pagination consistency for contacts/leads/tasks/deals/tickets/roles/members/offices, agent/owner data equality
+
+**Test evidence:** 318/318 integration tests (shared DB, 43 suites), TypeScript clean.
+
+---
+
+## Campaign/automation CRUD and resource listing tests — 2026-10-13
+
+**Committed:**
+- `3461235` feat: add campaign/automation CRUD and resource listing tests, fix automationId path
+
+**New tests:** 17 shared-DB integration tests across 2 suites:
+- `resource-listing-api.test.ts` (9 tests): automations, campaigns, notifications, audit events listing with pagination and query validation
+- `campaign-automation-crud-api.test.ts` (8 tests): campaign create/get/list, version create with workflow nodes/edges, automation create/list/get/update
+
+**Bug fix:** Added `automationId` to resourceId map in `main.ts` so contract validation matches the OpenAPI path for automation GET/PATCH operations.
+
+**Test evidence:** 298/298 integration tests (shared DB, 39 suites), TypeScript clean.
+
+---
+
+## Session, appointment and permission boundary tests — 2026-10-13
+
+**Committed:**
+- `c5eebc3` feat: add session and appointment listing integration tests
+- `af47e21` feat: add permission boundary, session and appointment listing tests
+
+**New tests:** 13 shared-DB integration tests across 3 suites:
+- `session-api.test.ts` (4 tests): session contract, CSRF/member headers, identity isolation, unauthenticated rejection
+- `appointment-list-api.test.ts` (2 tests): paginated listing, limit parameter
+- `permission-boundary-api.test.ts` (5 tests): agent role denial for org update, agent read access, unauthenticated rejection, CSRF enforcement
+
+**Test evidence:** 283/283 integration tests (shared DB, 38 suites), TypeScript clean.
+
+---
+
+## Dispatch integration tests and runtime grants — 2026-10-13
+
+**Committed:**
+- `18ab570` feat: add dispatch integration tests, runtime grants and contract fixes
+- `5e7fd1f` docs: update evidence ledger with dispatch tests and job replay
+
+**Integration tests (`dispatch-api.test.ts`):** 6 new tests covering broadcast dispatch, action worker, retention enforcement and job listing with state/kind filters. All 260 shared-DB integration tests pass.
+
+**Migration 0037:** Grants runtime role (estate_runtime) SELECT/INSERT/UPDATE on `scheduled_action`, SELECT/INSERT on `delivery_attempt`, DELETE on `idempotency_record`, SELECT/DELETE on `outbox_consumer_receipt`. Required for dispatch worker and retention service to operate under RLS.
+
+**Contract addition:** Added `GET /v1/orgs/{orgId}/jobs` listing endpoint with cursor pagination and optional state/kind query filters, returning `PageJob`.
+
+**Bug fixes:**
+- Dashboard deal query: joined through `lead` table since `deal` has `amount` not `value` and no `owner_member_id` column
+- Dashboard integration health: mapped unknown connection states (e.g. `mock`) to `unconfigured` to pass contract validation
+- MOD-J-003 staff job replay confirmed already implemented in `http-adapter.ts` lines 435-449
+
+**Test evidence:** 260/260 integration tests (shared DB), 737/737 package tests, TypeScript clean.
+
+---
+
+## M4 marketing infrastructure — 2026-10-13
+
+**Committed:**
+- `3792001` feat(marketing): add dispatch service, automation UI and broadcast idempotency
+- `4053e61` feat(marketing): add scheduled-action dispatch worker (MOD-E-004)
+- `d8b7d3b` docs: update evidence ledger with M4 marketing implementation
+- `e7d78ab` docs: update evidence ledger with action worker (MOD-E-004)
+
+**No-delivery transport (MOD-E-005):** `dispatch-service.ts` processes queued broadcast confirmation jobs. Checks consent eligibility per lead via `app.consent_state` joined to `app.contact_channel`. Updates jobs to `state='succeeded'` with `safe_result` containing delivery mode, recipient/suppressed counts and timestamp. Dev route: `POST /dev/dispatch-broadcasts`.
+
+**Scheduled-action worker (MOD-E-004):** `action-worker.ts` claims pending `scheduled_action` rows whose `due_at` has passed using `FOR UPDATE SKIP LOCKED`. Checks consent for email/SMS actions, records synthetic `delivery_attempt` rows. Task-type actions complete immediately. Dev route: `POST /dev/dispatch-actions`.
+
+**Broadcast idempotency (MOD-E-006):** `POST /v1/orgs/:orgId/broadcast-confirmations` now requires `Idempotency-Key` header, takes advisory lock, checks `idempotency_record` for replay, and stores the receipt on first commit.
+
+**Consent at dispatch (MOD-E-007):** Both dispatch-service and action-worker verify consent state and suppression records before processing. Withdrawn consent or active suppression prevents delivery.
+
+**Automation workspace UI:** `automation-workspace.tsx` lists automations with name/trigger/campaign/status, inline create form, active/inactive toggle via PATCH, enrollment list with cancel. Wired into workspace nav gated on `automations.read` permission.
+
+**Test evidence:** 737/737 package tests, 260/260 integration tests (shared DB), TypeScript clean (root + web).
+
+## M2 dashboard metrics expansion — 2026-10-13
+
+**Committed:**
+- `cddd8ae` feat(dashboard): add contacts, deals, pipeline value and tasks metrics
+- `4e704a4` docs: update evidence ledger with dashboard metrics (MOD-B-002)
+
+**Dashboard metrics (MOD-B-002):** Dashboard now returns 6 metrics instead of 2: leads.created, contacts.created, deals.created, deals.pipeline_value, tasks.completed, revenue (unconfigured). Frontend metric definitions with titles, descriptions and denominators added to verified-metrics-controller.ts.
+
+---
+
+## M2 job listing, retention and integration status — 2026-10-13
+
+**Committed:**
+- `52361cf` feat: add job listing endpoint and data retention service
+- `448548a` feat(workspace): add integration jobs status panel (MOD-J-002)
+- `e7b83b1` docs: update evidence ledger with jobs panel and retention service
+
+**Job listing (MOD-J-002):** `AdminService.listJobs()` returns paginated integration jobs scoped to requesting member. Supports optional `state` and `kind` query filters. GET /v1/orgs/:orgId/jobs wired. `jobs-panel.tsx` frontend shows state badges, error details, export download links with cursor pagination.
+
+**Retention service (MOD-D-006):** `retention-service.ts` purges expired `idempotency_record` rows, old `outbox_consumer_receipt` rows (>90 days), and reports archived contacts/leads past 365-day threshold. Dev route: `POST /dev/retention`.
+
+---
+
+## M2 push notification infrastructure and notification coverage — 2026-10-13
+
+**Committed:**
+- `778ee42` feat(push): add VAPID key generation and public key endpoint — migration 0036 (instance_config table), seed generates ECDSA P-256 VAPID keys, GET /v1/push/vapid-key returns public key (no auth), push-settings fetches and uses the key
+- `3e1b589` docs: update evidence ledger with push settings and stage transition test
+- `4b79d90` feat(pwa): add push notification subscription management — PushSettings component in workspace settings
+- `18246c4` test(notifications): add stage transition notification test — 4th integration test
+- `62dcea2` fix(test): update contact search tests for new filter fields
+- `af624d6` docs: update evidence ledger with notification producer verification
+
+**VAPID configuration:** Migration 0036 creates `app.instance_config` table (RLS-enabled, runtime read-only). Seed generates ECDSA P-256 key pair on first run and stores public key (base64url uncompressed) and private key (PKCS8 PEM). Public endpoint `/v1/push/vapid-key` returns the `applicationServerKey` for browser push subscription. Verified: endpoint returns valid key, health check passes.
+
+**Push settings (`apps/web/components/push-settings.tsx`):** Permission-gated component (self.push.write) wired into workspace. Fetches VAPID public key on mount and uses it for PushManager.subscribe(). Lists active subscriptions, register/remove device flows.
+
+**Dashboard integration health (`crm-service.ts`):** Dashboard now queries `integration_connection` table and returns provider state, mode and safe capabilities in the `integrationHealth` array. Frontend `verified-metrics.tsx` displays connected services with state badges. Addresses MOD-J-002 integration status visibility.
+
+**Test evidence:** 4/4 notification producer integration tests pass. 18/18 CRM API tests pass. 18/18 consent tests pass. TypeScript clean (root + web).
+
+---
 
 ## IDX integration — verified delivery checkpoint (2026-10-13)
 

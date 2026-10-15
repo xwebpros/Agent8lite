@@ -2971,6 +2971,31 @@ export class CrmService {
         "dashboard_measurement_unavailable",
         "The reporting measurement is unavailable.",
       );
+    const contactCounts = await this.client.query(
+      `SELECT count(*) FROM app.contact r WHERE r.tenant_id=app.current_tenant() AND r.archived_at IS NULL
+       AND ${current.scopeSql("contacts", leadScope, "$1")}
+       AND r.created_at BETWEEN $2::timestamptz AND $3::timestamptz`,
+      [context.memberId, period.from, period.to],
+    );
+    const contactCount = Number(contactCounts.rows[0]?.count ?? 0);
+    const dealCounts = await this.client.query(
+      `SELECT count(*) AS cnt, coalesce(sum(CASE WHEN d.amount IS NOT NULL AND d.amount>=0 THEN d.amount ELSE 0 END),0) AS total_value
+       FROM app.deal d
+       JOIN app.lead l ON (l.tenant_id,l.id)=(d.tenant_id,d.lead_id)
+       WHERE d.tenant_id=app.current_tenant()
+       AND l.owner_member_id=$1
+       AND d.created_at BETWEEN $2::timestamptz AND $3::timestamptz`,
+      [context.memberId, period.from, period.to],
+    );
+    const dealCount = Number(dealCounts.rows[0]?.cnt ?? 0);
+    const dealValue = Number(dealCounts.rows[0]?.total_value ?? 0);
+    const completedTaskCounts = await this.client.query(
+      `SELECT count(*) FROM app.task r WHERE r.tenant_id=app.current_tenant() AND r.state='completed'
+       AND r.assignee_member_id=$1
+       AND r.updated_at BETWEEN $2::timestamptz AND $3::timestamptz`,
+      [context.memberId, period.from, period.to],
+    );
+    const completedTaskCount = Number(completedTaskCounts.rows[0]?.count ?? 0);
     const tasks = taskScope
       ? await this.client.query(
           `SELECT r.* FROM app.task r WHERE r.tenant_id=app.current_tenant() AND r.state='open'
@@ -2987,6 +3012,10 @@ export class CrmService {
           [context.memberId],
         )
       : { rows: [] };
+    const integrations = await this.client.query(
+      `SELECT id,provider,mode,state,safe_config FROM app.integration_connection
+       WHERE tenant_id=app.current_tenant() ORDER BY provider LIMIT 20`,
+    );
     const measured = await this.client.query(
       "SELECT date_trunc('milliseconds',clock_timestamp()) AS refreshed_at",
     );
@@ -3018,6 +3047,42 @@ export class CrmService {
           refreshedAt,
         },
         {
+          key: "contacts.created",
+          definitionVersion: 1,
+          value: contactCount,
+          unit: "contacts",
+          source: "crm-scope-utc-month-query-v1",
+          state: "available",
+          refreshedAt,
+        },
+        {
+          key: "deals.created",
+          definitionVersion: 1,
+          value: dealCount,
+          unit: "deals",
+          source: "crm-own-utc-month-query-v1",
+          state: "available",
+          refreshedAt,
+        },
+        {
+          key: "deals.pipeline_value",
+          definitionVersion: 1,
+          value: dealValue,
+          unit: "USD",
+          source: "crm-own-utc-month-query-v1",
+          state: "available",
+          refreshedAt,
+        },
+        {
+          key: "tasks.completed",
+          definitionVersion: 1,
+          value: completedTaskCount,
+          unit: "tasks",
+          source: "crm-own-utc-month-query-v1",
+          state: "available",
+          refreshedAt,
+        },
+        {
           key: "revenue",
           definitionVersion: 1,
           value: null,
@@ -3029,7 +3094,21 @@ export class CrmService {
       ],
       tasks: tasks.rows.map(models.task),
       notifications: notificationItems,
-      integrationHealth: [],
+      integrationHealth: integrations.rows.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        provider: r.provider as string,
+        mode: r.mode as "mock" | "sandbox" | "live",
+        state: (["unconfigured", "pending", "ready", "degraded", "revoked"].includes(r.state as string) ? r.state : "unconfigured") as "unconfigured" | "pending" | "ready" | "degraded" | "revoked",
+        capabilities: r.safe_config && typeof r.safe_config === "object"
+          ? Object.fromEntries(
+              Object.entries(r.safe_config as Record<string, unknown>)
+                .filter((e): e is [string, string | number | boolean | null] =>
+                  typeof e[1] === "string" || typeof e[1] === "number" || typeof e[1] === "boolean" || e[1] === null)
+                .slice(0, 30),
+            )
+          : {},
+        lastSuccessAt: null,
+      })),
     };
   }
 
