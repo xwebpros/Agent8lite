@@ -1,0 +1,90 @@
+"use client";
+
+import { ListListingsParams, ListListingsSort } from "../api";
+
+const numberKeys = [
+  "minPrice",
+  "maxPrice",
+  "beds",
+  "baths",
+  "minSqft",
+  "maxSqft",
+  "minYearBuilt",
+  "maxYearBuilt",
+  "minGarageSpaces",
+  "minLotSizeSqft",
+  "minLatitude",
+  "maxLatitude",
+  "minLongitude",
+  "maxLongitude",
+] as const;
+const enumValues = {
+  status: ["Active", "ActiveUnderContract", "Pending"],
+  propertyType: ["Residential", "HighRise", "MultiFamily", "ResidentialIncome", "ResidentialLease"],
+  propertySubType: ["Condominium", "Townhouse", "SingleFamilyResidence", "Attached", "Detached"],
+} as const;
+const booleanKeys = ["pool", "singleStory", "hoa", "gated"] as const;
+
+export function filtersFromSearch(search: string): ListListingsParams | undefined {
+  const params = new URLSearchParams(search);
+  const filters: ListListingsParams = { sort: ListListingsSort.newest, page: 1 };
+  let hasFilter = false;
+
+  for (const key of numberKeys) {
+    const raw = params.get(key);
+    if (!raw) continue;
+    const value = Number(raw);
+    if (Number.isFinite(value)) {
+      filters[key] = value;
+      hasFilter = true;
+    }
+  }
+  const address = params.get("address")?.trim();
+  if (address && address.length <= 120) {
+    filters.address = address;
+    hasFilter = true;
+  }
+  const city = params.get("city")?.trim();
+  if (city && city.length <= 80) {
+    filters.city = city;
+    hasFilter = true;
+  }
+  const zip = params.get("zip");
+  if (zip && /^\d{5}$/.test(zip)) {
+    filters.zip = zip;
+    hasFilter = true;
+  }
+  for (const key of Object.keys(enumValues) as Array<keyof typeof enumValues>) {
+    const value = params.get(key);
+    if (value && (enumValues[key] as readonly string[]).includes(value)) {
+      filters[key] = value as never;
+      hasFilter = true;
+    }
+  }
+  for (const key of booleanKeys) {
+    if (params.get(key) === "true") {
+      filters[key] = true;
+      hasFilter = true;
+    }
+  }
+  const sort = params.get("sort");
+  if (sort && Object.values(ListListingsSort).includes(sort as ListListingsSort))
+    filters.sort = sort as ListListingsSort;
+  const page = Number(params.get("page"));
+  if (Number.isInteger(page) && page >= 1 && page <= 100) filters.page = page;
+  return params.has("reset") || hasFilter ? filters : undefined;
+}
+
+export function searchFromFilters(filters: ListListingsParams): string {
+  const params = new URLSearchParams();
+  for (const key of numberKeys) if (filters[key] !== undefined) params.set(key, String(filters[key]));
+  for (const key of ["address", "city", "zip", "status", "propertyType", "propertySubType"] as const) {
+    const value = filters[key];
+    if (value) params.set(key, String(value));
+  }
+  for (const key of booleanKeys) if (filters[key]) params.set(key, "true");
+  if (filters.sort && filters.sort !== ListListingsSort.newest) params.set("sort", filters.sort);
+  if (filters.page && filters.page > 1) params.set("page", String(filters.page));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}

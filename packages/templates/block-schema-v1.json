@@ -23,6 +23,32 @@
       "properties": {
         "heading": { "$ref": "#/$defs/label" },
         "summary": { "$ref": "#/$defs/text" },
+        "eyebrow": { "$ref": "#/$defs/label" },
+        "brand": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[^<>\\u0000-\\u001f]*$"
+            },
+            "initial": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2,
+              "pattern": "^[^<>\\u0000-\\u001f]*$"
+            },
+            "agentDisplayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[^<>\\u0000-\\u001f]*$"
+            }
+          },
+          "required": ["displayName", "initial", "agentDisplayName"]
+        },
         "action": { "$ref": "#/$defs/link" }
       },
       "required": ["heading"]

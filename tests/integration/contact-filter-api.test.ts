@@ -21,10 +21,9 @@ afterEach(async () => {
       "DELETE FROM app.audit_event WHERE resource_id=ANY($1::text[]) AND resource_type='lead'",
       [[...leadIds]],
     );
-    const events = await admin.query(
-      "SELECT id FROM app.outbox WHERE aggregate_id=ANY($1::text[])",
-      [[...leadIds]],
-    );
+    const events = await admin.query("SELECT id FROM app.outbox WHERE aggregate_id=ANY($1::text[])", [
+      [...leadIds],
+    ]);
     if (events.rowCount) {
       const ids = events.rows.map((r: { id: string }) => r.id);
       await admin.query("DELETE FROM app.outbox_consumer_receipt WHERE event_id=ANY($1::uuid[])", [ids]);
@@ -106,9 +105,7 @@ describe("contact list filters", () => {
   it("combines intent and sourceId filters", async () => {
     await createLead("buyer");
 
-    const response = await owner.request(
-      contactsUrl({ intent: "buyer", sourceId: fixtures.sourceA }),
-    );
+    const response = await owner.request(contactsUrl({ intent: "buyer", sourceId: fixtures.sourceA }));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.items).toBeDefined();

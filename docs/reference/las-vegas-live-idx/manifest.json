@@ -1,0 +1,20 @@
+{
+  "repository": "djmichaelmartin-cmd/Las-Vegas-Live-IDX",
+  "branch": "Full_Web_App_phase_1",
+  "commit": "920d148ee0ec6465381bf245381afcbdb5540bce",
+  "files": [
+    {
+      "file": "trestle.ts",
+      "sha256": "dbbadeee22ccec84fa77e695e0c7900686c9b64f2bb07d738d5f4cba01b48f39"
+    },
+    {
+      "file": "trestle-fields.ts",
+      "sha256": "87b665229dadaac09d17671a70cf01c3e7e8512b2ae5fbd2f05cc85e37f64739"
+    },
+    {
+      "file": "env.ts",
+      "sha256": "d1b3ae815bc9d09fa37dc95512d3762ac956a7b8509ac27dc23ddf39f8690661"
+    }
+  ],
+  "adaptation": "Original query/media/address/field mapping semantics retained. Server client caches are instance-local; environment and HTTP transport injected, with no file/secret/network access on import. Live activation remains M6 gated."
+}

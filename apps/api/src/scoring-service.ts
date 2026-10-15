@@ -26,9 +26,7 @@ interface ScoringResult {
   reasons: Array<{ eventType: string; points: number; count: number }>;
 }
 
-export function computeScore(
-  events: Array<{ event_type: string; occurred_at: string }>,
-): ScoringResult {
+export function computeScore(events: Array<{ event_type: string; occurred_at: string }>): ScoringResult {
   const grouped = new Map<string, number>();
   for (const e of events) {
     grouped.set(e.event_type, (grouped.get(e.event_type) ?? 0) + 1);
@@ -45,7 +43,11 @@ export function computeScore(
   return { score: Math.min(raw, MAX_SCORE), version: SCORING_VERSION, reasons };
 }
 
-export async function rescoreLead(client: PoolClient, tenantId: string, leadId: string): Promise<ScoringResult> {
+export async function rescoreLead(
+  client: PoolClient,
+  tenantId: string,
+  leadId: string,
+): Promise<ScoringResult> {
   const result = await client.query<{ event_type: string; occurred_at: string }>(
     `SELECT event_type, occurred_at FROM app.activity_event
      WHERE tenant_id=$1 AND lead_id=$2 ORDER BY occurred_at`,

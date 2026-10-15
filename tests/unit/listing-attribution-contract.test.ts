@@ -6,6 +6,7 @@ import api from "../../packages/contracts/openapi.json";
 import amendment from "../../packages/contracts/amendments/ADR-022-listing-attribution-contact.json";
 import stageAmendment from "../../packages/contracts/amendments/ADR-043-stage-transition-if-match.json";
 import mergeAmendment from "../../packages/contracts/amendments/ADR-049-contact-merge.json";
+import idxAmendment from "../../packages/contracts/amendments/ADR-061-idx-template.json";
 import { providedAttributionContact } from "../../packages/providers/mls/attribution";
 
 const ajv = new Ajv2020({ strict: false });
@@ -30,6 +31,15 @@ describe("reviewed listing participant attribution contact", () => {
       delete (implementation.paths as Record<string, unknown>)[path];
     }
     for (const schema of Object.keys(mergeAmendment.schemas)) {
+      delete (implementation.components.schemas as Record<string, unknown>)[schema];
+    }
+    // Assert the exact reviewed ADR-061 additions before removing them for baseline comparison.
+    for (const [path, definition] of Object.entries(idxAmendment.paths)) {
+      expect((implementation.paths as Record<string, unknown>)[path]).toEqual(definition);
+      delete (implementation.paths as Record<string, unknown>)[path];
+    }
+    for (const [schema, definition] of Object.entries(idxAmendment.schemas)) {
+      expect((implementation.components.schemas as Record<string, unknown>)[schema]).toEqual(definition);
       delete (implementation.components.schemas as Record<string, unknown>)[schema];
     }
     // Strip ADR-055 additive job listing endpoint.

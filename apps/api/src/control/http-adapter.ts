@@ -183,8 +183,22 @@ export async function createStaffHttpAdapter(options: StaffAdapterOptions) {
       path === "/dev/staff/logout" ||
       path === "/v1/platform/organizations" ||
       path.startsWith("/dev/staff/support/") ||
-      Boolean(jobRoute || createGrant || revokeGrant || supportJob || supportRead || contextCommand || principalList || principalDetail || principalDeactivate) ||
-      platformHealthSummary || platformConfiguration || platformPlans || Boolean(platformPlanDetail) || platformAuditEvents;
+      Boolean(
+        jobRoute ||
+          createGrant ||
+          revokeGrant ||
+          supportJob ||
+          supportRead ||
+          contextCommand ||
+          principalList ||
+          principalDetail ||
+          principalDeactivate,
+      ) ||
+      platformHealthSummary ||
+      platformConfiguration ||
+      platformPlans ||
+      Boolean(platformPlanDetail) ||
+      platformAuditEvents;
     if (!owned) return false;
     const traceId = randomUUID();
     response.setHeader("Cache-Control", "private, no-store");

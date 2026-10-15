@@ -1,0 +1,84 @@
+import { listMyFavorites, listMyListingViews, resolveListings, type Listing } from "@workspace/api-client-react";
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
+import { FavoriteButton } from "@/components/FavoriteButton";
+import { getFavoriteKeys, subscribeToFavorites, syncFavoritesWithServer } from "@/lib/favorites";
+import { Layout } from "@/components/Layout";
+
+type FavoriteEntry = { listingKey: string; createdAt: string; updatedAt: string };
+type ViewEntry = { listingKey: string; firstViewedAt: string; lastViewedAt: string };
+
+function statusOf(error: unknown) {
+  return error && typeof error === "object" && "status" in error && typeof error.status === "number" ? error.status : undefined;
+}
+
+export default function SavedHomes() {
+  const [favorites, setFavorites] = useState<FavoriteEntry[]>([]);
+  const [views, setViews] = useState<ViewEntry[]>([]);
+  const [listings, setListings] = useState<Map<string, Listing>>(new Map());
+  const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const sync = await syncFavoritesWithServer();
+      if (!sync.authenticated) {
+        setError("Sign in to see your saved and viewed homes.");
+        return;
+      }
+      const [favoriteBody, viewBody] = await Promise.all([listMyFavorites(), listMyListingViews()]);
+      const favoriteEntries = favoriteBody.favorites;
+      const viewEntries = viewBody.views;
+      const keys = [...new Set([...favoriteEntries, ...viewEntries].map((entry) => entry.listingKey))];
+      const chunks = Array.from({ length: Math.ceil(keys.length / 100) }, (_, index) => keys.slice(index * 100, index * 100 + 100));
+      // The account API caps batches at 100 keys. Resolve the at-most-three account batches concurrently.
+      const batches = await Promise.all(chunks.map(async (chunk) => {
+        try { return await resolveListings({ listingKeys: chunk }); }
+        catch { return { listings: [] as Listing[], unavailableListingKeys: chunk }; }
+      }));
+      const resolved = new Map<string, Listing>();
+      const missing = new Set<string>();
+      batches.forEach((batch) => {
+        batch.listings.forEach((listing) => resolved.set(listing.listingKey, listing));
+        batch.unavailableListingKeys.forEach((key) => missing.add(key));
+      });
+      setFavorites(favoriteEntries);
+      setViews(viewEntries);
+      setListings(resolved);
+      setUnavailable(missing);
+    } catch (cause) {
+      setError(statusOf(cause) === 401 ? "Sign in to see your saved and viewed homes." : "Unable to load your saved homes. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    const unsubscribe = subscribeToFavorites(() => {
+      const localKeys = new Set(getFavoriteKeys());
+      setFavorites((current) => current.filter((entry) => localKeys.has(entry.listingKey)));
+    });
+    return unsubscribe;
+  }, []);
+
+  if (loading) return <Layout><main className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6"><p className="text-sm uppercase tracking-widest text-muted-foreground">Your property activity</p><h1 className="mt-3 font-serif text-4xl">Saved and viewed homes</h1><div className="mt-10 grid gap-4 sm:grid-cols-2"><div className="h-28 animate-pulse rounded-lg bg-muted" /><div className="h-28 animate-pulse rounded-lg bg-muted" /></div></main></Layout>;
+  if (error) return <Layout><main className="mx-auto w-full max-w-3xl px-4 py-16 sm:px-6"><h1 className="font-serif text-4xl">Saved homes</h1><p className="mt-4 text-muted-foreground">{error}</p><div className="mt-8 flex flex-wrap gap-4"><Link href="/account" className="rounded bg-primary px-4 py-2 text-primary-foreground">Go to account</Link><Link href="/account/organizer" className="rounded border px-4 py-2">Open organizer</Link><button type="button" onClick={() => void load()} className="rounded border px-4 py-2">Try again</button></div></main></Layout>;
+
+  const section = (title: string, entries: Array<FavoriteEntry | ViewEntry>, favoriteSection: boolean) => {
+    const items = entries.map((entry) => ({ entry, listing: listings.get(entry.listingKey) }));
+    return <section className="mt-10" aria-labelledby={`${title.toLowerCase().replaceAll(" ", "-")}-heading`}>
+      <div className="flex items-baseline justify-between gap-4"><h2 id={`${title.toLowerCase().replaceAll(" ", "-")}-heading`} className="font-serif text-2xl">{title}</h2><span className="text-sm text-muted-foreground">{entries.length} {entries.length === 1 ? "home" : "homes"}</span></div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {items.length ? items.map(({ entry, listing }) => listing ? <div key={entry.listingKey} className="relative rounded-lg border bg-card p-4 pr-16 transition hover:border-primary"><Link href={`/listing/${encodeURIComponent(listing.listingKey)}`} className="block"><strong className="block truncate">{listing.streetAddress || "Property listing"}</strong><span className="mt-1 block text-sm text-muted-foreground">{[listing.city, listing.state].filter(Boolean).join(", ")} {listing.price ? ` · $${listing.price.toLocaleString()}` : ""}</span></Link>{favoriteSection && <span className="absolute right-3 top-3"><FavoriteButton listingKey={entry.listingKey} /></span>}</div> : <div key={entry.listingKey} className="flex items-center justify-between gap-4 rounded-lg border border-dashed p-4"><div><strong className="block">Property unavailable</strong><span className="text-sm text-muted-foreground">This listing is no longer in the live feed.</span></div>{favoriteSection && <FavoriteButton listingKey={entry.listingKey} />}</div>) : <p className="rounded-lg border border-dashed p-6 text-muted-foreground">No homes here yet.</p>}
+      </div>
+    </section>;
+  };
+
+  const favoriteEntries = favorites.filter((entry) => listings.has(entry.listingKey) || unavailable.has(entry.listingKey));
+  const viewEntries = views.filter((entry) => listings.has(entry.listingKey) || unavailable.has(entry.listingKey));
+  return <Layout><main className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm uppercase tracking-widest text-muted-foreground">Your property activity</p><h1 className="mt-3 font-serif text-4xl">Saved and viewed homes</h1><p className="mt-4 max-w-2xl text-muted-foreground">Your saved homes follow your account, so they are available after you sign in on another browser or device.</p></div><div className="flex flex-wrap gap-3"><Link href="/" className="rounded border px-4 py-2">Browse listings</Link><Link href="/account/organizer" className="rounded bg-primary px-4 py-2 text-primary-foreground">Open organizer</Link></div></div>{section("Favorites", favoriteEntries, true)}{section("Recently viewed", viewEntries, false)}</main></Layout>;
+}

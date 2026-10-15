@@ -303,6 +303,8 @@ export class StageTransitionProtocol {
     try {
       const lead = requireStageTransitionLead(input);
       const original = command.originalLead;
+      const score = lead.score ?? null,
+        scoreVersion = lead.scoreVersion ?? null;
       if (
         !sameId(lead.id, command.leadId) ||
         !sameId(lead.contactId, command.contactId) ||
@@ -315,8 +317,7 @@ export class StageTransitionProtocol {
           : !sameId(lead.ownerMemberId, original.ownerMemberId)) ||
         lead.intent !== original.intent ||
         (lead.timeline ?? null) !== (original.timeline ?? null) ||
-        (lead.score ?? null) !== (original.score ?? null) ||
-        (lead.scoreVersion ?? null) !== (original.scoreVersion ?? null)
+        (score === null ? scoreVersion !== null : typeof scoreVersion !== "string" || !scoreVersion.trim())
       )
         throw new Error();
       this.state = Object.freeze({ command: null, phase: "acknowledged" });

@@ -223,7 +223,16 @@ describe("registered stage command immutable receipts and atomic references", ()
       before = await effects(id),
       dbBefore = (await admin.query("SELECT clock_timestamp()now")).rows[0].now;
     const body = await receipt(await post(id));
-    expect(body).toMatchObject({ id, contactId, sourceId: fixtures.sourceA, stageId: target, version: 2 });
+    expect(body).toMatchObject({
+      id,
+      contactId,
+      sourceId: fixtures.sourceA,
+      stageId: target,
+      version: 2,
+      score: 8,
+      scoreVersion: "v1",
+    });
+    expect((await agent.read(`/v1/orgs/${fixtures.orgA}/leads/${id}`, "Lead")).body).toEqual(body);
     expect(await effects(id)).toEqual({
       ...before,
       history: 1,
@@ -309,11 +318,14 @@ describe("registered stage command immutable receipts and atomic references", ()
     const { id } = await source(),
       key = randomUUID();
     const first = await receipt(await post(id, input(), key));
-    await receipt(await post(id, input(third), randomUUID(), '"2"'), 3);
+    expect(first).toMatchObject({ score: 8, scoreVersion: "v1" });
+    const moved = await receipt(await post(id, input(third), randomUUID(), '"2"'), 3);
+    expect(moved).toMatchObject({ score: 16, scoreVersion: "v1" });
     await unchanged(id, async () => {
       expect(await receipt(await post(id, input(), key))).toEqual(first);
     });
     expect((await effects(id)).lead).toEqual({ stage: third, version: 3 });
+    expect((await agent.read(`/v1/orgs/${fixtures.orgA}/leads/${id}`, "Lead")).body).toEqual(moved);
   });
   it("key binds original body and exact revision spelling", async () => {
     const { id } = await source(),
@@ -333,13 +345,15 @@ describe("registered stage command immutable receipts and atomic references", ()
     const hash = createHash("sha256")
       .update(stable({ body, expectedVersion: '"1"' }))
       .digest("hex");
+    const historical = { ...first, score: null, scoreVersion: null };
     await admin.query(
-      "UPDATE app.idempotency_record SET response_etag=NULL,request_hash=$5 WHERE tenant_id=$1 AND actor_ref=$2 AND route_key=$3 AND key=$4",
-      [fixtures.orgA, fixtures.agentUser, route(id), key, hash],
+      "UPDATE app.idempotency_record SET response_etag=NULL,request_hash=$5,response_body=$6 WHERE tenant_id=$1 AND actor_ref=$2 AND route_key=$3 AND key=$4",
+      [fixtures.orgA, fixtures.agentUser, route(id), key, hash, JSON.stringify(historical)],
     );
     await unchanged(id, async () => {
-      expect(await receipt(await post(id, body, key))).toEqual(first);
+      expect(await receipt(await post(id, body, key))).toEqual(historical);
     });
+    expect((await agent.read(`/v1/orgs/${fixtures.orgA}/leads/${id}`, "Lead")).body).toEqual(first);
   });
   it("expired matching receipt fails closed without renewal, replacement or another transition", async () => {
     const { id } = await source(),

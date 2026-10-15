@@ -1,0 +1,11 @@
+export type BehaviorEventType = "PAGE_VIEWED" | "SEARCH_PERFORMED" | "FILTER_CHANGED" | "LISTING_VIEWED" | "LISTING_REVISITED" | "RETURN_VISIT";
+
+export function emitBehaviorEvent(eventType: BehaviorEventType, input: { listingKey?: string; metadata?: Record<string, string | number | boolean | null> } = {}) {
+  const idempotencyKey = typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  void fetch("/api/events", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ eventType, listingKey: input.listingKey, metadata: input.metadata, idempotencyKey }),
+  }).catch(() => undefined);
+}

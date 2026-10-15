@@ -18,6 +18,7 @@ import {
   withTenantTransaction,
 } from "../../../packages/db/tenant-transaction";
 import {
+  configuredOidc,
   createSession,
   createSyntheticSession,
   readProductionSession,
@@ -64,6 +65,10 @@ import { MessageDesignDraftService } from "./marketing/message-design-service";
 import { MessageDesignCommandError } from "./marketing/message-design-errors";
 import { messageDesignEtag } from "./marketing/message-design-model";
 import { tryPublicSiteRoute } from "./public-site-service";
+import { IdxTemplateHttpAdapter } from "./idx-template";
+import { createIdxTemplateRuntimeProvider } from "./idx-template-runtime";
+import { idxTemplateOrigins, verifyIdxTemplateRequest } from "../../../packages/auth/idx-template-bridge";
+import { projectIdxTemplateContent } from "../../../packages/templates/idx-template";
 
 const allowedOrigins = new Set(
   (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000,http://localhost:3000").split(","),
@@ -77,10 +82,15 @@ const oidc = syntheticEnabled
       mode: process.env.APP_ENV === "test" ? "test" : "development",
     })
   : null;
-const productionOidc =
-  !syntheticEnabled && process.env.OIDC_ISSUER && process.env.OIDC_CLIENT_ID
-    ? { issuer: process.env.OIDC_ISSUER, clientId: process.env.OIDC_CLIENT_ID }
-    : null;
+const productionOidc = (() => {
+  if (syntheticEnabled) return null;
+  try {
+    return configuredOidc();
+  } catch (error) {
+    if (error instanceof AccessError && error.code === "identity_provider_unconfigured") return null;
+    throw error;
+  }
+})();
 let productionVerifier: OidcTokenVerifier | null = null;
 const pendingOidcStates = new Map<string, { nonce: string; verifier: string; expires: number }>();
 const loopback = (address: string | undefined) =>
@@ -348,13 +358,28 @@ class ApiController {
           nonce: pending.nonce,
         });
         const userId = await resolveVerifiedIdentity(runtimePool, verified);
-        const membership = await runtimePool.query(
-          "SELECT tenant_id FROM app.membership WHERE user_id=$1 AND status='active' ORDER BY created_at LIMIT 1",
-          [userId],
-        );
-        if (!membership.rowCount)
-          throw new AccessError(403, "membership_required", "Active membership required.");
-        const result = await createSession(runtimePool, userId, membership.rows[0].tenant_id);
+        const membershipClient = await runtimePool.connect();
+        let organizationId: string | undefined;
+        try {
+          await membershipClient.query("BEGIN");
+          await membershipClient.query("SELECT set_config('app.actor_id',$1,true)", [userId]);
+          const membership = await membershipClient.query<{ tenant_id: string }>(
+            "SELECT tenant_id FROM app.membership WHERE user_id=$1 AND status='active' ORDER BY created_at,id LIMIT 1",
+            [userId],
+          );
+          organizationId = membership.rows[0]?.tenant_id;
+          await membershipClient.query("COMMIT");
+        } catch (error) {
+          await membershipClient.query("ROLLBACK");
+          throw error;
+        } finally {
+          membershipClient.release();
+        }
+        if (!organizationId) throw new AccessError(403, "membership_required", "Active membership required.");
+        const result = await createSession(runtimePool, userId, organizationId, {
+          identity: verified,
+          clientId: productionOidc.clientId,
+        });
         res.cookie(sessionCookie, result.token, {
           httpOnly: true,
           sameSite: "lax",
@@ -373,6 +398,29 @@ class ApiController {
           `public:${req.socket.remoteAddress ?? "unknown"}:${isMutation ? "mutation" : "read"}`,
           isMutation ? 60 : 200,
         );
+        if (/^\/v1\/public\/sites\/[^/]+\/idx-template(?:\/|$)/.test(req.path)) {
+          const adapter = new IdxTemplateHttpAdapter(runtimePool, {
+            allowedOrigins: idxTemplateOrigins(),
+            trustedOrigin: (request) => verifyIdxTemplateRequest({ ...request, headers: req.headers }),
+            createProvider: createIdxTemplateRuntimeProvider,
+            projectContent: projectIdxTemplateContent,
+          });
+          const result = await adapter.handle({
+            method: req.method,
+            url: req.originalUrl,
+            headers: Object.fromEntries(
+              Object.entries(req.headers).map(([name, value]) => [
+                name,
+                typeof value === "string" ? value : undefined,
+              ]),
+            ),
+            body: req.body,
+            remoteAddress: req.socket.remoteAddress,
+          });
+          for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
+          res.status(result.status).json(result.body);
+          return;
+        }
         const handled = await tryPublicSiteRoute(req, res, runtimePool, traceId, {
           signingKey:
             process.env.CURSOR_SIGNING_KEY ?? "synthetic-local-cursor-signing-only-not-for-production",
@@ -714,7 +762,9 @@ class ApiController {
         res.status(result.status).json(result.body);
         return;
       }
-      const match = req.path.match(/^\/v1\/orgs\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/);
+      const match = req.path.match(
+        /^\/v1\/orgs\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?$/,
+      );
       if (!match) throw new AccessError(404, "route_unavailable", "Route unavailable.");
       let [, org, resource, id, action, subAction] = match;
       assertUuid(org);
@@ -1212,8 +1262,7 @@ class ApiController {
               body = id
                 ? await admin.get(resource as "offices" | "business-profiles" | "roles", id)
                 : await admin.list(resource as "offices" | "business-profiles" | "roles", req.query);
-            else if (resource === "members" && !action)
-              body = await admin.listMembers(req.query);
+            else if (resource === "members" && !action) body = await admin.listMembers(req.query);
             else if (resource === "leads" && id && action === "notes") body = await crm.notes(id);
             else if (resource === "leads" && id && action === "activity") body = await crm.activity(id);
             // ADR-049: contact duplicate candidates and merge result

@@ -1,0 +1,235 @@
+"use client";
+
+import { Listing } from "../api";
+import { Component, type ErrorInfo, type ReactNode, useEffect } from "react";
+import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
+import L, { type LatLngBoundsExpression } from "leaflet";
+import { MapListingPreview } from "../components/MapListingPreview";
+import { normalizeMapBounds } from "../lib/map-state";
+import { useTemplateSite } from "../context";
+
+const LAS_VEGAS_VALLEY: [number, number] = [36.17, -115.14];
+const markerIcon = L.divIcon({
+  className: "idx-map-marker",
+  html: '<span aria-hidden="true"></span>',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  popupAnchor: [0, -14],
+});
+const selectedMarkerIcon = L.divIcon({
+  className: "idx-map-marker idx-map-marker-selected",
+  html: '<span aria-hidden="true"></span>',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+  popupAnchor: [0, -17],
+});
+
+function MapViewport({ listings }: { listings: Listing[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const coordinates = getMarkerPositions(listings);
+    if (coordinates.length === 0) {
+      map.setView(LAS_VEGAS_VALLEY, 10);
+    } else {
+      const bounds: LatLngBoundsExpression = coordinates;
+      map.fitBounds(bounds, { padding: [32, 32], maxZoom: 13 });
+    }
+
+    // Leaflet can initialize while the responsive grid is still settling.
+    // Recalculate after paint so tiles and markers use the visible container.
+    const frame = requestAnimationFrame(() => map.invalidateSize({ animate: false }));
+    return () => cancelAnimationFrame(frame);
+  }, [listings, map]);
+
+  return null;
+}
+
+function MapResizeHandler() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize({ animate: false });
+    });
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [map]);
+
+  return null;
+}
+
+function SearchAreaControl({
+  onSearch,
+}: {
+  onSearch: (bounds: ReturnType<typeof normalizeMapBounds>) => void;
+}) {
+  const map = useMap();
+  return (
+    <button
+      type="button"
+      className="absolute left-1/2 top-3 z-[401] -translate-x-1/2 rounded-full border bg-background/95 px-4 py-2 text-xs font-semibold shadow-md hover:bg-muted"
+      onClick={() =>
+        onSearch(
+          normalizeMapBounds({
+            south: map.getBounds().getSouth(),
+            north: map.getBounds().getNorth(),
+            west: map.getBounds().getWest(),
+            east: map.getBounds().getEast(),
+          }),
+        )
+      }
+    >
+      Search this area
+    </button>
+  );
+}
+
+function isMappableListing(listing: Listing) {
+  return (
+    Number.isFinite(listing.latitude) &&
+    Number.isFinite(listing.longitude) &&
+    listing.latitude! >= -90 &&
+    listing.latitude! <= 90 &&
+    listing.longitude! >= -180 &&
+    listing.longitude! <= 180
+  );
+}
+
+function getMarkerPositions(listings: Listing[]) {
+  const mappableListings = listings.filter(isMappableListing);
+  const totals = new Map<string, number>();
+  const seen = new Map<string, number>();
+
+  for (const listing of mappableListings) {
+    const key = `${listing.latitude},${listing.longitude}`;
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  }
+
+  return mappableListings.map((listing) => {
+    const latitude = listing.latitude!;
+    const longitude = listing.longitude!;
+    const key = `${latitude},${longitude}`;
+    const total = totals.get(key) ?? 1;
+    const index = seen.get(key) ?? 0;
+    seen.set(key, index + 1);
+
+    if (total === 1) return [latitude, longitude] as [number, number];
+
+    // Some IDX records share privacy-rounded coordinates. Spread duplicates
+    // slightly so every result remains visible and selectable on the map.
+    const angle = (index / total) * Math.PI * 2;
+    const radius = Math.min(0.018, 0.008 + total * 0.0004);
+    return [latitude + Math.sin(angle) * radius, longitude + Math.cos(angle) * radius] as [number, number];
+  });
+}
+
+class MapErrorBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("IDX map failed to initialize", error, info.componentStack);
+  }
+
+  render() {
+    return this.state.hasError ? this.props.fallback : this.props.children;
+  }
+}
+
+function MapContent({
+  listings,
+  selectedListingKey,
+  onSelect,
+  onSearchArea,
+}: {
+  listings: Listing[];
+  selectedListingKey?: string;
+  onSelect: (listingKey: string) => void;
+  onSearchArea: (bounds: ReturnType<typeof normalizeMapBounds>) => void;
+}) {
+  const mappableListings = listings.filter(isMappableListing);
+  const markerPositions = getMarkerPositions(listings);
+
+  return (
+    <MapContainer
+      center={LAS_VEGAS_VALLEY}
+      zoom={10}
+      scrollWheelZoom
+      className="h-full w-full"
+      style={{ height: "100%", width: "100%" }}
+      aria-label="Map of current property results"
+    >
+      <MapResizeHandler />
+      <SearchAreaControl onSearch={onSearchArea} />
+      <MapViewport listings={listings} />
+      {mappableListings.map((listing, index) => (
+        <Marker
+          key={listing.listingKey}
+          position={markerPositions[index]}
+          icon={selectedListingKey === listing.listingKey ? selectedMarkerIcon : markerIcon}
+          eventHandlers={{ click: () => onSelect(listing.listingKey) }}
+        >
+          <Popup>
+            <MapListingPreview listing={listing} />
+          </Popup>
+        </Marker>
+      ))}
+    </MapContainer>
+  );
+}
+
+export function ListingMap({
+  listings,
+  selectedListingKey,
+  onSelect,
+  onSearchArea,
+}: {
+  listings: Listing[];
+  selectedListingKey?: string;
+  onSelect: (listingKey: string) => void;
+  onSearchArea: (bounds: ReturnType<typeof normalizeMapBounds>) => void;
+}) {
+  const site = useTemplateSite();
+  const mappableCount = listings.filter(isMappableListing).length;
+
+  const fallback = (
+    <div className="flex h-full min-h-80 items-center justify-center bg-muted/50 p-6 text-center">
+      <div>
+        <p className="font-serif text-lg font-medium">Map unavailable</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your property results are still available in the list.
+        </p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="relative z-0 isolate h-full min-h-80 overflow-hidden rounded-xl border border-border bg-muted shadow-sm">
+      <MapErrorBoundary fallback={fallback}>
+        {site.capabilities.map && site.dataMode === "mock" ? (
+          <MapContent
+            listings={listings}
+            selectedListingKey={selectedListingKey}
+            onSelect={onSelect}
+            onSearchArea={onSearchArea}
+          />
+        ) : (
+          fallback
+        )}
+      </MapErrorBoundary>
+      <div className="pointer-events-none absolute left-3 top-3 z-[400] rounded-full bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm">
+        {site.capabilities.map && site.dataMode === "mock"
+          ? `${mappableCount} mapped synthetic properties · no external tiles`
+          : "Map capability unavailable · list remains usable"}
+      </div>
+    </div>
+  );
+}

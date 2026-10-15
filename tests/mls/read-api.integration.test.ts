@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { tryNativeMockRead } from "../../apps/api/src/mls";
@@ -64,6 +64,17 @@ async function waitForSessionExpiry(token: string) {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The disposable session did not reach its database expiry.");
+}
+
+async function createExpiringSyntheticFixtureToken() {
+  // Test-owned fixture at issuance: production session origin/expiry cannot be rewritten.
+  const token = randomBytes(32).toString("hex");
+  await admin.query(
+    `INSERT INTO app.login_session(token_hash,user_id,active_org_id,csrf_token,expires_at,identity_provenance)
+     VALUES($1,$2,$3,$4,clock_timestamp()+interval '1 second','synthetic-local')`,
+    [hashToken(token), fixtures.ownerUser, fixtures.orgA, randomBytes(32).toString("hex")],
+  );
+  return token;
 }
 
 beforeAll(async () => {
@@ -231,11 +242,7 @@ describe("W07 unregistered dev handler — real sessions, HTTP and PostgreSQL ro
   it.each(["list", "detail"])(
     "denies %s when its session expires while blocked on a source lock",
     async (kind) => {
-      const token = (await createSyntheticSession(runtime, fixtures.ownerUser, fixtures.orgA)).token;
-      await admin.query(
-        "UPDATE app.login_session SET expires_at=clock_timestamp()+interval '1 second' WHERE token_hash=$1",
-        [hashToken(token)],
-      );
+      const token = await createExpiringSyntheticFixtureToken();
       const writer = await admin.connect();
       let pending: Promise<Response> | undefined;
       try {
@@ -261,11 +268,7 @@ describe("W07 unregistered dev handler — real sessions, HTTP and PostgreSQL ro
   );
 
   it("evaluates session time after a blocked SHARE lock even when the writer never updates the tuple", async () => {
-    const token = (await createSyntheticSession(runtime, fixtures.ownerUser, fixtures.orgA)).token;
-    await admin.query(
-      "UPDATE app.login_session SET expires_at=clock_timestamp()+interval '1 second' WHERE token_hash=$1",
-      [hashToken(token)],
-    );
+    const token = await createExpiringSyntheticFixtureToken();
     const writer = await admin.connect();
     let pending: Promise<Response> | undefined;
     try {

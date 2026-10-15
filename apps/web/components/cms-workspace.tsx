@@ -1346,6 +1346,17 @@ export default function CmsWorkspace({
           </p>
         )}
         <div className={styles.actions}>
+          {currentData &&
+            sites.some(
+              (site) =>
+                site.id === siteId &&
+                site.state === "published" &&
+                /^las-vegas-idx-(agent|brokerage)@1[.]0[.]0$/.test(site.themeVersion),
+            ) && (
+              <a href={`/templates/las-vegas-idx/${siteId}`} target="_blank" rel="noopener noreferrer">
+                View published IDX website
+              </a>
+            )}
           {cursors.sites && (
             <Button
               variant="secondary"

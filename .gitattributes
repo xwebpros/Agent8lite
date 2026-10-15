@@ -4,6 +4,13 @@
 *.jpg binary
 *.webp binary
 *.ico binary
-# Preserve captured reference evidence as bytes, including original whitespace.
+# Byte-preserved owner source and upstream licenses must survive clone unchanged.
+apps/web/features/idx-template/provenance/original/** binary
+docs/reference/las-vegas-live-idx/*.txt binary
+apps/web/public/fonts/idx-template/*.ttf binary
+apps/web/public/fonts/idx-template/*-OFL.txt binary
+apps/web/public/idx-template-leaflet/LICENSE binary
+
+# Historical reference evidence remains byte-preserved in Git history.
 evidence/** -text
 Agent-Elite-Audit-2026-10-10/evidence/** -text

@@ -1,3 +1,5 @@
+> Historical publication record. The current working tree follows the owner-approved [repository cleanup](docs/runbooks/repository-cleanup.md); root audit/TDD archives, evidence and reports remain in earlier Git history and the private external archive. This record does not describe the current source-package layout.
+
 # Reference publication notes
 
 Published on 10 October 2026 from the owner-requested project artifacts. The publication preserves the existing executive-document history and adds the design, blueprint, audit, evidence, generator sources and deliverable archives. Application code and the Trestle scaffold remain on their respective workstream branches for coordinator review.

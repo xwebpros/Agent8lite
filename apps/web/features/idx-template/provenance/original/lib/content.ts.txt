@@ -1,0 +1,46 @@
+import { useQuery } from "@tanstack/react-query";
+
+export interface SiteContent {
+  heroEyebrow: string;
+  heroTitle: string;
+  heroDescription: string;
+  quickSearchEyebrow: string;
+  quickSearchTitle: string;
+  quickSearchDescription: string;
+  exploreEyebrow: string;
+  exploreTitle: string;
+  exploreDescription: string;
+  footerDescription: string;
+}
+
+export const defaultSiteContent: SiteContent = {
+  heroEyebrow: "Live Las Vegas Valley listings",
+  heroTitle: "Find Your Las Vegas Home",
+  heroDescription:
+    "Search live Las Vegas Valley real estate listings with current property details, photos, and brokerage attribution.",
+  quickSearchEyebrow: "Start with a real filter",
+  quickSearchTitle: "Quick searches",
+  quickSearchDescription:
+    "Each shortcut maps directly to a verified listing-field filter.",
+  exploreEyebrow: "Explore Las Vegas real estate",
+  exploreTitle: "A clearer way to search the Valley",
+  exploreDescription:
+    "Start with a city, ZIP code, price range, or property feature. Every result comes from the live IDX connection and can be reviewed in a list, split map, or map-only view.",
+  footerDescription:
+    "Live Las Vegas property search powered by CoreLogic Trestle. Brokerage attribution and MLS remarks are shown on each listing where supplied by the feed.",
+};
+
+async function fetchSiteContent(): Promise<SiteContent> {
+  const response = await fetch("/api/content");
+  if (!response.ok) throw new Error("Unable to load site content");
+  return response.json() as Promise<SiteContent>;
+}
+
+export function useSiteContent() {
+  return useQuery({
+    queryKey: ["site-content"],
+    queryFn: fetchSiteContent,
+    initialData: defaultSiteContent,
+    staleTime: 5 * 60 * 1000,
+  });
+}

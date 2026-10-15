@@ -1,5 +1,7 @@
 # ADR-055 — CMS document publication (MOD-C-003)
 
+Integration review, 2026-10-13: both service commands validate the exact generated `PublishRequest` after current authorization and before body dereference or SQL. The early CMS adapter cannot bypass closed request validation. Real-role HTTP checks reject extra/missing/malformed fields and preserve explicit publish/rollback, original Job/ETag replay, foreign/stale denial and draft site state.
+
 Accepted 2026-10-12, coordinating session. Implements the `publishDocument` and `rollbackDocument` operations for the native CMS.
 
 ## Scope

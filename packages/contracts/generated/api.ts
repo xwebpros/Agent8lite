@@ -2716,6 +2716,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/public/sites/{siteId}/idx-template/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getIdxTemplateContent */
+        get: operations["getIdxTemplateContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/public/sites/{siteId}/idx-template/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getIdxTemplateStatus */
+        get: operations["getIdxTemplateStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/public/sites/{siteId}/idx-template/listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** searchIdxTemplateListings */
+        get: operations["searchIdxTemplateListings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/public/sites/{siteId}/idx-template/listings/{listingKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getIdxTemplateListing */
+        get: operations["getIdxTemplateListing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/public/sites/{siteId}/idx-template/inquiries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** submitIdxTemplateInquiry */
+        post: operations["submitIdxTemplateInquiry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4104,6 +4189,139 @@ export interface components {
             channelsCombined: number;
             leadsMoved: number;
             consentOutcomes: components["schemas"]["ConsentMergeOutcome"][];
+        };
+        IdxTemplateListing: {
+            listingKey: string;
+            listingId?: string;
+            status?: string;
+            price?: number;
+            streetAddress?: string;
+            city?: string;
+            state?: string;
+            postalCode?: string;
+            bedrooms?: number;
+            bathrooms?: number;
+            livingArea?: number;
+            yearBuilt?: number;
+            latitude?: number;
+            longitude?: number;
+            publicRemarks?: string;
+            propertyType?: string;
+            propertySubType?: string;
+            lotSizeSquareFeet?: number;
+            lotSizeArea?: number;
+            hoaFee?: number;
+            hoaFeeFrequency?: string;
+            garageSpaces?: number;
+            garageYN?: boolean;
+            poolFeatures?: string[];
+            poolPrivateYN?: boolean;
+            stories?: number;
+            storiesTotal?: number;
+            communityFeatures?: string[];
+            interiorFeatures?: string[];
+            exteriorFeatures?: string[];
+            heating?: string[];
+            cooling?: string[];
+            flooring?: string[];
+            appliances?: string[];
+            view?: string[];
+            parkingFeatures?: string[];
+            listingOffice?: string;
+            listingOfficeEmail?: string;
+            listingOfficePhone?: string;
+            listingAgent?: string;
+            modificationTimestamp?: string;
+            photos: string[];
+            synthetic: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        IdxTemplateListingPage: {
+            items: components["schemas"]["IdxTemplateListing"][];
+            page: number;
+            /** @constant */
+            pageSize: 24;
+            hasMore: boolean;
+            live: boolean;
+            synthetic: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        IdxTemplateText: {
+            heroEyebrow: string;
+            heroTitle: string;
+            heroDescription: string;
+            quickSearchEyebrow: string;
+            quickSearchTitle: string;
+            quickSearchDescription: string;
+            exploreEyebrow: string;
+            exploreTitle: string;
+            exploreDescription: string;
+            footerDescription: string;
+        };
+        IdxTemplateBrand: {
+            displayName: string;
+            initial: string;
+            agentDisplayName: string;
+        };
+        IdxTemplateCapabilities: {
+            map: boolean;
+            favorites: boolean;
+            savedSearches: boolean;
+            aiSearch: boolean;
+            comparisons: boolean;
+            viewHistory: boolean;
+            notifications: boolean;
+            recommendations: boolean;
+            marketStats: boolean;
+        };
+        IdxTemplateContent: {
+            /** Format: uuid */
+            siteId: string;
+            /** Format: uuid */
+            documentId: string;
+            /** Format: uuid */
+            revisionId: string;
+            /** @enum {string} */
+            templateCode: "las-vegas-idx-agent" | "las-vegas-idx-brokerage";
+            templateVersion: string;
+            content: components["schemas"]["IdxTemplateText"];
+            brand: components["schemas"]["IdxTemplateBrand"];
+            seo: components["schemas"]["Seo"];
+            inquiryForm: {
+                /** Format: uuid */
+                id: string;
+                version: number;
+            };
+            /** @enum {string} */
+            dataMode: "mock" | "live" | "unavailable";
+            capabilities: components["schemas"]["IdxTemplateCapabilities"];
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        IdxTemplateStatus: {
+            configured: boolean;
+            authenticated: boolean;
+            metadata: boolean;
+            property: boolean;
+            media: boolean;
+            live: boolean;
+            synthetic: boolean;
+            message: string;
+        };
+        IdxTemplateInquiryWrite: {
+            /** Format: uuid */
+            formId: string;
+            formVersion: number;
+            listingKey: string;
+            listingId?: string;
+            name: string;
+            /** Format: email */
+            email: string;
+            phone?: string;
+            message: string;
+            honeypot?: string;
         };
     };
     responses: never;
@@ -23853,6 +24071,510 @@ export interface operations {
                 };
             };
             /** @description Service unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getIdxTemplateContent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                siteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated current public site response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdxTemplateContent"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getIdxTemplateStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                siteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated current public site response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdxTemplateStatus"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    searchIdxTemplateListings: {
+        parameters: {
+            query?: {
+                minPrice?: number;
+                maxPrice?: number;
+                beds?: number;
+                baths?: number;
+                address?: string;
+                city?: string;
+                zip?: string;
+                status?: "Active" | "ActiveUnderContract" | "Pending";
+                propertyType?: "Residential" | "HighRise" | "MultiFamily" | "ResidentialIncome" | "ResidentialLease";
+                propertySubType?: "Condominium" | "Townhouse" | "SingleFamilyResidence" | "Attached" | "Detached";
+                minSqft?: number;
+                maxSqft?: number;
+                minYearBuilt?: number;
+                maxYearBuilt?: number;
+                pool?: boolean;
+                singleStory?: boolean;
+                hoa?: boolean;
+                gated?: boolean;
+                minGarageSpaces?: number;
+                minLotSizeSqft?: number;
+                minLatitude?: number;
+                maxLatitude?: number;
+                minLongitude?: number;
+                maxLongitude?: number;
+                sort?: "newest" | "price-asc" | "price-desc";
+                page?: number;
+            };
+            header?: never;
+            path: {
+                siteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated current public site response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdxTemplateListingPage"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getIdxTemplateListing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                siteId: string;
+                listingKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated current public site response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdxTemplateListing"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    submitIdxTemplateInquiry: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                siteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdxTemplateInquiryWrite"];
+            };
+        };
+        responses: {
+            /** @description Validated current public site response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionReceipt"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Defined request, current policy or service failure. */
             503: {
                 headers: {
                     [name: string]: unknown;

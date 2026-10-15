@@ -13,8 +13,7 @@ beforeAll(async () => {
   owner = await new ApiSession().signIn("owner");
 });
 afterEach(async () => {
-  if (tagIds.size)
-    await admin.query("DELETE FROM app.tag WHERE id=ANY($1::uuid[])", [[...tagIds]]);
+  if (tagIds.size) await admin.query("DELETE FROM app.tag WHERE id=ANY($1::uuid[])", [[...tagIds]]);
   if (sourceIds.size)
     await admin.query("DELETE FROM app.lead_source WHERE id=ANY($1::uuid[])", [[...sourceIds]]);
   if (keys.size)
@@ -69,10 +68,14 @@ describe("tags CRUD", () => {
     tagIds.add(tag.id);
 
     const newName = `Updated tag ${randomUUID()}`;
-    const updated = await cmd(`tags/${tag.id}`, { name: newName }, {
-      method: "PATCH",
-      revision: `"${tag.version}"`,
-    });
+    const updated = await cmd(
+      `tags/${tag.id}`,
+      { name: newName },
+      {
+        method: "PATCH",
+        revision: `"${tag.version}"`,
+      },
+    );
     expect(updated.status).toBe(200);
     const body = await updated.json();
     assertContract("Tag", body);
@@ -85,15 +88,23 @@ describe("tags CRUD", () => {
     const tag = await created.json();
     tagIds.add(tag.id);
 
-    await cmd(`tags/${tag.id}`, { name: `Updated ${randomUUID()}` }, {
-      method: "PATCH",
-      revision: `"${tag.version}"`,
-    });
-    await assertProblem(
-      await cmd(`tags/${tag.id}`, { name: "Stale write" }, {
+    await cmd(
+      `tags/${tag.id}`,
+      { name: `Updated ${randomUUID()}` },
+      {
         method: "PATCH",
         revision: `"${tag.version}"`,
-      }),
+      },
+    );
+    await assertProblem(
+      await cmd(
+        `tags/${tag.id}`,
+        { name: "Stale write" },
+        {
+          method: "PATCH",
+          revision: `"${tag.version}"`,
+        },
+      ),
       412,
     );
   });
@@ -144,29 +155,34 @@ describe("lead-sources CRUD", () => {
     sourceIds.add(source.id);
 
     const newLabel = `Updated label ${randomUUID()}`;
-    const updated = await cmd(`lead-sources/${source.id}`, { code, label: newLabel }, {
-      method: "PATCH",
-      revision: `"${source.version}"`,
-    });
+    const updated = await cmd(
+      `lead-sources/${source.id}`,
+      { code, label: newLabel },
+      {
+        method: "PATCH",
+        revision: `"${source.version}"`,
+      },
+    );
     expect(updated.status).toBe(200);
     const body = await updated.json();
     assertContract("LeadSource", body);
     expect(body.label).toBe(newLabel);
 
     await assertProblem(
-      await cmd(`lead-sources/${source.id}`, { code: "different-code", label: newLabel }, {
-        method: "PATCH",
-        revision: `"${body.version}"`,
-      }),
+      await cmd(
+        `lead-sources/${source.id}`,
+        { code: "different-code", label: newLabel },
+        {
+          method: "PATCH",
+          revision: `"${body.version}"`,
+        },
+      ),
       422,
     );
   });
 
   it("rejects invalid source code format", async () => {
-    await assertProblem(
-      await cmd("lead-sources", { code: "INVALID CODE!", label: "Bad code" }),
-      422,
-    );
+    await assertProblem(await cmd("lead-sources", { code: "INVALID CODE!", label: "Bad code" }), 422);
   });
 
   it("rejects empty label", async () => {

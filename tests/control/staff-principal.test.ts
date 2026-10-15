@@ -16,7 +16,13 @@ const admin = new Pool({ connectionString: process.env.TEST_MIGRATION_DATABASE_U
 
 type Login = { cookie: string; token: string; csrf: string; body: any };
 
-async function request(path: string, method = "GET", input?: unknown, login?: Login, headers: Record<string, string> = {}) {
+async function request(
+  path: string,
+  method = "GET",
+  input?: unknown,
+  login?: Login,
+  headers: Record<string, string> = {},
+) {
   const response = await fetch(`${origin}${path}`, {
     method,
     headers: {
@@ -50,8 +56,13 @@ let supportUser: Login;
 beforeAll(async () => {
   let handler: Awaited<ReturnType<typeof createStaffHttpAdapter>>;
   server = createServer((req, res) => {
-    if (!handler) { res.writeHead(503).end(); return; }
-    void handler(req, res).then((handled) => { if (!handled) res.writeHead(404).end(); });
+    if (!handler) {
+      res.writeHead(503).end();
+      return;
+    }
+    void handler(req, res).then((handled) => {
+      if (!handled) res.writeHead(404).end();
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -103,10 +114,15 @@ describe("staff principal CRUD", () => {
   });
 
   it("creates a new staff principal", async () => {
-    const result = await request("/dev/staff/principals", "POST", {
-      userId: testUserId,
-      permissionCodes: ["platform.orgs.read", "platform.health.read"],
-    }, administrator);
+    const result = await request(
+      "/dev/staff/principals",
+      "POST",
+      {
+        userId: testUserId,
+        permissionCodes: ["platform.orgs.read", "platform.health.read"],
+      },
+      administrator,
+    );
     expect(result.response.status).toBe(201);
     expect(result.body.userId).toBe(testUserId);
     expect(result.body.permissionCodes).toEqual(["platform.orgs.read", "platform.health.read"]);
@@ -116,19 +132,29 @@ describe("staff principal CRUD", () => {
   });
 
   it("rejects creating a principal for your own user", async () => {
-    const result = await request("/dev/staff/principals", "POST", {
-      userId: fixtures.staffAdministratorUser,
-      permissionCodes: ["platform.orgs.read"],
-    }, administrator);
+    const result = await request(
+      "/dev/staff/principals",
+      "POST",
+      {
+        userId: fixtures.staffAdministratorUser,
+        permissionCodes: ["platform.orgs.read"],
+      },
+      administrator,
+    );
     expect(result.response.status).toBe(422);
     expect(result.body.code).toBe("self_modification_denied");
   });
 
   it("rejects duplicate principal for same user", async () => {
-    const result = await request("/dev/staff/principals", "POST", {
-      userId: testUserId,
-      permissionCodes: ["platform.orgs.read"],
-    }, administrator);
+    const result = await request(
+      "/dev/staff/principals",
+      "POST",
+      {
+        userId: testUserId,
+        permissionCodes: ["platform.orgs.read"],
+      },
+      administrator,
+    );
     expect(result.response.status).toBe(409);
   });
 
@@ -139,10 +165,15 @@ describe("staff principal CRUD", () => {
       [otherUser],
     );
     try {
-      const result = await request("/dev/staff/principals", "POST", {
-        userId: otherUser,
-        permissionCodes: ["fake.permission.code"],
-      }, administrator);
+      const result = await request(
+        "/dev/staff/principals",
+        "POST",
+        {
+          userId: otherUser,
+          permissionCodes: ["fake.permission.code"],
+        },
+        administrator,
+      );
       expect(result.response.status).toBe(422);
     } finally {
       await admin.query("DELETE FROM app.user_identity WHERE id=$1", [otherUser]);
@@ -150,27 +181,46 @@ describe("staff principal CRUD", () => {
   });
 
   it("reads a specific principal", async () => {
-    const result = await request(`/dev/staff/principals/${createdPrincipalId}`, "GET", undefined, administrator);
+    const result = await request(
+      `/dev/staff/principals/${createdPrincipalId}`,
+      "GET",
+      undefined,
+      administrator,
+    );
     expect(result.response.status).toBe(200);
     expect(result.body.id).toBe(createdPrincipalId);
     expect(result.response.headers.get("etag")).toBe(`"${createdVersion}"`);
   });
 
   it("updates principal permissions", async () => {
-    const result = await request(`/dev/staff/principals/${createdPrincipalId}`, "POST", {
-      permissionCodes: ["platform.orgs.read", "platform.health.read", "platform.config.read"],
-    }, administrator, { "If-Match": `"${createdVersion}"` });
+    const result = await request(
+      `/dev/staff/principals/${createdPrincipalId}`,
+      "POST",
+      {
+        permissionCodes: ["platform.orgs.read", "platform.health.read", "platform.config.read"],
+      },
+      administrator,
+      { "If-Match": `"${createdVersion}"` },
+    );
     expect(result.response.status).toBe(200);
     expect(result.body.permissionCodes).toEqual([
-      "platform.orgs.read", "platform.health.read", "platform.config.read",
+      "platform.orgs.read",
+      "platform.health.read",
+      "platform.config.read",
     ]);
     createdVersion = result.body.rowVersion;
   });
 
   it("rejects update with stale version", async () => {
-    const result = await request(`/dev/staff/principals/${createdPrincipalId}`, "POST", {
-      permissionCodes: ["platform.orgs.read"],
-    }, administrator, { "If-Match": '"0"' });
+    const result = await request(
+      `/dev/staff/principals/${createdPrincipalId}`,
+      "POST",
+      {
+        permissionCodes: ["platform.orgs.read"],
+      },
+      administrator,
+      { "If-Match": '"0"' },
+    );
     expect(result.response.status).toBe(409);
   });
 
@@ -179,15 +229,27 @@ describe("staff principal CRUD", () => {
       "SELECT id, row_version FROM app.staff_principal WHERE user_id=$1",
       [fixtures.staffAdministratorUser],
     );
-    const result = await request(`/dev/staff/principals/${adminPrincipal.rows[0].id}`, "POST", {
-      permissionCodes: ["platform.orgs.read"],
-    }, administrator, { "If-Match": `"${adminPrincipal.rows[0].row_version}"` });
+    const result = await request(
+      `/dev/staff/principals/${adminPrincipal.rows[0].id}`,
+      "POST",
+      {
+        permissionCodes: ["platform.orgs.read"],
+      },
+      administrator,
+      { "If-Match": `"${adminPrincipal.rows[0].row_version}"` },
+    );
     expect(result.response.status).toBe(422);
     expect(result.body.code).toBe("self_modification_denied");
   });
 
   it("deactivates a principal", async () => {
-    const result = await request(`/dev/staff/principals/${createdPrincipalId}/deactivate`, "POST", {}, administrator, { "If-Match": `"${createdVersion}"` });
+    const result = await request(
+      `/dev/staff/principals/${createdPrincipalId}/deactivate`,
+      "POST",
+      {},
+      administrator,
+      { "If-Match": `"${createdVersion}"` },
+    );
     expect(result.response.status).toBe(200);
     expect(result.body.active).toBe(false);
     createdVersion = result.body.rowVersion;
@@ -195,9 +257,14 @@ describe("staff principal CRUD", () => {
 
   it("rejects unrestricted access when only one administrator exists", async () => {
     const allCodes = [
-      "platform.audit.read", "platform.config.read", "platform.health.read",
-      "platform.orgs.provision", "platform.orgs.read", "platform.plans.manage",
-      "platform.plans.read", "platform.support.grant",
+      "platform.audit.read",
+      "platform.config.read",
+      "platform.health.read",
+      "platform.orgs.provision",
+      "platform.orgs.read",
+      "platform.plans.manage",
+      "platform.plans.read",
+      "platform.support.grant",
     ];
     const otherUser = randomUUID();
     await admin.query(
@@ -205,10 +272,15 @@ describe("staff principal CRUD", () => {
       [otherUser],
     );
     try {
-      const result = await request("/dev/staff/principals", "POST", {
-        userId: otherUser,
-        permissionCodes: allCodes,
-      }, administrator);
+      const result = await request(
+        "/dev/staff/principals",
+        "POST",
+        {
+          userId: otherUser,
+          permissionCodes: allCodes,
+        },
+        administrator,
+      );
       expect(result.response.status).toBe(422);
       expect(result.body.code).toBe("unrestricted_requires_second_administrator");
     } finally {
@@ -217,10 +289,15 @@ describe("staff principal CRUD", () => {
   });
 
   it("support user cannot manage principals", async () => {
-    const result = await request("/dev/staff/principals", "POST", {
-      userId: randomUUID(),
-      permissionCodes: ["platform.orgs.read"],
-    }, supportUser);
+    const result = await request(
+      "/dev/staff/principals",
+      "POST",
+      {
+        userId: randomUUID(),
+        permissionCodes: ["platform.orgs.read"],
+      },
+      supportUser,
+    );
     expect(result.response.status).toBe(403);
   });
 });

@@ -18,8 +18,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const id of dealIds)
-    await admin.query("DELETE FROM app.deal WHERE id=$1", [id]).catch(() => {});
+  for (const id of dealIds) await admin.query("DELETE FROM app.deal WHERE id=$1", [id]).catch(() => {});
   await admin.end();
 });
 
@@ -64,13 +63,17 @@ describe("deal CRUD", () => {
   });
 
   it("updates a deal", async () => {
-    const response = await owner.command(path(`deals/${dealId}`), {
-      leadId,
-      name: "Updated deal title",
-      amount: 350000,
-      currency: "USD",
-      state: "open",
-    }, { method: "PATCH", revision: `"${dealVersion}"` });
+    const response = await owner.command(
+      path(`deals/${dealId}`),
+      {
+        leadId,
+        name: "Updated deal title",
+        amount: 350000,
+        currency: "USD",
+        state: "open",
+      },
+      { method: "PATCH", revision: `"${dealVersion}"` },
+    );
     expect(response.status).toBe(200);
     const body = await response.json();
     assertContract("Deal", body);
@@ -80,13 +83,17 @@ describe("deal CRUD", () => {
   });
 
   it("rejects update with stale version", async () => {
-    const response = await owner.command(path(`deals/${dealId}`), {
-      leadId,
-      name: "Stale update",
-      amount: 100000,
-      currency: "USD",
-      state: "open",
-    }, { method: "PATCH", revision: '"0"' });
+    const response = await owner.command(
+      path(`deals/${dealId}`),
+      {
+        leadId,
+        name: "Stale update",
+        amount: 100000,
+        currency: "USD",
+        state: "open",
+      },
+      { method: "PATCH", revision: '"0"' },
+    );
     expect([409, 412]).toContain(response.status);
   });
 });

@@ -173,6 +173,19 @@ describe("loaded task agenda through the established static React harness", () =
     expect(completion(markup, task().title)).toContain('disabled=""');
     expect(button(markup, "Add a follow-up")).toContain('disabled=""');
   });
+  it("blocks new task creation independently while preserving current task completion and reads", () => {
+    const markup = render({ canAddTask: false });
+    expect(button(markup, "Add a follow-up")).toContain('disabled=""');
+    expect(completion(markup, task().title)).not.toContain('disabled=""');
+    expect(button(markup, task().title)).not.toContain('disabled=""');
+    expect(button(markup, "View tasks")).not.toContain('disabled=""');
+  });
+  it("allows separately authorized task creation without enabling task completion", () => {
+    const markup = render({ canAddTask: true, canComplete: false });
+    expect(button(markup, "Add a follow-up")).not.toContain('disabled=""');
+    expect(completion(markup, task().title)).toContain('disabled=""');
+    expect(button(markup, task().title)).not.toContain('disabled=""');
+  });
   it("disables native drawer/completion/navigation actions while blocked by shell guards", () => {
     const markup = render({ blocked: true });
     expect(markup).toContain(task().title);

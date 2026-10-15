@@ -1,0 +1,123 @@
+import { type ReactNode, useEffect } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ErrorBoundary } from '@/components/error-boundary';
+import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import NotFound from '@/pages/not-found';
+import {
+  Route,
+  Switch,
+  useLocation,
+  Router as WouterRouter,
+} from 'wouter';
+
+import Home from '@/pages/Home';
+import ListingDetail from '@/pages/ListingDetail';
+import Account from '@/pages/Account';
+import ProtectedWorkspace from '@/pages/ProtectedWorkspace';
+import SavedHomes from '@/pages/SavedHomes';
+import { emitBehaviorEvent } from '@/lib/events';
+import Organizer from '@/pages/Organizer';
+import Terms from '@/pages/Terms';
+import Automations from '@/pages/Automations';
+import AutomationDetail from '@/pages/AutomationDetail';
+import LocationPage from '@/pages/LocationPage';
+
+function AccountRoute() {
+  return <Account />;
+}
+
+function AccountVerifyRoute() {
+  return <Account verify />;
+}
+
+function AgentWorkspaceRoute() {
+  return <ProtectedWorkspace capability="crmRead" title="Agent workspace" />;
+}
+
+function AdminWorkspaceRoute() {
+  return <ProtectedWorkspace capability="tenantManage" title="Admin workspace" />;
+}
+
+function UserWorkspaceRoute() {
+  return <ProtectedWorkspace capability="tenantRead" title="Your workspace" />;
+}
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
+    },
+  },
+});
+
+function Router() {
+  return (
+    <RoutedErrorBoundary>
+      <Switch>
+        <Route path="/" component={Home} />
+        <Route path="/listing/:listingKey" component={ListingDetail} />
+        <Route path="/communities/:slug" component={LocationPage} />
+        <Route path="/account/verify" component={AccountVerifyRoute} />
+        <Route path="/account/favorites" component={SavedHomes} />
+        <Route path="/account/organizer" component={Organizer} />
+        <Route path="/account" component={AccountRoute} />
+        <Route path="/workspace/automations/:automationId" component={AutomationDetail} />
+        <Route path="/workspace/automations" component={Automations} />
+        <Route path="/workspace" component={UserWorkspaceRoute} />
+        <Route path="/saved-homes" component={SavedHomes} />
+        <Route path="/agent" component={AgentWorkspaceRoute} />
+        <Route path="/admin" component={AdminWorkspaceRoute} />
+        <Route path="/terms" component={Terms} />
+        <Route component={NotFound} />
+      </Switch>
+    </RoutedErrorBoundary>
+  );
+}
+
+function RoutedErrorBoundary({ children }: { children: ReactNode }) {
+  const [location] = useLocation();
+  return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
+}
+
+function ScrollToTop() {
+  const [location] = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [location]);
+
+  return null;
+}
+
+function VisitorBootstrap() {
+  const [location] = useLocation();
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const attribution = Object.fromEntries(["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"].flatMap((key) => query.get(key) ? [[key, query.get(key)!]] : []));
+    void fetch("/api/visitor/bootstrap", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: location, referrer: document.referrer || undefined, ...attribution }) });
+    emitBehaviorEvent("PAGE_VIEWED", { metadata: { path: location } });
+    if (sessionStorage.getItem("vegasidx_has_visited")) emitBehaviorEvent("RETURN_VISIT", { metadata: { path: location } });
+    sessionStorage.setItem("vegasidx_has_visited", "1");
+  }, [location]);
+  return null;
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+          <ScrollToTop />
+          <VisitorBootstrap />
+          <Router />
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

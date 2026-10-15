@@ -12,6 +12,9 @@ async function signIn(page: Page, identity: "owner" | "agent" = "agent") {
 }
 
 async function navigate(page: Page, name: "Contacts" | "Pipeline" | "Tasks" | "Settings") {
+  // A historical command acknowledgement can precede the independent current read.
+  // Navigate only once the shell's existing busy/draft guard has released.
+  await expect(page.getByRole("combobox", { name: "Workspace scope", exact: true })).toBeEnabled();
   // Nav links can carry a count badge (e.g. "Tasks 1") in their accessible name.
   const link = page.getByRole("link", { name: new RegExp(`^${name}(?: \\d+)?$`) }).filter({ visible: true });
   await link.click();
@@ -113,9 +116,16 @@ test("organization switch removes earlier records on mobile and desktop", async 
   const secondOrg = session.organizations.find(
     (organization: { id: string }) => organization.id !== firstOrg,
   ).id;
-  const firstContacts = await (await page.request.get(`/api/v1/orgs/${firstOrg}/contacts?limit=100`)).json();
+  const contactsResponse = await page.request.get(`/api/v1/orgs/${firstOrg}/contacts?limit=100`);
+  expect(contactsResponse.status()).toBe(200);
+  const firstContacts = await contactsResponse.json();
+  expect(firstContacts.items.length).toBeGreaterThan(0);
   const name = firstContacts.items[0].displayName;
   await navigate(page, "Contacts");
+  // The API read above uses current authorized scope; My workspace adds a member filter.
+  await page.getByRole("combobox", { name: "Workspace scope", exact: true }).selectOption("authorized");
+  await page.getByLabel("Contact name", { exact: true }).fill(name);
+  await page.getByRole("button", { name: "Search names", exact: true }).click();
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   // The sidebar switcher is "Organization"; the mobile layout shows "Mobile organization".
   await page
@@ -125,6 +135,9 @@ test("organization switch removes earlier records on mobile and desktop", async 
   await expect(
     page.getByText("Organization switched. Session and access verified.", { exact: true }),
   ).toBeVisible();
+  const currentSessionResponse = await page.request.get("/api/v1/session");
+  expect(currentSessionResponse.status()).toBe(200);
+  expect((await currentSessionResponse.json()).activeOrgId).toBe(secondOrg);
   await expect(page.getByRole("heading", { name, exact: true })).not.toBeVisible();
   const denied = await page.request.get(`/api/v1/orgs/${firstOrg}/leads`);
   expect(denied.status()).toBe(403);
@@ -182,7 +195,12 @@ test("manifest/icons and safe caches support a generic offline shell after logou
   }
   await signIn(page);
   await navigate(page, "Contacts");
-  const privateNames = await page.getByRole("heading", { level: 3 }).allTextContents();
+  // Earlier capture cases create member-owned fixtures; wait for actual current private rows.
+  // An empty pre-read heading list would make the cache privacy assertion vacuous.
+  const contacts = page.getByRole("list", { name: "Loaded contact search results", exact: true });
+  await expect(contacts).toBeVisible();
+  const privateNames = await contacts.getByRole("heading", { level: 3 }).allTextContents();
+  expect(privateNames.length).toBeGreaterThan(0);
   await navigate(page, "Settings");
   await expect(page.getByText("Add to Home Screen", { exact: false }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Enable push", exact: true })).toHaveCount(0);

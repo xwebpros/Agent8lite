@@ -264,7 +264,12 @@ export default function DealsPanel({
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "8px 0 12px" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
           Lead intent
-          <select value={intentFilter} onChange={(e) => { setIntentFilter(e.target.value); }}>
+          <select
+            value={intentFilter}
+            onChange={(e) => {
+              setIntentFilter(e.target.value);
+            }}
+          >
             <option value="">All</option>
             <option value="buyer">Buyer</option>
             <option value="seller">Seller</option>
@@ -275,10 +280,17 @@ export default function DealsPanel({
         {sources.length > 0 && (
           <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, fontWeight: 600 }}>
             Lead source
-            <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); }}>
+            <select
+              value={sourceFilter}
+              onChange={(e) => {
+                setSourceFilter(e.target.value);
+              }}
+            >
               <option value="">All sources</option>
               {sources.map((source) => (
-                <option key={source.id} value={source.id}>{source.label}</option>
+                <option key={source.id} value={source.id}>
+                  {source.label}
+                </option>
               ))}
             </select>
           </label>

@@ -63,11 +63,13 @@ export class PlatformService {
       organizations: orgCount.rows[0].c,
       pendingJobs: pending.rows[0].c,
       failedJobs: failed.rows[0].c,
-      providerStates: providers.rows.map((r: { provider: string; state: string; last_success_at: string | null }) => ({
-        provider: r.provider,
-        state: r.state,
-        lastSuccessAt: r.last_success_at ?? null,
-      })),
+      providerStates: providers.rows.map(
+        (r: { provider: string; state: string; last_success_at: string | null }) => ({
+          provider: r.provider,
+          state: r.state,
+          lastSuccessAt: r.last_success_at ?? null,
+        }),
+      ),
       asOf: new Date().toISOString(),
     };
   }
@@ -148,14 +150,9 @@ export class PlatformService {
     expectedVersion: string,
   ) {
     requirePermission(this.staff, "platform.plans.manage");
-    if (!expectedVersion)
-      throw new AccessError(428, "revision_required", "If-Match header is required.");
-    const current = await this.client.query(
-      "SELECT * FROM app.plan WHERE id=$1 FOR UPDATE",
-      [planId],
-    );
-    if (!current.rows.length)
-      throw new AccessError(404, "plan_not_found", "Plan not found.");
+    if (!expectedVersion) throw new AccessError(428, "revision_required", "If-Match header is required.");
+    const current = await this.client.query("SELECT * FROM app.plan WHERE id=$1 FOR UPDATE", [planId]);
+    if (!current.rows.length) throw new AccessError(404, "plan_not_found", "Plan not found.");
     if (String(current.rows[0].row_version) !== expectedVersion)
       throw new AccessError(412, "revision_mismatch", "Plan has been modified.");
     const row = current.rows[0];
@@ -198,7 +195,15 @@ export class PlatformService {
     );
     const hasMore = result.rows.length > limit;
     const items = (hasMore ? result.rows.slice(0, limit) : result.rows).map(
-      (r: { id: string; actor_ref: string; action: string; resource_type: string; resource_id: string | null; trace_id: string; created_at: Date }) => ({
+      (r: {
+        id: string;
+        actor_ref: string;
+        action: string;
+        resource_type: string;
+        resource_id: string | null;
+        trace_id: string;
+        created_at: Date;
+      }) => ({
         id: r.id,
         actorRef: r.actor_ref,
         action: r.action,

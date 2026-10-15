@@ -25,6 +25,7 @@ export type TaskAgendaViewProps = {
   visible: boolean;
   canRead: boolean;
   canComplete: boolean;
+  canAddTask?: boolean;
   blocked: boolean;
   completionPending?: boolean;
   onReconcile?(): void;
@@ -221,7 +222,7 @@ export function TaskAgendaView(props: TaskAgendaViewProps) {
       <footer className={styles.footer}>
         <button
           type="button"
-          disabled={!canAct || !props.canComplete}
+          disabled={!canAct || !(props.canAddTask ?? props.canComplete)}
           onClick={() => props.actions.addTask()}
         >
           <Plus size={16} aria-hidden="true" />
@@ -320,7 +321,7 @@ export default function TaskAgenda(props: TaskAgendaProps) {
           if (allowed()) live.current.onViewTasks();
         },
         addTask: () => {
-          if (allowed() && live.current.canComplete) live.current.onAddTask();
+          if (allowed() && (live.current.canAddTask ?? live.current.canComplete)) live.current.onAddTask();
         },
       }}
     />

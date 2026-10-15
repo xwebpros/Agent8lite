@@ -1,0 +1,87 @@
+import { Link } from "wouter";
+import { ArrowLeft } from "lucide-react";
+import { Layout } from "@/components/Layout";
+
+const retentionRows = [
+  ["Sessions and sign-in links", "Short-lived and removed after expiration; sign-in links are not retained after use."],
+  ["Visitor activity and preferences", "Proposed 24-month limit from last activity, followed by deletion or irreversible aggregation."],
+  ["Leads, contacts, and real-estate records", "Proposed five-year minimum from closing or last property-related activity, subject to applicable law, audit, and legal holds."],
+  ["Consent and SMS suppression", "Consent and opt-out evidence is retained as needed to prove permission and prevent unwanted contact."],
+  ["Messages and delivery events", "Proposed five-year limit from the last communication, with content removed or minimized when permitted."],
+  ["Saved homes, searches, alerts, comparisons, and recommendations", "Proposed 24-month limit from last activity; live listing facts remain with the MLS provider."],
+];
+
+export default function Terms() {
+  return (
+    <Layout>
+      <article className="container mx-auto w-full max-w-4xl px-4 py-12 md:px-6 md:py-20">
+        <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary">
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Back to search
+        </Link>
+        <header className="mb-12 max-w-3xl">
+          <p className="mb-3 text-sm font-medium uppercase tracking-[0.18em] text-primary">VegasIDX policies</p>
+          <h1 className="text-4xl md:text-5xl">Terms and Conditions</h1>
+          <p className="mt-5 text-lg leading-8 text-muted-foreground">Please review these terms before using Las Vegas Live IDX, including its property search, account, saved-home, alert, recommendation, and communication features.</p>
+          <p className="mt-4 text-sm text-muted-foreground">Last updated: September 5, 2026. These terms are a product-use document and do not replace advice from a Nevada real-estate or privacy professional.</p>
+        </header>
+
+        <div className="space-y-10 leading-7 text-foreground/85">
+          <section aria-labelledby="use-heading">
+            <h2 id="use-heading" className="mb-3 text-2xl">1. Using the service</h2>
+            <p>VegasIDX provides a consumer interface for browsing live IDX listing information and organizing personal searches. Listing information is supplied through the applicable MLS/IDX feed and may change, be delayed, or be unavailable. Information is deemed reliable but is not guaranteed; contact the listing brokerage for property questions, availability, pricing, offers, showings, and transaction terms.</p>
+          </section>
+
+          <section aria-labelledby="accounts-heading">
+            <h2 id="accounts-heading" className="mb-3 text-2xl">2. Accounts and user content</h2>
+            <p>Keep account and contact information accurate and protect sign-in links. You are responsible for activity performed through your account. Saved homes, searches, comparisons, preferences, inquiries, and messages must be used only for lawful personal or authorized brokerage purposes.</p>
+          </section>
+
+          <section aria-labelledby="communications-heading">
+            <h2 id="communications-heading" className="mb-3 text-2xl">3. Communications and consent</h2>
+            <p>Email and SMS communications are sent only for the purpose and destination supported by the recorded consent or requested interaction. SMS recipients may reply <strong>STOP</strong> to opt out, <strong>START</strong> to resubscribe where permitted, or <strong>HELP</strong> for assistance. Consent is destination-specific and is not transferred to another person. Message and data rates may apply.</p>
+          </section>
+
+          <section id="retention-privacy" aria-labelledby="retention-heading" className="scroll-mt-24 rounded-lg border bg-card p-6 md:p-8">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="mb-2 text-sm font-medium uppercase tracking-[0.15em] text-primary">Retention and privacy</p>
+                <h2 id="retention-heading" className="text-2xl">4. Retention and Privacy Policy</h2>
+              </div>
+              <span className="w-fit rounded-full border px-3 py-1 text-xs text-muted-foreground">Case-by-case handling</span>
+            </div>
+            <p className="mt-4">We minimize personal information, use it to operate the service and requested real-estate workflows, and protect it with access controls. Privacy and deletion requests are verified and handled case by case, with applicable legal holds, real-estate recordkeeping duties, and provider limitations documented for each request.</p>
+            <div className="mt-6 overflow-x-auto rounded-md border">
+              <table className="w-full min-w-[38rem] text-left text-sm">
+                <caption className="sr-only">Proposed retention schedule</caption>
+                <thead className="bg-muted/60 text-foreground">
+                  <tr><th scope="col" className="px-4 py-3 font-medium">Information</th><th scope="col" className="px-4 py-3 font-medium">Proposed handling</th></tr>
+                </thead>
+                <tbody className="divide-y">
+                  {retentionRows.map(([name, handling]) => <tr key={name}><th scope="row" className="px-4 py-3 align-top font-medium">{name}</th><td className="px-4 py-3 align-top text-muted-foreground">{handling}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-5 text-sm text-muted-foreground">Longer legal, regulatory, audit, contractual, MLS, investigation, or litigation requirements control. Legal holds pause deletion. Any applicable provider follow-up is documented per customer case. See the <Link href="/terms#retention-privacy" className="font-medium text-primary underline underline-offset-4">retention and privacy section</Link> on this page for the current public summary.</p>
+            <p className="mt-3 text-sm text-muted-foreground">The complete approval record and implementation controls are maintained by the site owner in the internal retention/privacy policy. This public summary is the version available to site visitors.</p>
+          </section>
+
+          <section aria-labelledby="privacy-requests-heading">
+            <h2 id="privacy-requests-heading" className="mb-3 text-2xl">5. Privacy requests</h2>
+            <p>To request access, correction, deletion, or an opt-out from sale of covered information where applicable, contact the site owner through the contact method provided in your account or inquiry correspondence. We may verify identity and may retain or minimize information needed for consent proof, suppression, legal obligations, security, audits, or a legal hold.</p>
+          </section>
+
+          <section aria-labelledby="acceptable-use-heading">
+            <h2 id="acceptable-use-heading" className="mb-3 text-2xl">6. Acceptable use and availability</h2>
+            <p>Do not scrape, interfere with, reverse engineer, impersonate another person, bypass access controls, misuse listing data, or use the service to discriminate in housing or communications. We may limit or suspend access to protect users, providers, the MLS feed, or the service. The service may include third-party providers and may be degraded or unavailable.</p>
+          </section>
+
+          <section aria-labelledby="changes-heading">
+            <h2 id="changes-heading" className="mb-3 text-2xl">7. Changes and contact</h2>
+            <p>We may update these terms as the service, law, MLS rules, or approved privacy policy changes. Material changes will be posted here with a revised date. Questions about these terms or a privacy request should be directed to the site owner using the contact information associated with your inquiry or account.</p>
+          </section>
+        </div>
+      </article>
+    </Layout>
+  );
+}

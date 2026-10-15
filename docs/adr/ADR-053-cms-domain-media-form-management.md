@@ -1,7 +1,9 @@
 # ADR-053 — CMS domain, media and form management
 
-**Date:** 2026-10-12  
-**Status:** Accepted  
+**Date:** 2026-10-12
+
+**Status:** Accepted
+
 **Author:** Coordinating agent (W01)
 
 ## Context

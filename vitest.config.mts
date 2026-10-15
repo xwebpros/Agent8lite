@@ -6,6 +6,8 @@ export default defineConfig({
       "tests/integration/**/*.test.ts",
       "tests/cms/**/*.test.{ts,tsx}",
       "tests/mls/**/*.test.ts",
+      "tests/idx-template/**/*.test.{ts,tsx}",
+      "apps/web/features/idx-template/**/*.test.{ts,tsx}",
       "packages/**/*.test.ts",
     ],
     testTimeout: 30000,

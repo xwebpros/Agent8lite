@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-label="Synthetic property illustration, not an MLS photograph">
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#e7e2d9"/><stop offset="1" stop-color="#cdbdae"/></linearGradient>
+    <linearGradient id="wall" x2="1" y2="1"><stop stop-color="#f6eee2"/><stop offset="1" stop-color="#cabcaa"/></linearGradient>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h1440v960H0z"/>
+  <path fill="#c9b6a1" d="m0 475 270-160 215 128 243-214 270 224 224-91 218 117v481H0z"/>
+  <path fill="#bba68d" d="M0 654h1440v306H0z"/>
+  <path fill="#e6d6bd" d="m225 723 72-195h850l67 195z"/>
+  <path fill="url(#wall)" d="M278 423h854v293H278z"/>
+  <path fill="#50413c" d="M239 403h932v40H239z"/>
+  <path fill="#dccbb5" d="M803 326h287v390H803z"/>
+  <path fill="#51413b" d="M781 306h328v32H781z"/>
+  <g fill="#496266"><path d="M338 494h201v158H338zM605 494h121v158H605zM858 382h172v202H858z"/></g>
+  <g fill="#d9c8b0"><path d="M434 494h8v158h-8zM338 569h201v8H338zM940 382h8v202h-8z"/></g>
+  <path fill="#705648" d="M854 597h182v119H854z"/>
+  <path fill="#877057" d="M813 716h264l36 244H777z"/>
+  <g fill="#697051"><path d="M151 759q-63-199-4-226 50 36 20 126 66-87 91-29-14 72-91 129zM1252 768q-26-151 23-178 50 40 21 110 56-49 70-15-13 54-70 83z"/></g>
+  <path fill="#34262a" d="M0 841h1440v119H0z"/>
+  <text x="60" y="897" fill="#fff4e5" font-family="sans-serif" font-size="32" letter-spacing="5">SYNTHETIC PROPERTY</text>
+  <text x="60" y="934" fill="#d6c1b6" font-family="sans-serif" font-size="22">Fictional demonstration · Not an MLS photograph</text>
+</svg>

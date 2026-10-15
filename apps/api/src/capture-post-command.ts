@@ -171,6 +171,8 @@ export function leadPostReceipt(
   const receipt = detached as Schemas["Lead"];
   const owner = command.body.ownerMemberId === undefined ? memberId : command.body.ownerMemberId;
   const returnedOwner = receipt.ownerMemberId;
+  const score = receipt.score ?? null,
+    scoreVersion = receipt.scoreVersion ?? null;
   if (
     !uuid.test(receipt.id) ||
     !uuid.test(receipt.stageId) ||
@@ -183,8 +185,7 @@ export function leadPostReceipt(
       : returnedOwner.toLowerCase() !== owner.toLowerCase()) ||
     receipt.intent !== command.body.intent ||
     (receipt.timeline ?? null) !== (command.body.timeline ?? null) ||
-    (receipt.score ?? null) !== null ||
-    (receipt.scoreVersion ?? null) !== null
+    (score === null ? scoreVersion !== null : typeof scoreVersion !== "string" || !scoreVersion.trim())
   )
     return invalid(true);
   return receipt;

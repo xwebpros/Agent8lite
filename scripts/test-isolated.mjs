@@ -17,7 +17,10 @@ function batch(filters, report, runner = "scripts/test-isolated-batch.mjs") {
 }
 async function main() {
   if (requested.length) {
-    if (!(await batch(requested))) process.exitCode = 1;
+    const idx = requested.filter((file) => file.replaceAll("\\", "/").startsWith("tests/idx-template"));
+    const standard = requested.filter((file) => !idx.includes(file));
+    if (standard.length && !(await batch(standard))) process.exitCode = 1;
+    if (idx.length && !(await batch(idx, undefined, "tests/idx-template/run.mjs"))) process.exitCode = 1;
     return;
   }
   const base = path.resolve(process.cwd(), ".local", "acceptance-reports");
@@ -53,14 +56,24 @@ async function main() {
   ];
   // Control's cut-point suite owns a different database/listener and refuses shared fixtures.
   suites.push([]);
+  suites.push(["--unit"]);
+  const idxIntegration = (await readdir("tests/idx-template"))
+    .filter((file) => file.endsWith(".integration.test.ts"))
+    .sort()
+    .map((file) => `tests/idx-template/${file}`);
+  suites.push(...idxIntegration.map((file) => [file]));
   const totals = { files: 0, tests: 0, passed: 0, failed: 0, skipped: 0, failedBatches: 0 };
   await mkdir(directory, { recursive: true });
   try {
     for (const [index, filters] of suites.entries()) {
       console.log(`Isolated batch ${index + 1}/${suites.length}: ${filters.join(", ")}`);
       const report = path.join(directory, `${index}.json`);
-      if (!(await batch(filters, report, filters.length ? undefined : "tests/control/run.mjs")))
-        totals.failedBatches++;
+      const runner = !filters.length
+        ? "tests/control/run.mjs"
+        : filters[0] === "--unit" || filters[0].startsWith("tests/idx-template/")
+          ? "tests/idx-template/run.mjs"
+          : undefined;
+      if (!(await batch(filters, report, runner))) totals.failedBatches++;
       try {
         const result = JSON.parse(await readFile(report, "utf8"));
         totals.files += result.testResults.length;

@@ -91,7 +91,11 @@ export function parseContactQuery(input: unknown): ContactListQuery {
   };
   const filter = detach(parsed, 0);
   validateSchema("LeadFilter", filter);
-  if (Object.keys(filter as LeadFilter).some((key) => !["q", "ownerMemberId", "tagIds", "stageId", "sourceId", "intent"].includes(key)))
+  if (
+    Object.keys(filter as LeadFilter).some(
+      (key) => !["q", "ownerMemberId", "tagIds", "stageId", "sourceId", "intent"].includes(key),
+    )
+  )
     return invalid("filter_not_available", "This filter is not implemented for contacts.");
   return Object.freeze({ limit, cursor, filter: filter as Readonly<LeadFilter> });
 }

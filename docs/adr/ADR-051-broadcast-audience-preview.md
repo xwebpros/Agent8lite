@@ -1,5 +1,7 @@
 # ADR-051 — Broadcast audience (segment) preview
 
+Integration review, 2026-10-13: an inherited confirmation handler created a queued job/audit without the approved sender, current consent, provider, preview-expiry and idempotency gates. Removed those unreviewed effects and restored the documented404 `route_unavailable` boundary. A valid current preview cannot confirm delivery; regression checks preserve the same preview response and verify unchanged jobs, audits, receipts, events, schedules, deliveries and consent.
+
 Accepted by the coordinating session on 2026-10-11. This bounded M4 slice implements the frozen `previewBroadcast` operation and the PWA segment authoring that feeds it. It advances MOD-E-001 ("broadcast segment previews"), the MOD-E UI requirement for an "audience eligibility preview", MOD-E acceptance 2 (preview never displays a successful delivery), INV-01/02 and MOD-K-006/007. It adds no contract amendment, migration, dependency, outbox event or provider behavior. `confirmBroadcast` stays on its existing unavailable path (`404`, no effect): sending needs sender readiness, provider and consent review that M4 has not passed.
 
 ## Contract (frozen)

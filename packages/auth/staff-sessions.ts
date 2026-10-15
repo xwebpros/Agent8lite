@@ -92,7 +92,9 @@ export class StaffSessionIssuer implements StaffSessionIssuerPort {
       return {
         opaqueToken,
         csrfToken,
-        expiresAt: new Date(new Date(stamp.created).getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000).toISOString(),
+        expiresAt: new Date(
+          new Date(stamp.created).getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000,
+        ).toISOString(),
       };
     } catch (error) {
       await client.query("ROLLBACK");
@@ -146,7 +148,11 @@ export async function withStaffTransactionEx<T>(
     ["development", "test"].includes(env.APP_ENV ?? "") && env.DEV_AUTH_ENABLED === "true";
   const oidcAvailable = !!(env.OIDC_ISSUER && env.OIDC_CLIENT_ID);
   if (!syntheticAvailable && !oidcAvailable)
-    throw new AccessError(401, "identity_provider_unconfigured", "An approved staff identity provider is required.");
+    throw new AccessError(
+      401,
+      "identity_provider_unconfigured",
+      "An approved staff identity provider is required.",
+    );
   const tokenHash = hash(token),
     client = await pool.connect();
   try {
@@ -221,20 +227,21 @@ export async function withStaffTransactionEx<T>(
         const newToken = randomBytes(32).toString("hex");
         const newCsrf = randomBytes(32).toString("hex");
         const newHash = hash(newToken);
-        const stamp = (
-          await client.query("SELECT clock_timestamp() now")
-        ).rows[0];
+        const stamp = (await client.query("SELECT clock_timestamp() now")).rows[0];
         await client.query(
           `INSERT INTO app.staff_session(token_hash,staff_user_id,csrf_token,provenance,created_at,expires_at)VALUES($1,$2,$3,$4,$5,$5::timestamptz+interval '8 hours')`,
           [newHash, session.userId, newCsrf, provenance, stamp.now],
         );
         await client.query("DELETE FROM app.staff_session WHERE token_hash=$1 AND staff_user_id=$2", [
-          tokenHash, session.userId,
+          tokenHash,
+          session.userId,
         ]);
         rotatedToken = {
           opaqueToken: newToken,
           csrfToken: newCsrf,
-          expiresAt: new Date(new Date(stamp.now).getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000).toISOString(),
+          expiresAt: new Date(
+            new Date(stamp.now).getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000,
+          ).toISOString(),
         };
       }
     }

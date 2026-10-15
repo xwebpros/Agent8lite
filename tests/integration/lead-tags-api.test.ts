@@ -22,10 +22,9 @@ afterEach(async () => {
       "DELETE FROM app.audit_event WHERE resource_id=ANY($1::text[]) AND resource_type='lead'",
       [[...leadIds]],
     );
-    const events = await admin.query(
-      "SELECT id FROM app.outbox WHERE aggregate_id=ANY($1::text[])",
-      [[...leadIds]],
-    );
+    const events = await admin.query("SELECT id FROM app.outbox WHERE aggregate_id=ANY($1::text[])", [
+      [...leadIds],
+    ]);
     if (events.rowCount) {
       const ids = events.rows.map((r: { id: string }) => r.id);
       await admin.query("DELETE FROM app.outbox_consumer_receipt WHERE event_id=ANY($1::uuid[])", [ids]);
@@ -33,8 +32,7 @@ afterEach(async () => {
     }
     await admin.query("DELETE FROM app.lead WHERE id=ANY($1::uuid[])", [[...leadIds]]);
   }
-  if (tagIds.size)
-    await admin.query("DELETE FROM app.tag WHERE id=ANY($1::uuid[])", [[...tagIds]]);
+  if (tagIds.size) await admin.query("DELETE FROM app.tag WHERE id=ANY($1::uuid[])", [[...tagIds]]);
   if (keys.size)
     await admin.query("DELETE FROM app.idempotency_record WHERE key=ANY($1::text[])", [[...keys]]);
   leadIds.clear();
@@ -94,10 +92,9 @@ describe("lead tags (PUT /leads/{leadId}/tags)", () => {
     assertContract("Lead", updated);
     expect(updated.version).toBeGreaterThan(lead.version);
 
-    const tags = await admin.query(
-      "SELECT tag_id FROM app.lead_tag WHERE lead_id=$1 ORDER BY tag_id",
-      [lead.id],
-    );
+    const tags = await admin.query("SELECT tag_id FROM app.lead_tag WHERE lead_id=$1 ORDER BY tag_id", [
+      lead.id,
+    ]);
     const tagSet = new Set(tags.rows.map((r: { tag_id: string }) => r.tag_id));
     expect(tagSet.has(tag1.id)).toBe(true);
     expect(tagSet.has(tag2.id)).toBe(true);

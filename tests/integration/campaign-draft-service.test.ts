@@ -507,24 +507,26 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
     });
   });
 
-  it("keeps publication enrollments broadcast and archive commands unavailable with no lifecycle or delivery effects", async () => {
+  it("rejects missing publication resources and unapproved broadcast/public paths without changing the draft or causing delivery effects", async () => {
     const fixture = await create(),
       id = fixture.response.body.id;
-    const paths: { path: string; method: string; body?: unknown }[] = [
+    const paths: { path: string; method: string; code: string; body?: unknown }[] = [
       {
         path: `/v1/orgs/${ownerHttp.orgId}/campaign-versions/${randomUUID()}/publish`,
         method: "POST",
+        code: "resource_unavailable",
         body: {},
       },
       {
         path: `/v1/orgs/${ownerHttp.orgId}/broadcast-confirmations`,
         method: "POST",
+        code: "route_unavailable",
         body: {
           previewId: randomUUID(),
           acceptedTermsVersion: "synthetic-never-send",
         } satisfies Schemas["PreviewConfirm"],
       },
-      { path: `/public/campaigns/${id}`, method: "GET" },
+      { path: `/public/campaigns/${id}`, method: "GET", code: "route_unavailable" },
     ];
     const versionIndex = await ownerHttp.request(`${campaignPath()}/${id}/versions`);
     expect(versionIndex.status).toBe(200);
@@ -536,11 +538,7 @@ describe("registered synthetic campaign draft HTTP boundary", () => {
         command.method === "GET"
           ? await ownerHttp.request(command.path)
           : await ownerHttp.command(command.path, command.body, { revision: '"1"' });
-      expect([404, 503]).toContain(response.status);
-      const problem = await campaignProblem(response, response.status);
-      expect(["route_unavailable", "resource_unavailable", "feature_not_implemented"]).toContain(
-        problem.code,
-      );
+      expect((await campaignProblem(response, 404)).code).toBe(command.code);
     }
     // ADR-051 deliberately implemented broadcast previews; an empty segment is a validation failure.
     const previewResponse = await ownerHttp.command(`/v1/orgs/${ownerHttp.orgId}/broadcast-previews`, {

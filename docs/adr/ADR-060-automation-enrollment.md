@@ -1,7 +1,9 @@
 # ADR-060 — Automation Rules and Lead Enrollment
 
-**Status:** Accepted  
-**Date:** 2026-10-12  
+**Status:** Accepted
+
+**Date:** 2026-10-12
+
 **Workstream:** W01/Foundation — Marketing module
 
 ## Context

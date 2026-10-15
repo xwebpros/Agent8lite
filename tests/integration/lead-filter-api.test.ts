@@ -22,26 +22,23 @@ afterEach(async () => {
       "DELETE FROM app.audit_event WHERE resource_id=ANY($1::text[]) AND resource_type='lead'",
       [[...leadIds]],
     );
-    const events = await admin.query(
-      "SELECT id FROM app.outbox WHERE aggregate_id=ANY($1::text[])",
-      [[...leadIds]],
-    );
+    const events = await admin.query("SELECT id FROM app.outbox WHERE aggregate_id=ANY($1::text[])", [
+      [...leadIds],
+    ]);
     if (events.rowCount) {
       const ids = events.rows.map((r: { id: string }) => r.id);
       await admin.query("DELETE FROM app.outbox_consumer_receipt WHERE event_id=ANY($1::uuid[])", [ids]);
     }
-    const events2 = await admin.query(
-      "SELECT id FROM app.outbox WHERE aggregate_id=ANY($1::text[])",
-      [[...leadIds]],
-    );
+    const events2 = await admin.query("SELECT id FROM app.outbox WHERE aggregate_id=ANY($1::text[])", [
+      [...leadIds],
+    ]);
     if (events2.rowCount) {
       const ids = events2.rows.map((r: { id: string }) => r.id);
       await admin.query("DELETE FROM app.outbox WHERE id=ANY($1::uuid[])", [ids]);
     }
     await admin.query("DELETE FROM app.lead WHERE id=ANY($1::uuid[])", [[...leadIds]]);
   }
-  if (tagIds.size)
-    await admin.query("DELETE FROM app.tag WHERE id=ANY($1::uuid[])", [[...tagIds]]);
+  if (tagIds.size) await admin.query("DELETE FROM app.tag WHERE id=ANY($1::uuid[])", [[...tagIds]]);
   if (keys.size)
     await admin.query("DELETE FROM app.idempotency_record WHERE key=ANY($1::text[])", [[...keys]]);
   leadIds.clear();

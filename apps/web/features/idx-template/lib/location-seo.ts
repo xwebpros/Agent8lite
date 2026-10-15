@@ -1,0 +1,36 @@
+"use client";
+
+export type LocationSeoInput = { slug: string; displayName: string; title: string; description: string };
+
+export function locationPagePath(slug: string) {
+  return `/communities/${slug}`;
+}
+
+export function locationStructuredData(location: LocationSeoInput, origin: string, basePath = "") {
+  const pageUrl = new URL(basePath + locationPagePath(location.slug), origin).href;
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": pageUrl,
+        url: pageUrl,
+        name: location.title,
+        description: location.description,
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: new URL(basePath || "/", origin).href },
+          { "@type": "ListItem", position: 2, name: location.displayName, item: pageUrl },
+        ],
+      },
+    ],
+  };
+}
+
+export const publicLocations = [
+  { slug: "las-vegas", displayName: "Las Vegas" },
+  { slug: "henderson", displayName: "Henderson" },
+  { slug: "north-las-vegas", displayName: "North Las Vegas" },
+] as const;

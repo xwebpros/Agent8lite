@@ -4,9 +4,7 @@ import type { VerifiedStaffContext } from "../../../../packages/contracts/intern
 import { AccessError } from "../../../../packages/db/tenant-transaction";
 import catalog from "../../../../packages/contracts/permission-catalog.json";
 
-const staffCodes = new Set(
-  catalog.codes.filter((c) => c.boundary === "staff").map((c) => c.code),
-);
+const staffCodes = new Set(catalog.codes.filter((c) => c.boundary === "staff").map((c) => c.code));
 const allStaffCodes = [...staffCodes];
 
 export interface StaffPrincipalRow {
@@ -31,11 +29,7 @@ function assertManagePrincipal(staff: VerifiedStaffContext) {
 function validatePermissionCodes(codes: readonly string[]) {
   for (const code of codes) {
     if (!staffCodes.has(code))
-      throw new AccessError(
-        422,
-        "permission_invalid",
-        `Unknown staff permission code: ${code}`,
-      );
+      throw new AccessError(422, "permission_invalid", `Unknown staff permission code: ${code}`);
   }
 }
 
@@ -63,9 +57,7 @@ export class StaffPrincipalService {
       params,
     );
     const hasMore = result.rows.length > limit;
-    const items = (hasMore ? result.rows.slice(0, limit) : result.rows).map(
-      mapRow,
-    );
+    const items = (hasMore ? result.rows.slice(0, limit) : result.rows).map(mapRow);
     return {
       items,
       cursor: hasMore ? items[items.length - 1].createdAt : null,
@@ -74,12 +66,8 @@ export class StaffPrincipalService {
 
   async read(principalId: string): Promise<StaffPrincipalRow> {
     assertManagePrincipal(this.staff);
-    const result = await this.client.query(
-      "SELECT * FROM app.control_read_principal($1)",
-      [principalId],
-    );
-    if (!result.rowCount)
-      throw new AccessError(404, "principal_not_found", "Staff principal not found.");
+    const result = await this.client.query("SELECT * FROM app.control_read_principal($1)", [principalId]);
+    if (!result.rowCount) throw new AccessError(404, "principal_not_found", "Staff principal not found.");
     return mapRow(result.rows[0]);
   }
 
@@ -90,17 +78,21 @@ export class StaffPrincipalService {
   ): Promise<StaffPrincipalRow> {
     assertManagePrincipal(this.staff);
     if (userId === this.staff.userId)
-      throw new AccessError(422, "self_modification_denied", "Cannot create a staff principal for your own user account.");
+      throw new AccessError(
+        422,
+        "self_modification_denied",
+        "Cannot create a staff principal for your own user account.",
+      );
     validatePermissionCodes(permissionCodes);
     if (!idempotencyKey)
       throw new AccessError(400, "idempotency_required", "An idempotency key is required.");
     await this.assertNotUnrestrictedSelfApproval(permissionCodes);
 
     try {
-      const result = await this.client.query(
-        "SELECT * FROM app.control_create_principal($1, $2)",
-        [userId, permissionCodes],
-      );
+      const result = await this.client.query("SELECT * FROM app.control_create_principal($1, $2)", [
+        userId,
+        permissionCodes,
+      ]);
       await this.audit("staff_principal.create", result.rows[0].id, {
         permissionCodes,
         targetUserId: userId,
@@ -111,7 +103,11 @@ export class StaffPrincipalService {
       if (msg.includes("principal_exists"))
         throw new AccessError(409, "principal_exists", "A staff principal already exists for this user.");
       if (msg.includes("self_modification_denied"))
-        throw new AccessError(422, "self_modification_denied", "Cannot create a staff principal for your own user account.");
+        throw new AccessError(
+          422,
+          "self_modification_denied",
+          "Cannot create a staff principal for your own user account.",
+        );
       throw err;
     }
   }
@@ -126,15 +122,12 @@ export class StaffPrincipalService {
     if (body.permissionCodes) await this.assertNotUnrestrictedSelfApproval(body.permissionCodes);
 
     try {
-      const result = await this.client.query(
-        "SELECT * FROM app.control_update_principal($1, $2, $3, $4)",
-        [
-          principalId,
-          body.permissionCodes ?? null,
-          body.active ?? null,
-          BigInt(expectedVersion),
-        ],
-      );
+      const result = await this.client.query("SELECT * FROM app.control_update_principal($1, $2, $3, $4)", [
+        principalId,
+        body.permissionCodes ?? null,
+        body.active ?? null,
+        BigInt(expectedVersion),
+      ]);
       await this.audit("staff_principal.update", principalId, {
         permissionCodes: body.permissionCodes,
         active: body.active,
@@ -152,10 +145,7 @@ export class StaffPrincipalService {
     }
   }
 
-  async deactivate(
-    principalId: string,
-    expectedVersion: string,
-  ): Promise<StaffPrincipalRow> {
+  async deactivate(principalId: string, expectedVersion: string): Promise<StaffPrincipalRow> {
     return this.update(principalId, { active: false }, expectedVersion);
   }
 

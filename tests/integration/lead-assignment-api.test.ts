@@ -263,8 +263,8 @@ describe("ADR-045 durable complete LeadPatch boundary", () => {
       ownerMemberId: fixtures.agentMemberA,
       intent: "buyer",
       timeline: "PRIVATE_TIMELINE",
-      score: 10,
-      scoreVersion: "synthetic-v1",
+      score: 5,
+      scoreVersion: "v1",
       stageId: stageId(1, 1),
     });
     const rows = (
@@ -397,13 +397,15 @@ describe("ADR-045 durable complete LeadPatch boundary", () => {
     const hash = createHash("sha256")
       .update(stable({ body, expectedVersion: '"001"' }))
       .digest("hex");
+    const historical = { ...first, score: 10, scoreVersion: "synthetic-v1" };
     await admin.query(
-      "UPDATE app.idempotency_record SET request_hash=$4,response_etag=NULL,response_ref=NULL WHERE tenant_id=$1 AND route_key=$2 AND key=$3",
-      [fixtures.orgA, route(id), key, hash],
+      "UPDATE app.idempotency_record SET request_hash=$4,response_etag=NULL,response_ref=NULL,response_body=$5 WHERE tenant_id=$1 AND route_key=$2 AND key=$3",
+      [fixtures.orgA, route(id), key, hash, JSON.stringify(historical)],
     );
     await unchanged(id, async () =>
-      expect(await receipt(await patch(id, body, key, '"001"'))).toEqual(first),
+      expect(await receipt(await patch(id, body, key, '"001"'))).toEqual(historical),
     );
+    expect((await owner.read(path(id), "Lead")).body).toEqual(first);
   });
   it("matching expired receipt rejects rather than executing/renewing/replacing", async () => {
     const { id } = await source(),
@@ -859,10 +861,13 @@ describe("file-fresh manager capture → real handoff → Agent follow-up → pi
     expect(captureResponse.status).toBe(201);
     const captured = await captureResponse.json();
     assertContract("Lead", captured);
+    expect(captured).toMatchObject({ score: 10, scoreVersion: "v1", version: 1 });
+    expect((await owner.read(path(captured.id), "Lead")).body).toEqual(captured);
     await assertProblem(await agent.request(path(captured.id)), 404);
     const assignmentKey = randomUUID(),
       assigned = await receipt(await patch(captured.id, input(), assignmentKey));
     expect(assigned.ownerMemberId).toBe(fixtures.agentMemberA);
+    expect(assigned).toMatchObject({ score: 15, scoreVersion: "v1", version: 2 });
     expect((await agent.read(path(captured.id), "Lead")).body).toEqual(assigned);
     const taskInput: Schemas["TaskWrite"] = {
       leadId: captured.id,
@@ -898,6 +903,17 @@ describe("file-fresh manager capture → real handoff → Agent follow-up → pi
     const moved = await movedResponse.json();
     assertContract("Lead", moved);
     expect(moved).toMatchObject({ version: 3, stageId: stageId(1, 2), ownerMemberId: fixtures.agentMemberA });
+    expect(moved).toMatchObject({ score: 31, scoreVersion: "v1" });
+    const currentLead = (await agent.read(path(captured.id), "Lead")).body;
+    expect(currentLead).toMatchObject({
+      score: 31,
+      scoreVersion: "v1",
+      version: 3,
+      stageId: stageId(1, 2),
+      ownerMemberId: fixtures.agentMemberA,
+    });
+    expect(currentLead.score).not.toBe(assigned.score);
+    expect(currentLead).toEqual(moved);
     await unchanged(captured.id, async () => {
       expect(await receipt(await patch(captured.id, input(), assignmentKey))).toEqual(assigned);
       expect(

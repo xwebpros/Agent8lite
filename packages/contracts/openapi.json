@@ -30625,6 +30625,837 @@
           }
         }
       }
+    },
+    "/v1/public/sites/{siteId}/idx-template/content": {
+      "get": {
+        "operationId": "getIdxTemplateContent",
+        "x-permission": "published.site",
+        "tags": [
+          "Public IDX template"
+        ],
+        "summary": "getIdxTemplateContent",
+        "parameters": [
+          {
+            "name": "siteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated current public site response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdxTemplateContent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/public/sites/{siteId}/idx-template/status": {
+      "get": {
+        "operationId": "getIdxTemplateStatus",
+        "x-permission": "published.site",
+        "tags": [
+          "Public IDX template"
+        ],
+        "summary": "getIdxTemplateStatus",
+        "parameters": [
+          {
+            "name": "siteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated current public site response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdxTemplateStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/public/sites/{siteId}/idx-template/listings": {
+      "get": {
+        "operationId": "searchIdxTemplateListings",
+        "x-permission": "published.site",
+        "tags": [
+          "Public IDX template"
+        ],
+        "summary": "searchIdxTemplateListings",
+        "parameters": [
+          {
+            "name": "siteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "minPrice",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "maxPrice",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "beds",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20
+            }
+          },
+          {
+            "name": "baths",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20
+            }
+          },
+          {
+            "name": "address",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "city",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "zip",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{5}$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Active",
+                "ActiveUnderContract",
+                "Pending"
+              ]
+            }
+          },
+          {
+            "name": "propertyType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Residential",
+                "HighRise",
+                "MultiFamily",
+                "ResidentialIncome",
+                "ResidentialLease"
+              ]
+            }
+          },
+          {
+            "name": "propertySubType",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Condominium",
+                "Townhouse",
+                "SingleFamilyResidence",
+                "Attached",
+                "Detached"
+              ]
+            }
+          },
+          {
+            "name": "minSqft",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000
+            }
+          },
+          {
+            "name": "maxSqft",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000
+            }
+          },
+          {
+            "name": "minYearBuilt",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 1800,
+              "maximum": 2100
+            }
+          },
+          {
+            "name": "maxYearBuilt",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 1800,
+              "maximum": 2100
+            }
+          },
+          {
+            "name": "pool",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "singleStory",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "hoa",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "gated",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "minGarageSpaces",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 20
+            }
+          },
+          {
+            "name": "minLotSizeSqft",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10000000
+            }
+          },
+          {
+            "name": "minLatitude",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "maxLatitude",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "minLongitude",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "maxLongitude",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "newest",
+                "price-asc",
+                "price-desc"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated current public site response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdxTemplateListingPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/public/sites/{siteId}/idx-template/listings/{listingKey}": {
+      "get": {
+        "operationId": "getIdxTemplateListing",
+        "x-permission": "published.site",
+        "tags": [
+          "Public IDX template"
+        ],
+        "summary": "getIdxTemplateListing",
+        "parameters": [
+          {
+            "name": "siteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "listingKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated current public site response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdxTemplateListing"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/public/sites/{siteId}/idx-template/inquiries": {
+      "post": {
+        "operationId": "submitIdxTemplateInquiry",
+        "x-permission": "published.site",
+        "tags": [
+          "Public IDX template"
+        ],
+        "summary": "submitIdxTemplateInquiry",
+        "parameters": [
+          {
+            "name": "siteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdxTemplateInquiryWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validated current public site response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Defined request, current policy or service failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -37429,6 +38260,611 @@
             }
           }
         }
+      },
+      "IdxTemplateListing": {
+        "type": "object",
+        "required": [
+          "listingKey",
+          "photos",
+          "synthetic",
+          "expiresAt"
+        ],
+        "properties": {
+          "listingKey": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "listingId": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "streetAddress": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "city": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "postalCode": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "bedrooms": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "bathrooms": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "livingArea": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "yearBuilt": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "publicRemarks": {
+            "type": "string",
+            "maxLength": 12000
+          },
+          "propertyType": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "propertySubType": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "lotSizeSquareFeet": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "lotSizeArea": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "hoaFee": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "hoaFeeFrequency": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "garageSpaces": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "garageYN": {
+            "type": "boolean"
+          },
+          "poolFeatures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "poolPrivateYN": {
+            "type": "boolean"
+          },
+          "stories": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "storiesTotal": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "communityFeatures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "interiorFeatures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "exteriorFeatures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "heating": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "cooling": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "flooring": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "appliances": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "view": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "parkingFeatures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 100
+          },
+          "listingOffice": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "listingOfficeEmail": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "listingOfficePhone": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "listingAgent": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "modificationTimestamp": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "photos": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri-reference",
+              "maxLength": 2048,
+              "pattern": "^(https://|/[^/])"
+            },
+            "maxItems": 1024
+          },
+          "synthetic": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "maxLength": 1000
+          }
+        },
+        "additionalProperties": false
+      },
+      "IdxTemplateListingPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 24,
+            "items": {
+              "$ref": "#/components/schemas/IdxTemplateListing"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pageSize": {
+            "type": "integer",
+            "const": 24
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "synthetic": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "hasMore",
+          "live",
+          "synthetic",
+          "expiresAt"
+        ]
+      },
+      "IdxTemplateText": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "heroEyebrow": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "heroTitle": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "heroDescription": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "quickSearchEyebrow": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "quickSearchTitle": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "quickSearchDescription": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "exploreEyebrow": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "exploreTitle": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "exploreDescription": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "footerDescription": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "heroEyebrow",
+          "heroTitle",
+          "heroDescription",
+          "quickSearchEyebrow",
+          "quickSearchTitle",
+          "quickSearchDescription",
+          "exploreEyebrow",
+          "exploreTitle",
+          "exploreDescription",
+          "footerDescription"
+        ]
+      },
+      "IdxTemplateBrand": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1
+          },
+          "initial": {
+            "type": "string",
+            "maxLength": 2,
+            "minLength": 1
+          },
+          "agentDisplayName": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "displayName",
+          "initial",
+          "agentDisplayName"
+        ]
+      },
+      "IdxTemplateCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "map": {
+            "type": "boolean"
+          },
+          "favorites": {
+            "type": "boolean"
+          },
+          "savedSearches": {
+            "type": "boolean"
+          },
+          "aiSearch": {
+            "type": "boolean"
+          },
+          "comparisons": {
+            "type": "boolean"
+          },
+          "viewHistory": {
+            "type": "boolean"
+          },
+          "notifications": {
+            "type": "boolean"
+          },
+          "recommendations": {
+            "type": "boolean"
+          },
+          "marketStats": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "map",
+          "favorites",
+          "savedSearches",
+          "aiSearch",
+          "comparisons",
+          "viewHistory",
+          "notifications",
+          "recommendations",
+          "marketStats"
+        ]
+      },
+      "IdxTemplateContent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "siteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "documentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revisionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "templateCode": {
+            "type": "string",
+            "enum": [
+              "las-vegas-idx-agent",
+              "las-vegas-idx-brokerage"
+            ]
+          },
+          "templateVersion": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1
+          },
+          "content": {
+            "$ref": "#/components/schemas/IdxTemplateText"
+          },
+          "brand": {
+            "$ref": "#/components/schemas/IdxTemplateBrand"
+          },
+          "seo": {
+            "$ref": "#/components/schemas/Seo"
+          },
+          "inquiryForm": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "id",
+              "version"
+            ]
+          },
+          "dataMode": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "live",
+              "unavailable"
+            ]
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/IdxTemplateCapabilities"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "siteId",
+          "documentId",
+          "revisionId",
+          "templateCode",
+          "templateVersion",
+          "content",
+          "brand",
+          "seo",
+          "inquiryForm",
+          "dataMode",
+          "capabilities",
+          "expiresAt"
+        ]
+      },
+      "IdxTemplateStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "authenticated": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "type": "boolean"
+          },
+          "property": {
+            "type": "boolean"
+          },
+          "media": {
+            "type": "boolean"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "synthetic": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "configured",
+          "authenticated",
+          "metadata",
+          "property",
+          "media",
+          "live",
+          "synthetic",
+          "message"
+        ]
+      },
+      "IdxTemplateInquiryWrite": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "formId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "formVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "listingKey": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "listingId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 2
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "minLength": 3,
+            "format": "email"
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 30
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1
+          },
+          "honeypot": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "formId",
+          "formVersion",
+          "listingKey",
+          "name",
+          "email",
+          "message"
+        ]
       }
     }
   }

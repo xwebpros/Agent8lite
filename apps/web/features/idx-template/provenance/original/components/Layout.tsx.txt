@@ -1,0 +1,136 @@
+import { ReactNode, useEffect, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { Heart, Search, UserRound, BriefcaseBusiness, ShieldCheck } from "lucide-react";
+import { useSiteContent } from "@/lib/content";
+import { subscribeToAuthChanges } from "@/lib/favorites";
+
+function scrollToTop() {
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+}
+
+export function Layout({ children, roles: roleOverride }: { children: ReactNode; roles?: string[] }) {
+  const [location] = useLocation();
+  const { data: content } = useSiteContent();
+  const [roles, setRoles] = useState<string[]>(roleOverride ?? []);
+
+  useEffect(() => {
+    if (roleOverride !== undefined) {
+      setRoles(roleOverride);
+      return;
+    }
+    let active = true;
+    const loadRoles = async () => {
+      try {
+        const response = await fetch("/api/me", { credentials: "include" });
+        const body = response.ok ? await response.json() : null;
+        if (active) setRoles(body?.roles ?? []);
+      } catch {
+        if (active) setRoles([]);
+      }
+    };
+    void loadRoles();
+    const unsubscribe = subscribeToAuthChanges(() => { void loadRoles(); });
+    return () => { active = false; unsubscribe(); };
+  }, [roleOverride]);
+
+  const isActive = (href: string) => {
+    if (href === "/") return location === "/";
+    if (href === "/account") return location === "/account" || location === "/account/verify";
+    return location === href || location.startsWith(`${href}/`);
+  };
+  const navClass = (href: string) => `px-3 py-2 text-sm transition-colors ${isActive(href) ? "font-medium text-primary" : "text-muted-foreground hover:text-primary"}`;
+
+  return (
+    <div className="min-h-[100dvh] flex flex-col w-full">
+      <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
+        <div className="container mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
+          <Link
+            href="/"
+            onClick={(event) => {
+              // Home is the same route as Map-only, so force a reset when the
+              // logo is clicked from the already-mounted home page.
+              if (window.location.pathname === "/") {
+                event.preventDefault();
+                window.location.reload();
+              }
+            }}
+            className="flex items-center gap-2 transition-opacity hover:opacity-80"
+          >
+            <div className="w-8 h-8 rounded bg-primary flex items-center justify-center">
+              <span className="font-serif text-primary-foreground font-bold text-lg leading-none pt-1">L</span>
+            </div>
+            <span className="font-serif font-semibold text-lg tracking-wide">LAS VEGAS LIVE IDX</span>
+          </Link>
+
+          <div className="flex items-center gap-1">
+            <nav aria-label="Primary navigation" className="hidden items-center md:flex">
+              <Link href="/" aria-current={isActive("/") ? "page" : undefined} className={navClass("/")}>Search homes</Link>
+              <Link href="/account/favorites" aria-current={isActive("/account/favorites") ? "page" : undefined} className={navClass("/account/favorites")}>Saved homes</Link>
+              <Link href="/account/organizer" aria-current={isActive("/account/organizer") ? "page" : undefined} className={navClass("/account/organizer")}>Organizer</Link>
+              <Link href="/account" aria-current={isActive("/account") ? "page" : undefined} className={navClass("/account")}>Account</Link>
+              {roles.length > 0 && <Link href="/workspace" aria-current={isActive("/workspace") ? "page" : undefined} className={navClass("/workspace")}>Workspace</Link>}
+              {roles.includes("agent") && <Link href="/agent" aria-current={isActive("/agent") ? "page" : undefined} className={navClass("/agent")}>Agent</Link>}
+              {roles.includes("tenant_admin") && <Link href="/admin" aria-current={isActive("/admin") ? "page" : undefined} className={navClass("/admin")}>Admin</Link>}
+            </nav>
+            <nav aria-label="Mobile navigation" className="flex items-center gap-1 md:hidden">
+              <Link href="/" aria-label="Search homes" aria-current={isActive("/") ? "page" : undefined} className={`rounded p-2 ${isActive("/") ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><Search className="size-5" /></Link>
+              <Link href="/account/favorites" aria-label="Saved homes" aria-current={isActive("/account/favorites") ? "page" : undefined} className={`rounded p-2 ${isActive("/account/favorites") ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><Heart className="size-5" /></Link>
+              <Link href="/account/organizer" aria-label="Property organizer" aria-current={isActive("/account/organizer") ? "page" : undefined} className={`rounded p-2 ${isActive("/account/organizer") ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><BriefcaseBusiness className="size-5" /></Link>
+              <Link href="/account" aria-label="Account" aria-current={isActive("/account") ? "page" : undefined} className={`rounded p-2 ${isActive("/account") ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><UserRound className="size-5" /></Link>
+              {roles.includes("tenant_admin") && <Link href="/admin" aria-label="Admin" aria-current={isActive("/admin") ? "page" : undefined} className={`rounded p-2 ${isActive("/admin") ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><ShieldCheck className="size-5" /></Link>}
+            </nav>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 flex flex-col">
+        {children}
+      </main>
+
+      <footer className="border-t bg-card py-12 mt-auto">
+        <div className="container mx-auto px-4 md:px-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="md:col-span-2 space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
+                  <span className="font-serif text-primary-foreground font-bold text-xs leading-none pt-0.5">L</span>
+                </div>
+                <span className="font-serif font-semibold text-base tracking-wide">LAS VEGAS LIVE IDX</span>
+              </div>
+              <p className="text-muted-foreground text-sm max-w-sm">
+                {content.footerDescription}
+              </p>
+            </div>
+            <div>
+              <h4 className="font-serif font-medium mb-4">Explore</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li><Link href="/?reset=1" onClick={scrollToTop} className="hover:text-primary transition-colors">All Properties</Link></li>
+                <li><Link href="/communities/las-vegas" onClick={scrollToTop} className="hover:text-primary transition-colors">Las Vegas</Link></li>
+                <li><Link href="/communities/henderson" onClick={scrollToTop} className="hover:text-primary transition-colors">Henderson</Link></li>
+                <li><Link href="/communities/north-las-vegas" onClick={scrollToTop} className="hover:text-primary transition-colors">North Las Vegas</Link></li>
+                <li><Link href="/?pool=true" onClick={scrollToTop} className="hover:text-primary transition-colors">Pools</Link></li>
+                <li><Link href="/?propertySubType=Condominium" onClick={scrollToTop} className="hover:text-primary transition-colors">Condos</Link></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-serif font-medium mb-4">Compliance</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>IDX data is displayed subject to MLS rules.</li>
+                <li>Listing-specific details come from the live feed.</li>
+                <li>Contact the listing brokerage for property questions.</li>
+                <li>Housing information is presented without preference based on protected characteristics.</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-12 pt-8 border-t text-xs text-muted-foreground flex flex-col md:flex-row justify-between items-center gap-4">
+            <p>© {new Date().getFullYear()} Las Vegas Live IDX. All rights reserved.</p>
+            <div className="flex items-center gap-4">
+              <Link href="/terms" onClick={scrollToTop} className="hover:text-primary transition-colors">Terms and Conditions</Link>
+              <p>Information deemed reliable but not guaranteed.</p>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}

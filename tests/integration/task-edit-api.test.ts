@@ -377,6 +377,127 @@ describe("ADR-046 dedicated complete Task PATCH", () => {
     expect(responses.map((r) => r.status).sort()).toEqual([200, 412]);
     expect(await effects(t.id)).toMatchObject({ audits: 1, activities: 0, receipts: 1 });
   });
+  it("concurrent distinct task completions serialize shared lead scoring and retain own scope and receipts", async () => {
+    const s = await source(),
+      other = await source(fixtures.agentMemberA),
+      tasks = [await task({ lead: s.id }), await task({ lead: s.id })],
+      keys = [randomUUID(), randomUUID()],
+      bodies = tasks.map((value) => write(value, { state: "done" }));
+    expect(keys[0]).not.toBe(keys[1]);
+    await grants(
+      async () => {
+        let release!: () => void, reached!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+          atActivity = new Promise<void>((resolve) => {
+            reached = resolve;
+          });
+        const first = direct((_crm, client, context) =>
+          new CrmService(
+            {
+              query: async (statement: string, parameters?: unknown[]) => {
+                if (
+                  statement.includes("INSERT INTO app.activity_event") &&
+                  statement.includes("'task.completed'")
+                ) {
+                  reached();
+                  await gate;
+                }
+                return client.query(statement, parameters);
+              },
+            } as unknown as PoolClient,
+            context,
+            randomUUID(),
+          ).patchTask(tasks[0]!.id, bodies[0], '"1"', keys[0], route(tasks[0]!.id)),
+        );
+        void first.catch(() => undefined);
+        let second: Promise<Response> | undefined, timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            atActivity,
+            first.then(() => {
+              throw new Error("First task completion did not reach its scoring activity.");
+            }),
+            new Promise<never>((_resolve, reject) => {
+              timeout = setTimeout(
+                () => reject(new Error("First task completion did not reach its activity gate.")),
+                5000,
+              );
+            }),
+          ]);
+          clearTimeout(timeout);
+          second = patch(tasks[1]!, bodies[1], keys[1]);
+          void second.catch(() => undefined);
+          let observedWait = false;
+          for (let attempt = 0; attempt < 150; attempt++) {
+            observedWait = (
+              await admin.query(
+                `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+                 AND usename='estate_runtime' AND application_name<>$1 AND wait_event_type='Lock'
+                 AND (query LIKE '%FROM app.lead%' OR query LIKE '%INSERT INTO app.activity_event%'))waiting`,
+                [runtimeName],
+              )
+            ).rows[0].waiting;
+            if (observedWait) break;
+            await admin.query("SELECT pg_sleep(0.01)");
+          }
+          expect(observedWait).toBe(true);
+          release();
+          const [firstResult, secondResponse] = await Promise.all([first, second]);
+          expect(firstResult.status).toBe(200);
+          expect(firstResult.etag).toBe('"2"');
+          assertContract("Task", firstResult.body);
+          const completed = [firstResult.body, await receipt(secondResponse)];
+          for (const [index, result] of completed.entries()) {
+            expect(result).toMatchObject({
+              id: tasks[index]!.id,
+              state: "done",
+              version: 2,
+              leadId: s.id,
+              assigneeMemberId: fixtures.ownerMemberA,
+            });
+            expect(await effects(tasks[index]!.id)).toMatchObject({ audits: 1, activities: 1, receipts: 1 });
+          }
+          const leadSnapshot = async () =>
+            (
+              await admin.query(
+                "SELECT score,score_version,row_version,owner_member_id,contact_id FROM app.lead WHERE tenant_id=$1 AND id=$2",
+                [fixtures.orgA, s.id],
+              )
+            ).rows[0];
+          const scored = await leadSnapshot();
+          expect(scored).toMatchObject({
+            score: "10.00",
+            score_version: "v1",
+            row_version: "1",
+            owner_member_id: fixtures.ownerMemberA,
+            contact_id: s.contactId,
+          });
+          const beforeReplay = await Promise.all(tasks.map((value) => effects(value.id)));
+          const replayed = await Promise.all(
+            (await Promise.all(tasks.map((value, index) => patch(value, bodies[index], keys[index])))).map(
+              (response) => receipt(response),
+            ),
+          );
+          expect(replayed).toEqual(completed);
+          expect(await Promise.all(tasks.map((value) => effects(value.id)))).toEqual(beforeReplay);
+          expect(await leadSnapshot()).toEqual(scored);
+          await unchanged(
+            tasks[0]!.id,
+            async () =>
+              await problem(await patch(replayed[0]!, write(replayed[0]!, { leadId: other.id })), 404),
+          );
+          expect(await leadSnapshot()).toEqual(scored);
+        } finally {
+          clearTimeout(timeout);
+          release();
+          await Promise.allSettled([first, ...(second ? [second] : [])]);
+        }
+      },
+      { scope: "own", leadScope: "own" },
+    );
+  });
   it("preserves legacy bare/leading-zero hash spelling and null stored ref/ETag", async () => {
     const t = await task(),
       key = randomUUID(),

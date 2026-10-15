@@ -74,6 +74,31 @@ ajv.compile(
 const contactMergeAmendment = JSON.parse(
   await fs.readFile("packages/contracts/amendments/ADR-049-contact-merge.json", "utf8"),
 );
+const idxTemplateAmendment = JSON.parse(
+  await fs.readFile("packages/contracts/amendments/ADR-061-idx-template.json", "utf8"),
+);
+const idxTemplatePaths = [
+  "/v1/public/sites/{siteId}/idx-template/content",
+  "/v1/public/sites/{siteId}/idx-template/status",
+  "/v1/public/sites/{siteId}/idx-template/listings",
+  "/v1/public/sites/{siteId}/idx-template/listings/{listingKey}",
+  "/v1/public/sites/{siteId}/idx-template/inquiries",
+];
+const idxTemplateSchemas = [
+  "IdxTemplateListing",
+  "IdxTemplateListingPage",
+  "IdxTemplateText",
+  "IdxTemplateBrand",
+  "IdxTemplateCapabilities",
+  "IdxTemplateContent",
+  "IdxTemplateStatus",
+  "IdxTemplateInquiryWrite",
+];
+if (
+  JSON.stringify(Object.keys(idxTemplateAmendment.paths ?? {})) !== JSON.stringify(idxTemplatePaths) ||
+  JSON.stringify(Object.keys(idxTemplateAmendment.schemas ?? {})) !== JSON.stringify(idxTemplateSchemas)
+)
+  throw new Error("Unsupported approved IDX template amendment shape.");
 if (
   !contactMergeAmendment.paths ||
   !contactMergeAmendment.schemas ||
@@ -133,6 +158,15 @@ for (const file of [
         throw new Error(`ADR-049 amendment schema unexpectedly present in original: ${name}`);
       expected.components.schemas[name] = schema;
     }
+    for (const [path, item] of Object.entries(idxTemplateAmendment.paths)) {
+      if (Object.hasOwn(expected.paths, path)) throw new Error(`ADR-061 path collision: ${path}`);
+      expected.paths[path] = item;
+    }
+    for (const [name, schema] of Object.entries(idxTemplateAmendment.schemas)) {
+      if (Object.hasOwn(expected.components.schemas, name))
+        throw new Error(`ADR-061 schema collision: ${name}`);
+      expected.components.schemas[name] = schema;
+    }
     // Apply ADR-055 additive amendment: job listing endpoint (inserted in key order)
     const jobListingAmendment = JSON.parse(
       await fs.readFile("packages/contracts/amendments/ADR-055-job-listing.json", "utf8"),
@@ -159,7 +193,7 @@ for (const file of [
       expected.paths = ordered;
     }
     if (JSON.stringify(expected) !== JSON.stringify(api))
-      throw new Error("Unreviewed OpenAPI drift beyond ADR-022, ADR-043, ADR-049 and ADR-055 amendments.");
+      throw new Error("Unreviewed OpenAPI drift beyond ADR-022, ADR-043, ADR-049, ADR-055 and ADR-061 amendments.");
   } else if (!source.equals(copied)) throw new Error(`Unreviewed contract drift: ${file}`);
 }
 if (process.argv.includes("--generated")) {
@@ -180,5 +214,5 @@ if (process.argv.includes("--generated")) {
   if (before !== after) throw new Error("Generated API types drifted. Run pnpm contracts:generate.");
 }
 console.log(
-  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022/043/049/055 amendments${process.argv.includes("--generated") ? ", generated types" : ""}.`,
+  `PASS: ${ids.size} operations, ${Object.keys(api.components.schemas).length} schemas, event envelope, original contracts plus exact ADR-022/043/049/055/061 amendments${process.argv.includes("--generated") ? ", generated types" : ""}.`,
 );

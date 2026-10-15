@@ -1,3 +1,0 @@
-Browser tab: 1699268295, Title: "Account Settings - [account user] - Agent Elite", URL: "https://home.agentelite.com/AccountSettings#business".
-There has been no change in the accessibility tree.
-The focused UI element is 38 tab (selected, settable, boolean) Business Profiles, Value: 1
