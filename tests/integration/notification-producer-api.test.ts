@@ -55,7 +55,7 @@ describe("notification producer", () => {
     const lead = await createLead(owner, contact.id, owner.memberId);
 
     const before = await listNotifications(agent);
-    const beforeCount = before.length;
+    const beforeIds = new Set(before.map((n: Schemas["Notification"]) => n.id));
 
     const patch = await owner.command(
       `/v1/orgs/${owner.orgId}/leads/${lead.id}`,
@@ -65,9 +65,8 @@ describe("notification producer", () => {
     expect(patch.status).toBe(200);
 
     const after = await listNotifications(agent);
-    expect(after.length).toBeGreaterThan(beforeCount);
     const notification = after.find(
-      (n: Schemas["Notification"]) => n.kind === "lead.assigned",
+      (n: Schemas["Notification"]) => !beforeIds.has(n.id) && n.kind === "lead.assigned",
     );
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
@@ -100,7 +99,7 @@ describe("notification producer", () => {
     const lead = await createLead(owner, contact.id, owner.memberId);
 
     const before = await listNotifications(agent);
-    const beforeCount = before.length;
+    const beforeIds = new Set(before.map((n: Schemas["Notification"]) => n.id));
 
     const task = await owner.command(`/v1/orgs/${owner.orgId}/tasks`, {
       leadId: lead.id,
@@ -114,9 +113,8 @@ describe("notification producer", () => {
     expect(task.status).toBe(201);
 
     const after = await listNotifications(agent);
-    expect(after.length).toBeGreaterThan(beforeCount);
     const notification = after.find(
-      (n: Schemas["Notification"]) => n.kind === "task.assigned",
+      (n: Schemas["Notification"]) => !beforeIds.has(n.id) && n.kind === "task.assigned",
     );
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
@@ -131,7 +129,7 @@ describe("notification producer", () => {
     const targetStage = stages.find((s) => s.id !== lead.stageId) ?? stages[1];
 
     const before = await listNotifications(agent);
-    const beforeCount = before.length;
+    const beforeIds = new Set(before.map((n: Schemas["Notification"]) => n.id));
 
     const transition = await owner.command(
       `/v1/orgs/${owner.orgId}/leads/${lead.id}/stage-transitions`,
@@ -141,9 +139,8 @@ describe("notification producer", () => {
     expect(transition.status).toBe(201);
 
     const after = await listNotifications(agent);
-    expect(after.length).toBeGreaterThan(beforeCount);
     const notification = after.find(
-      (n: Schemas["Notification"]) => n.kind === "lead.stage_changed",
+      (n: Schemas["Notification"]) => !beforeIds.has(n.id) && n.kind === "lead.stage_changed",
     );
     expect(notification).toBeDefined();
     assertContract("Notification", notification);
