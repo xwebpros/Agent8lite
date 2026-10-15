@@ -1,0 +1,66 @@
+{
+  "buttons": [
+    "Alert & Email Settings",
+    "Mobile App Login",
+    "All iHomefinder notifications, leads and client communication will be sent to this email.",
+    "Save Changes",
+    "Cancel"
+  ],
+  "fields": [
+    {
+      "label": "[email redacted]",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "[email redacted]",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "000-000-0000",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "Include sold listings (subject to MLS data availability)",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "Include price change listings",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "DIV",
+      "type": null
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": null
+    },
+    {
+      "label": "Receive lead notifications via text message",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    }
+  ],
+  "headings": [
+    "Alert & Email Basic Setup"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/settings/email/basic"
+}

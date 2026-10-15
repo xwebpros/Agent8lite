@@ -1,0 +1,30 @@
+{
+  "buttons": [
+    "Close menu",
+    "Toggle menu",
+    "What this means: We watched all 67 of your listings this month",
+    "What this means: We checked the directories for copies of you",
+    "What this means: Your photos went out across the network",
+    "What this means: We re-fixed every listing that had drifted",
+    "What this means: Every one of your leads got filed for you",
+    "What this means: New leads heard back from you right away",
+    "What this means: Your lead list heard from you all year",
+    "What this means: Your listings updated themselves all month",
+    "What this means: Listing alerts went out to your buyers",
+    "Feedback",
+    "Close",
+    "Yes",
+    "Something else"
+  ],
+  "fields": [],
+  "headings": [
+    "Good morning, Andrea.\nHere's what we got done for you.",
+    "Your plan",
+    "Here's what we've done for you this past month while you've been working",
+    "Send us feedback"
+  ],
+  "labels": [],
+  "queryKeys": [],
+  "route": "/",
+  "tableHeaders": []
+}

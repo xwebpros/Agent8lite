@@ -1,0 +1,489 @@
+{
+  "cmsVersion": "Version 6.8.5",
+  "navigation": [
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Dashboard"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Analytics"
+    },
+    {
+      "queryKeys": [],
+      "route": "/wp-admin/edit.php",
+      "text": "Blog"
+    },
+    {
+      "queryKeys": [],
+      "route": "/wp-admin/edit.php",
+      "text": "All Blogs"
+    },
+    {
+      "queryKeys": [],
+      "route": "/wp-admin/post-new.php",
+      "text": "Add New"
+    },
+    {
+      "queryKeys": [
+        "taxonomy"
+      ],
+      "route": "/wp-admin/edit-tags.php",
+      "text": "Categories"
+    },
+    {
+      "queryKeys": [
+        "taxonomy"
+      ],
+      "route": "/wp-admin/edit-tags.php",
+      "text": "Tags"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Re-Order"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Forms"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Forms"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "New Form"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Entries"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Pages"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "All Pages"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/post-new.php",
+      "text": "Add Page"
+    },
+    {
+      "queryKeys": [],
+      "route": "/wp-admin/upload.php",
+      "text": "Media"
+    },
+    {
+      "queryKeys": [],
+      "route": "/wp-admin/upload.php",
+      "text": "Library"
+    },
+    {
+      "queryKeys": [],
+      "route": "/wp-admin/media-new.php",
+      "text": "Add Media File"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/upload.php",
+      "text": "Bulk Optimization"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Communities"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "View All"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/post-new.php",
+      "text": "Add New"
+    },
+    {
+      "queryKeys": [
+        "taxonomy",
+        "post_type"
+      ],
+      "route": "/wp-admin/edit-tags.php",
+      "text": "Categories"
+    },
+    {
+      "queryKeys": [
+        "post_type",
+        "page"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Re-Order"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Terms & Conditions"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Testimonials"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "View All"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/post-new.php",
+      "text": "Add New"
+    },
+    {
+      "queryKeys": [
+        "post_type",
+        "page"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Google Rich Results"
+    },
+    {
+      "queryKeys": [
+        "post_type",
+        "page"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Re-Order"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Marketing"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Landing Pages"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "All Landing Pages"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/post-new.php",
+      "text": "Add New Landing Page"
+    },
+    {
+      "queryKeys": [
+        "taxonomy",
+        "post_type"
+      ],
+      "route": "/wp-admin/edit-tags.php",
+      "text": "Categories"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Listing Pages"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Local Resources"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "View All"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/post-new.php",
+      "text": "Add New"
+    },
+    {
+      "queryKeys": [
+        "taxonomy",
+        "post_type"
+      ],
+      "route": "/wp-admin/edit-tags.php",
+      "text": "Professions"
+    },
+    {
+      "queryKeys": [
+        "post_type",
+        "page"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Re-Order"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Agents"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "View All"
+    },
+    {
+      "queryKeys": [
+        "post_type"
+      ],
+      "route": "/wp-admin/post-new.php",
+      "text": "Add New"
+    },
+    {
+      "queryKeys": [
+        "taxonomy",
+        "post_type"
+      ],
+      "route": "/wp-admin/edit-tags.php",
+      "text": "Positions"
+    },
+    {
+      "queryKeys": [
+        "taxonomy",
+        "post_type"
+      ],
+      "route": "/wp-admin/edit-tags.php",
+      "text": "Expertises"
+    },
+    {
+      "queryKeys": [
+        "taxonomy",
+        "post_type"
+      ],
+      "route": "/wp-admin/edit-tags.php",
+      "text": "Offices"
+    },
+    {
+      "queryKeys": [
+        "post_type",
+        "page"
+      ],
+      "route": "/wp-admin/edit.php",
+      "text": "Re-Order"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Achievements"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Tutorials"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "Tutorials"
+    },
+    {
+      "queryKeys": [
+        "page"
+      ],
+      "route": "/wp-admin/admin.php",
+      "text": "LionDesk"
+    },
+    {
+      "queryKeys": [],
+      "route": "/wp-admin/widgets.php",
+      "text": "Widgets"
+    },
+    {
+      "queryKeys": [],
+      "route": "/wp-admin/nav-menus.php",
+      "text": "Menus"
+    }
+  ],
+  "scripts": [
+    "https://www.youtube.com/s/player/5203c085/www-widgetapi.vflset/www-widgetapi.js",
+    "https://www.youtube.com/iframe_api",
+    "https://greatstartrealty.com/wp-includes/js/jquery/jquery.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/jquery-migrate.min.js",
+    "https://greatstartrealty.com/wp-includes/js/utils.min.js",
+    "https://greatstartrealty.com/wp-content/mu-plugins/force-strong-passwords/force-zxcvbn.min.js",
+    "https://greatstartrealty.com/wp-content/mu-plugins/force-strong-passwords/js-admin.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/js/dist/libraries.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/js/dist/vendor-admin.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/js/dist/utils.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/js/dist/react-utils.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/js/dist/admin-components.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/js/vendor/simplebar.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/core.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/tooltip.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/js/tooltip_init.min.js",
+    "https://greatstartrealty.com/wp-includes/js/dist/vendor/wp-polyfill.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/wordpress-seo/js/dist/admin-global.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/mouse.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/draggable.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/droppable.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/sortable.min.js",
+    "https://greatstartrealty.com/wp-includes/js/plupload/moxie.min.js",
+    "https://greatstartrealty.com/wp-includes/js/plupload/plupload.min.js",
+    "https://sites14.agentelite.com/wp-content/mu-plugins/assets/real-estate-admin-compiled-scripts.js",
+    "https://greatstartrealty.com/wp-includes/js/wp-emoji-release.min.js",
+    "https://greatstartrealty.com/wp-includes/js/hoverIntent.min.js",
+    "https://greatstartrealty.com/wp-includes/js/dist/dom-ready.min.js",
+    "https://greatstartrealty.com/wp-includes/js/dist/hooks.min.js",
+    "https://greatstartrealty.com/wp-includes/js/dist/i18n.min.js",
+    "https://greatstartrealty.com/wp-includes/js/dist/a11y.min.js",
+    "https://greatstartrealty.com/wp-admin/js/common.min.js",
+    "https://greatstartrealty.com/wp-includes/js/hoverintent-js.min.js",
+    "https://greatstartrealty.com/wp-includes/js/admin-bar.min.js",
+    "https://greatstartrealty.com/wp-includes/js/thickbox/thickbox.js",
+    "https://greatstartrealty.com/wp-admin/js/svg-painter.js",
+    "https://greatstartrealty.com/wp-includes/js/heartbeat.min.js",
+    "https://greatstartrealty.com/wp-includes/js/wp-auth-check.min.js",
+    "https://sites14.agentelite.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/js/awesomeberg.magnific-popup.js",
+    "https://sites14.agentelite.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/js/jquery.animatedheadline.js",
+    "https://sites14.agentelite.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/js/blocks/map.js",
+    "https://sites14.agentelite.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/js/blocks/contactform.js",
+    "https://sites14.agentelite.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/js/common-script.js",
+    "https://greatstartrealty.com/wp-content/plugins/awesome-landing-pages-gutenberg/js/admin.js",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/js/dist/scripts-admin.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/slider.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/jquery.ui.touch-punch.js",
+    "https://greatstartrealty.com/wp-admin/js/iris.min.js",
+    "https://greatstartrealty.com/wp-admin/js/color-picker.min.js",
+    "https://greatstartrealty.com/wp-content/plugins/awesome-listing-pages-flyers/js/color-picker.js",
+    "https://greatstartrealty.com/wp-content/plugins/tiny-compress-images/src/js/admin.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/resizable.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/selectable.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/accordion.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/menu.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/autocomplete.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/controlgroup.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/checkboxradio.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/button.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/datepicker.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/dialog.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/progressbar.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/spinner.min.js",
+    "https://greatstartrealty.com/wp-includes/js/jquery/ui/tabs.min.js",
+    "https://greatstartrealty.com/wp-includes/js/underscore.min.js",
+    "https://greatstartrealty.com/wp-includes/js/shortcode.min.js",
+    "https://greatstartrealty.com/wp-includes/js/backbone.min.js",
+    "https://greatstartrealty.com/wp-includes/js/wp-util.min.js",
+    "https://greatstartrealty.com/wp-includes/js/wp-backbone.min.js",
+    "https://greatstartrealty.com/wp-includes/js/media-models.min.js",
+    "https://greatstartrealty.com/wp-includes/js/plupload/wp-plupload.min.js",
+    "https://greatstartrealty.com/wp-includes/js/mediaelement/mediaelement-and-player.min.js",
+    "https://greatstartrealty.com/wp-includes/js/mediaelement/mediaelement-migrate.min.js",
+    "https://greatstartrealty.com/wp-includes/js/mediaelement/wp-mediaelement.min.js",
+    "https://greatstartrealty.com/wp-includes/js/api-request.min.js",
+    "https://greatstartrealty.com/wp-includes/js/clipboard.min.js",
+    "https://greatstartrealty.com/wp-includes/js/media-views.min.js",
+    "https://greatstartrealty.com/wp-includes/js/media-editor.min.js",
+    "https://greatstartrealty.com/wp-includes/js/media-audiovideo.min.js",
+    "https://greatstartrealty.com/wp-includes/js/mce-view.min.js",
+    "https://greatstartrealty.com/wp-includes/js/imgareaselect/jquery.imgareaselect.min.js",
+    "https://greatstartrealty.com/wp-admin/js/image-edit.min.js",
+    "https://static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920"
+  ],
+  "styles": [
+    "https://greatstartrealty.com/wp-admin/load-styles.php",
+    "https://greatstartrealty.com/wp-includes/js/thickbox/thickbox.css",
+    "https://greatstartrealty.com/wp-content/mu-plugins/vendor/post-types-order/css/cpt.css",
+    "https://greatstartrealty.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/css/awesomeberg.animatedheadline.css",
+    "https://greatstartrealty.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/css/animation.css",
+    "https://greatstartrealty.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/css/magnific-popup.css",
+    "https://greatstartrealty.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/css/style.min.css",
+    "https://greatstartrealty.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/css/stylesass.min.css",
+    "https://greatstartrealty.com/wp-content/mu-plugins/vendor/awesome-gutenberg/assets/css/font-awesome.min.css",
+    "https://fonts.googleapis.com/css",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/css/dist/common-css-utilities.min.css",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/css/dist/gravity-forms-common-icons.min.css",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/css/dist/admin-icons.min.css",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/css/dist/admin-css-utilities.min.css",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/css/dist/admin-components.min.css",
+    "https://greatstartrealty.com/wp-content/plugins/gravityforms/assets/css/dist/font-awesome.min.css",
+    "https://greatstartrealty.com/wp-content/plugins/wordpress-seo/css/dist/admin-global-2040.css",
+    "https://greatstartrealty.com/wp-content/plugins/wordpress-seo/css/dist/wpseo-dismissible-2040.css",
+    "https://fonts.googleapis.com/css",
+    "https://greatstartrealty.com/wp-includes/js/mediaelement/mediaelementplayer-legacy.min.css",
+    "https://greatstartrealty.com/wp-includes/js/mediaelement/wp-mediaelement.min.css",
+    "https://greatstartrealty.com/wp-includes/js/imgareaselect/imgareaselect.css",
+    "https://greatstartrealty.com/wp-content/mu-plugins/assets/real-estate-admin-compiled-styles.css",
+    "https://sites14.agentelite.com/wp-content/themes/genesis/lib/css/admin.min.css"
+  ]
+}

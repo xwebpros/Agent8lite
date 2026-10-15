@@ -1,0 +1,101 @@
+{
+  "buttons": [
+    "Marketing Automation",
+    "Mobile App Login",
+    "+ Add Automation"
+  ],
+  "fields": [
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    }
+  ],
+  "headings": [
+    "Automations"
+  ],
+  "links": [],
+  "tableHeaders": [
+    "Automation Triggers",
+    "Campaign",
+    "If already completed",
+    "Enrollments",
+    "Active",
+    ""
+  ],
+  "tabs": [],
+  "url": "https://account.idxhome.com/campaigns/routes"
+}

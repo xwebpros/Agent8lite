@@ -1,0 +1,28 @@
+{
+  "buttons": [
+    "Team & Offices",
+    "Mobile App Login",
+    "Add Office",
+    "10 Rows"
+  ],
+  "fields": [
+    {
+      "label": "Search offices",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    }
+  ],
+  "headings": [
+    "Offices"
+  ],
+  "links": [],
+  "tableHeaders": [
+    "Office Name",
+    "Address",
+    "City",
+    ""
+  ],
+  "tabs": [],
+  "url": "https://account.idxhome.com/settings/broker/offices"
+}

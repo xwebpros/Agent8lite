@@ -1,0 +1,41 @@
+{
+  "buttons": [
+    "Mobile App Login",
+    "Choose a primary color",
+    "Cancel",
+    "Save Changes"
+  ],
+  "fields": [
+    {
+      "label": "#9E9E9E",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "Light ModeAlways display your IDX content with a light background and dark text.",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "Dark ModeAlways display your IDX content with a dark background and light text.",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "Auto-detectAutomatically shows a light or dark background to match the page your visitors are viewing.",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    }
+  ],
+  "headings": [
+    "Display"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/settings/display"
+}

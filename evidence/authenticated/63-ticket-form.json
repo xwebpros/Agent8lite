@@ -1,0 +1,71 @@
+{
+  "buttons": [
+    "ANDREA ARTHUR",
+    "Create Ticket"
+  ],
+  "fields": [
+    {
+      "label": "Brief description of your issue",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "",
+      "options": [
+        "Select...",
+        "General Support",
+        "Technical Issue",
+        "Billing Question",
+        "Feature Request",
+        "Account Access"
+      ],
+      "required": false,
+      "tag": "SELECT",
+      "type": null
+    },
+    {
+      "label": "Please provide detailed information about your issue, including any error messages, steps to reproduce, or relevant context...",
+      "required": false,
+      "tag": "TEXTAREA",
+      "type": null
+    }
+  ],
+  "headings": [
+    "Create Ticket",
+    "Create a New Ticket"
+  ],
+  "links": [
+    {
+      "path": "/",
+      "text": "Dashboard"
+    },
+    {
+      "path": "/Website",
+      "text": "Websites"
+    },
+    {
+      "path": "/Products",
+      "text": "Real Estate IDX"
+    },
+    {
+      "path": "/Products",
+      "text": "Design Studio"
+    },
+    {
+      "path": "/Products",
+      "text": "Local Presence"
+    },
+    {
+      "path": "/tickets",
+      "text": "Support"
+    },
+    {
+      "path": "/Marketplace",
+      "text": "Marketplace"
+    }
+  ],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://home.agentelite.com/tickets/create"
+}

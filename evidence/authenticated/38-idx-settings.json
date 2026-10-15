@@ -1,0 +1,30 @@
+{
+  "buttons": [
+    "Mobile App Login",
+    "Edit",
+    "Copy",
+    "Cancel",
+    "Save Changes"
+  ],
+  "fields": [
+    {
+      "label": "Version 10RecommendedModern styling across pages and widgets, with a rebuilt search experience featuring advanced filters, embedded virtual tours, and interactive maps.",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    },
+    {
+      "label": "Version 9The original version of iHomefinder. We recommend upgrading to Version 10 for a more modern search experience and the latest features.",
+      "required": false,
+      "tag": "INPUT",
+      "type": "radio"
+    }
+  ],
+  "headings": [
+    "IDX"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/settings/idx"
+}

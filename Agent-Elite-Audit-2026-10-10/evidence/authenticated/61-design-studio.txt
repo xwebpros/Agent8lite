@@ -1,0 +1,4 @@
+Browser tab: 1699268295, Title: "Design Studio - [account user] - Agent Elite", URL: "https://home.agentelite.com/Products?type=DesignStudio".
+The following is a diff from the previous accessibility tree with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 28
+The focused UI element is 1 AXWebArea Design Studio - [account user] - Agent Elite, URL: home.agentelite.com/Products?type=DesignStudio

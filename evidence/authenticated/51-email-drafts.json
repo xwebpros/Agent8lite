@@ -1,0 +1,15 @@
+{
+  "buttons": [
+    "Send Email",
+    "Mobile App Login"
+  ],
+  "fields": [],
+  "headings": [
+    "Email Drafts",
+    "You have no draft emails. Draft emails will appear here."
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/campaign/email/drafts"
+}

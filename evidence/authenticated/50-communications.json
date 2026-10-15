@@ -1,0 +1,31 @@
+{
+  "buttons": [
+    "Send Email",
+    "Mobile App Login",
+    "Create List",
+    "Send Now",
+    "Send Later",
+    "Save Draft"
+  ],
+  "fields": [
+    {
+      "label": "Enter subject line here",
+      "required": true,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "Select Leads",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    }
+  ],
+  "headings": [
+    "New Email"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/campaign/email/new"
+}

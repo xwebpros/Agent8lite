@@ -1,0 +1,498 @@
+[
+  {
+    "origin": "https://fonts.googleapis.com",
+    "path": "/css2",
+    "queryKeys": [
+      "family",
+      "family",
+      "display"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "ESF"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/bootstrap/dist/css/bootstrap.min.css",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/font-awesome/css/all.min.css",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/agent-elite/agent-elite-tokens.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/portal-tokens.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/agent-elite/agent-elite-components.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/agent-elite-overrides.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/site.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/marketing-banners.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/payment-status-banner.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/upgrade-modal.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/purchase-gate.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/confirm-gate.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/visibility-system.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/visibility-checklist.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/activity-tracker.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/homeportal.styles.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/jquery/dist/jquery.min.js",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/images/agent_elite_long_white.png",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/png",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_facebook.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_linkedin.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_instagram.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://fonts.googleapis.com",
+    "path": "/css2",
+    "queryKeys": [
+      "family",
+      "family",
+      "display"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "ESF"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_x.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/site.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/sync-manager.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/lib/bootstrap/dist/js/bootstrap.bundle.min.js",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/track.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/marketing-banners.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/payment-status-banner.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/confirm-gate.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/upgrade-modal.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/images/icons/ae_youtube.svg",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/images/ae-round-flat-white.png",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/png",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/lucide.min.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/billing-panel.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/css/account-settings.css",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/css",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/billing-panel.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/business-profiles.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/js/account-settings.js",
+    "queryKeys": [
+      "v"
+    ],
+    "status": 200,
+    "mime": "text/javascript",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://feedback.agentelite.com",
+    "path": "/widget.js",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/javascript",
+    "server": "cloudflare"
+  },
+  {
+    "origin": "null",
+    "path": "/images/cursor-chat.png",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/png",
+    "server": null
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/Billing",
+    "queryKeys": [
+      "handler"
+    ],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/api/business-profiles",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/api/account-settings/profile",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/api/account-settings/users",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/api/account-settings/user-roles",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "https://home.agentelite.com",
+    "path": "/api/account-management/sync-data",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "application/json",
+    "server": "Kestrel"
+  },
+  {
+    "origin": "null",
+    "path": "image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23000'%3e%3cpath d='M.293.293a1 1 0 011.414 0L8 6.586 14.293.293a1 1 0 111.414 1.414L9.414 8l6.293 6.293a1 1 0 01-1.414 1.414L8 9.414l-6.293 6.293a1 1 0 01-1.414-1.414L6.586 8 .293 1.707a1 1 0 010-1.414z'/%3e%3c/svg%3e",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": null
+  },
+  {
+    "origin": "null",
+    "path": "image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "image/svg+xml",
+    "server": null
+  },
+  {
+    "origin": "https://fonts.gstatic.com",
+    "path": "/s/poppins/v24/pxiByp8kv8JHgFVrLDD4Z1xlFQ.woff2",
+    "queryKeys": [],
+    "status": 200,
+    "mime": "font/woff2",
+    "server": "sffe"
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "buttons": [
+    "Marketing Automation",
+    "Mobile App Login",
+    "Add Category",
+    "Add Campaign"
+  ],
+  "fields": [],
+  "headings": [
+    "Campaigns"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/campaigns"
+}

@@ -1,0 +1,14 @@
+{
+  "buttons": [
+    "Alert & Email Settings",
+    "Mobile App Login"
+  ],
+  "fields": [],
+  "headings": [
+    "Email Advanced Routing"
+  ],
+  "labels": [],
+  "queryKeys": [],
+  "route": "/settings/email/routing",
+  "tableHeaders": []
+}

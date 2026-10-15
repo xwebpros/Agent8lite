@@ -1,0 +1,28 @@
+{
+  "buttons": [
+    "Marketing Automation",
+    "Mobile App Login",
+    "Saved"
+  ],
+  "fields": [
+    {
+      "label": "Enter Address",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "Search for a lead here",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    }
+  ],
+  "headings": [
+    "Campaign Settings"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/campaigns/settings"
+}

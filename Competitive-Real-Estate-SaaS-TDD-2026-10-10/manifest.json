@@ -1,0 +1,163 @@
+{
+  "date": "2026-10-10",
+  "algorithm": "SHA-256",
+  "note": "Manifest excludes itself to avoid recursive hash. Rebuild after any file changes.",
+  "fileCount": 31,
+  "files": [
+    {
+      "path": "contracts/events.schema.json",
+      "bytes": 2771,
+      "sha256": "bd91e02d81124b6abfa8f8801d7acc9eb24c259a96bd424dabe6565a4017d8e9"
+    },
+    {
+      "path": "contracts/mls-adapter.ts",
+      "bytes": 4840,
+      "sha256": "1e38ddf29e70f31d9a99591f28d5a462ecee8252f7800c46c15980b532c87c9a"
+    },
+    {
+      "path": "contracts/openapi.json",
+      "bytes": 1038094,
+      "sha256": "2bb5fb626b7d9ad66b7f7f99a973f274fa71e34572fe7df938a14bec2174a304"
+    },
+    {
+      "path": "contracts/permission-catalog.json",
+      "bytes": 13597,
+      "sha256": "65240e6e09d1fa65db04d964ad802969356cd3152816b4d7f117620a8405ce16"
+    },
+    {
+      "path": "contracts/pwa-manifest.example.json",
+      "bytes": 689,
+      "sha256": "0334a12520844afda5f1ed248f0440e20dce07e3df051ec32e835b4ac997ba0d"
+    },
+    {
+      "path": "contracts/pwa-policy.json",
+      "bytes": 823,
+      "sha256": "0d5773cf38ccc6cf39f7e12d7397303c199f18647d3368ad14cfe08f519ae08e"
+    },
+    {
+      "path": "contracts/role-presets.json",
+      "bytes": 16958,
+      "sha256": "7e331140a7e0c822e0a2e31a3619c62a88105f27fab906440bc3579b23f9ced8"
+    },
+    {
+      "path": "data/data-dictionary.json",
+      "bytes": 114745,
+      "sha256": "25b7636a857304560dabe52f70dac31ed4a03104aeefbe8dcf0571ac0e9b4d86"
+    },
+    {
+      "path": "data/schema.mmd",
+      "bytes": 22231,
+      "sha256": "4ee2ab8a6b96ec22e74c276cf77d51cbb2f40eeaf9eac7be6cd1cd4735d36bc1"
+    },
+    {
+      "path": "data/schema.sql",
+      "bytes": 82571,
+      "sha256": "32961ed3476e08e758ca7172519b45ff2d41ee1b341fb02b6b67cf4623590a2e"
+    },
+    {
+      "path": "design-system/tokens.css",
+      "bytes": 926,
+      "sha256": "0891e130a9f56e2fe59cefb6b7dc9461169e7740c124a46364c13f92362743de"
+    },
+    {
+      "path": "design-system/tokens.json",
+      "bytes": 1326,
+      "sha256": "81d6f96cff568d584b292e84c5fd29aa35da0619a695034fe4da65c87c52b1b2"
+    },
+    {
+      "path": "diagrams/architecture.svg",
+      "bytes": 2863,
+      "sha256": "959ab39c8e13f06ed59c7b5ea33d6897d76837ce51480a6ac590c86c73189903"
+    },
+    {
+      "path": "diagrams/domain-relationships.svg",
+      "bytes": 3153,
+      "sha256": "e428c0d9298254cd4732fd238b5cb712359fcde4e013a27e29b2e288a5f87fc7"
+    },
+    {
+      "path": "diagrams/mls-pipeline.svg",
+      "bytes": 3271,
+      "sha256": "86e63268782db4bb4535c3d0bd382afc9972bd7114aad56b9b8a6a9756889365"
+    },
+    {
+      "path": "diagrams/workspace-wireframe.svg",
+      "bytes": 3748,
+      "sha256": "c412a9165eab5a9d5151e3bd9bf852b8b41a79068cd9fdf68077227ef8b3df68"
+    },
+    {
+      "path": "fixtures/synthetic-listings.json",
+      "bytes": 13381,
+      "sha256": "ea7011761b56272618157993edc376e9eb64d6b3f8c14d89e4f749358c06bc65"
+    },
+    {
+      "path": "future-repo/AGENTS.md",
+      "bytes": 6800,
+      "sha256": "fac87749992118dd09535a7ffeb1800072190034965cc60a3ffef9bf0ac71dfd"
+    },
+    {
+      "path": "READ-ME.txt",
+      "bytes": 2230,
+      "sha256": "8b1af9f5c2a88ee9adfc85f2317fc5fc8b87423123ef0c3f1c1ef2077da38a1b"
+    },
+    {
+      "path": "real-estate-saas-tdd-2026-10-10.html",
+      "bytes": 481220,
+      "sha256": "32924aab909d917b23dc1b0ffd1da2398273f677aa02211150f1d6980cfe2ade"
+    },
+    {
+      "path": "reference/Agent-Elite-Audit-2026-10-10.zip",
+      "bytes": 5222009,
+      "sha256": "63d80e60ac7cd303909fc2c50593cd519739f42fd78f6756f34826ebbfafdb1a"
+    },
+    {
+      "path": "reference/source-audit.json",
+      "bytes": 86531,
+      "sha256": "aecb69e91e298f856702ae1f2f7ba371c45fda909eb8872b9c35338fce13857d"
+    },
+    {
+      "path": "report-preview.png",
+      "bytes": 71647,
+      "sha256": "60b37f054c6cb9e718ee9beb11b2f6a81094c07b6af9b903488929a69494c628"
+    },
+    {
+      "path": "source/build.mjs",
+      "bytes": 639,
+      "sha256": "659dc4d6027c169a78838d5082a478e9d94f2c8e831876e1c6d3ea222e36e025"
+    },
+    {
+      "path": "source/contracts.mjs",
+      "bytes": 71614,
+      "sha256": "44b701929631bbff6f731b03c30c7aeb2c095be9a6a7caa7df419f7e09fa2461"
+    },
+    {
+      "path": "source/document.mjs",
+      "bytes": 126508,
+      "sha256": "d26cb8405baab952980f0d4e710e364f646a52269254cd38bb4a0c49805bf155"
+    },
+    {
+      "path": "source/modules.mjs",
+      "bytes": 52606,
+      "sha256": "53ab2548e6afb8da77237a2946939284399f14f2594b3cb7a7a6fa319d6a4418"
+    },
+    {
+      "path": "source/supplements.mjs",
+      "bytes": 37856,
+      "sha256": "775d77f95ee4a8cf884c4ff3aa05451fd239d03af7d1ca27b0d79374b9bb3b16"
+    },
+    {
+      "path": "source/validate.mjs",
+      "bytes": 10822,
+      "sha256": "4a1e9d6e1743c4fd4c85f050bcea6e2f0aee29d8b9cbb1e28a0e99ca99ad31a3"
+    },
+    {
+      "path": "technical-design.json",
+      "bytes": 643306,
+      "sha256": "73ab6ba7d4a3f1804ed5be99108810b6763822ecd452027ccfda1e94297491bb"
+    },
+    {
+      "path": "validation.json",
+      "bytes": 3550,
+      "sha256": "ba6c75a48b831a650809065ccb10da0d7d0a0d338cd78fae95c175360ff8833a"
+    }
+  ]
+}

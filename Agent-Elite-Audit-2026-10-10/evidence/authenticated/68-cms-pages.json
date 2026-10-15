@@ -1,0 +1,233 @@
+{
+  "buttons": [
+    "Search Pages",
+    "Apply",
+    "Filter",
+    "Quick Edit"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "search"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "options": [
+        "Bulk actions",
+        "Edit",
+        "Move to Trash"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "options": [
+        "All dates",
+        "November 2025",
+        "October 2025"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "options": [
+        "All SEO Scores",
+        "SEO: Needs improvement",
+        "SEO: OK",
+        "SEO: Good",
+        "SEO: No Focus Keyphrase",
+        "SEO: Post Noindexed"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "options": [
+        "Bulk actions",
+        "Edit",
+        "Move to Trash"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    }
+  ],
+  "headings": [
+    "Pages",
+    "Filter pages list",
+    "Pages list navigation",
+    "Pages list"
+  ],
+  "labels": [
+    "Search Pages:",
+    "Select bulk action",
+    "Filter by date",
+    "Filter by SEO Score",
+    "Current Page",
+    "Select All",
+    "Select Attorney’s Divorce Real Estate Intake Packet",
+    "Select Divorce Real Estate Language",
+    "Select First time homebuyers guide",
+    "Select Tips for buyers",
+    "Select Stage it, sell it",
+    "Select Home Improvements",
+    "Select How to hire the right real estate agent",
+    "Select Join our team",
+    "Select Las Vegas, NV Info",
+    "Select My Buyers Guide",
+    "Select My Seller’s Guide",
+    "Select What is My Home Worth?",
+    "Select Las Vegas, NV Homes",
+    "Select My Listings",
+    "Select Property Search",
+    "Select Real Estate News",
+    "Select Walk Score ®",
+    "Select Contact Me",
+    "Select Las Vegas, NV Real Estate",
+    "Select Resources",
+    "Select All",
+    "Select bulk action"
+  ],
+  "queryKeys": [
+    "post_type"
+  ],
+  "route": "/wp-admin/edit.php",
+  "tableHeaders": [
+    "Title",
+    "Author",
+    "Date\nSort descending.",
+    "Special Features",
+    "SEO score\nSort ascending.",
+    "Select Attorney’s Divorce Real Estate Intake Packet",
+    "Select Divorce Real Estate Language",
+    "Select First time homebuyers guide",
+    "Select Tips for buyers",
+    "Select Stage it, sell it",
+    "Select Home Improvements",
+    "Select How to hire the right real estate agent",
+    "Select Join our team",
+    "Select Las Vegas, NV Info",
+    "Select My Buyers Guide",
+    "Select My Seller’s Guide",
+    "Select What is My Home Worth?",
+    "Select Las Vegas, NV Homes",
+    "Select My Listings",
+    "Select Property Search",
+    "Select Real Estate News",
+    "Select Walk Score ®",
+    "Select Contact Me",
+    "Select Las Vegas, NV Real Estate",
+    "Select Resources",
+    "Title",
+    "Author",
+    "Date\nSort descending.",
+    "Special Features",
+    "SEO score\nSort ascending."
+  ]
+}

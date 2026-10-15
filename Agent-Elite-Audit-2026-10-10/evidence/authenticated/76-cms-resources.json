@@ -1,0 +1,55 @@
+{
+  "buttons": [
+    "Filter"
+  ],
+  "fields": [
+    {
+      "options": [
+        "All SEO Scores",
+        "SEO: Needs improvement",
+        "SEO: OK",
+        "SEO: Good",
+        "SEO: No Focus Keyphrase",
+        "SEO: Post Noindexed"
+      ],
+      "placeholder": "",
+      "type": "select-one"
+    },
+    {
+      "placeholder": "",
+      "type": "submit"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    },
+    {
+      "placeholder": "",
+      "type": "checkbox"
+    }
+  ],
+  "headings": [
+    "Local Resources",
+    "Filter posts list",
+    "Posts list"
+  ],
+  "labels": [
+    "Filter by SEO Score",
+    "Select All",
+    "Select All"
+  ],
+  "queryKeys": [
+    "post_type"
+  ],
+  "route": "/wp-admin/edit.php",
+  "tableHeaders": [
+    "Name\nSort ascending.",
+    "SEO score\nSort ascending.",
+    "Photo\nSort ascending.",
+    "Profession\nSort ascending.",
+    "Name\nSort ascending.",
+    "SEO score\nSort ascending.",
+    "Photo\nSort ascending.",
+    "Profession\nSort ascending."
+  ]
+}

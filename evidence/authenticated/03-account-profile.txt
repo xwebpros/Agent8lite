@@ -1,0 +1,13 @@
+Browser tab: 1699268295, Title: "Account Settings - [account user] - Agent Elite", URL: "https://home.agentelite.com/AccountSettings#profile".
+The following is a diff from the previous accessibility tree with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 28, 30
++	85 text AA
+~	29 heading [account user], Value: 1
++		86 text [account user]
+~		48 text field (settable) First Name, Value: [redacted], ID: profileFirstName
+~		50 text field (settable) Last Name, Value: [redacted], ID: profileLastName
+~		52 text field Email, Value: <redacted>
+~		55 text field (settable) Phone, Value: <redacted>
+~		60 text field (settable) Street Address, Value: [redacted], ID: profileAddrStreet
+~	84 button Description: Send feedback, ID: feedbacksense-button
+The focused UI element is 1 AXWebArea Account Settings - [account user] - Agent Elite, URL: home.agentelite.com/AccountSettings#profile

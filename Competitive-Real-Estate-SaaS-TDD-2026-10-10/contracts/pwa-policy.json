@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "status": "Design policy, not an implemented service worker",
+  "distribution": "HTTPS browser and home-screen install only; no app stores",
+  "staticAllowlist": [
+    "hashed JS/CSS without embedded private data",
+    "approved local fonts",
+    "original app icons",
+    "generic offline screen"
+  ],
+  "neverPersist": [
+    "session/auth tokens",
+    "private API responses",
+    "personalized HTML or RSC",
+    "CRM contacts/messages",
+    "billing data",
+    "exports",
+    "AI results",
+    "MLS records/media unless separately licensed and approved"
+  ],
+  "initialOfflineWrites": false,
+  "updates": "waiting worker; user acceptance after dirty drafts and in-flight sensitive commands resolve",
+  "push": "opt-in, generic payload, member/device authorization; in-app inbox authoritative"
+}

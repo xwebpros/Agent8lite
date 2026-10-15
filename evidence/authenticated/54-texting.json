@@ -1,0 +1,40 @@
+{
+  "buttons": [
+    "Mobile App Login",
+    "Save"
+  ],
+  "fields": [
+    {
+      "label": "Text Message Number",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "Phone Number",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "Time Zone",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    }
+  ],
+  "headings": [
+    "Texting",
+    "Verification Needed"
+  ],
+  "links": [],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://account.idxhome.com/campaigns/texting"
+}

@@ -1,0 +1,43 @@
+{
+  "buttons": [
+    "ANDREA ARTHUR",
+    "Feedback"
+  ],
+  "fields": [],
+  "headings": [
+    "Support"
+  ],
+  "links": [
+    {
+      "path": "/",
+      "text": "Dashboard"
+    },
+    {
+      "path": "/Website",
+      "text": "Websites"
+    },
+    {
+      "path": "/Products",
+      "text": "Real Estate IDX"
+    },
+    {
+      "path": "/Products",
+      "text": "Design Studio"
+    },
+    {
+      "path": "/Products",
+      "text": "Local Presence"
+    },
+    {
+      "path": "/tickets",
+      "text": "Support"
+    },
+    {
+      "path": "/Marketplace",
+      "text": "Marketplace"
+    }
+  ],
+  "tableHeaders": [],
+  "tabs": [],
+  "url": "https://home.agentelite.com/tickets"
+}

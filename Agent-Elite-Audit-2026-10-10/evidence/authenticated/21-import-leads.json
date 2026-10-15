@@ -1,0 +1,182 @@
+{
+  "buttons": [
+    "Mobile App Login",
+    "Filters (1)",
+    "Columns",
+    "Bulk Actions",
+    "Import Leads",
+    "Add Lead",
+    "Go to previous page",
+    "Go to next page",
+    "Browse File"
+  ],
+  "fields": [
+    {
+      "label": "Search Leads",
+      "required": false,
+      "tag": "INPUT",
+      "type": "text"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": "checkbox"
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "DIV",
+      "type": null
+    },
+    {
+      "label": "",
+      "required": false,
+      "tag": "INPUT",
+      "type": null
+    }
+  ],
+  "headings": [
+    "Leads",
+    "Import Leads",
+    "Import Leads"
+  ],
+  "links": [],
+  "tableHeaders": [
+    "",
+    "",
+    "Name",
+    "",
+    "Pipeline Stage",
+    "Type",
+    "Last Active",
+    "Subscriber",
+    "Engagement Rating",
+    "Source",
+    "Agent",
+    "Tags",
+    ""
+  ],
+  "tabs": [],
+  "url": "https://account.idxhome.com/leads"
+}

@@ -1,0 +1,17 @@
+{
+  "buttons": [
+    "Search",
+    "Mobile App Login",
+    "Restore Defaults",
+    "Cancel",
+    "Save Changes"
+  ],
+  "fields": [],
+  "headings": [
+    "Property Types"
+  ],
+  "labels": [],
+  "queryKeys": [],
+  "route": "/settings/property-types",
+  "tableHeaders": []
+}

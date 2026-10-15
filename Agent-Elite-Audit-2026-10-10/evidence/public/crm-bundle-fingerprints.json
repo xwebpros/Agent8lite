@@ -1,0 +1,64 @@
+[
+    {
+        "Pattern":  "react\\.production\\.min\\.js",
+        "Matches":  {
+
+                    }
+    },
+    {
+        "Pattern":  "React v[0-9.]+",
+        "Matches":  {
+
+                    }
+    },
+    {
+        "Pattern":  "react-dom\\.production\\.min\\.js",
+        "Matches":  {
+
+                    }
+    },
+    {
+        "Pattern":  "@mui/material",
+        "Matches":  {
+
+                    }
+    },
+    {
+        "Pattern":  "@material-ui/core",
+        "Matches":  {
+
+                    }
+    },
+    {
+        "Pattern":  "redux",
+        "Matches":  [
+                        "redux",
+                        "redux",
+                        "redux"
+                    ]
+    },
+    {
+        "Pattern":  "react-router",
+        "Matches":  {
+
+                    }
+    },
+    {
+        "Pattern":  "Plotly\\.js v[0-9.]+",
+        "Matches":  {
+
+                    }
+    },
+    {
+        "Pattern":  "axios",
+        "Matches":  {
+
+                    }
+    },
+    {
+        "Pattern":  "baseURL.{0,100}",
+        "Matches":  {
+
+                    }
+    }
+]

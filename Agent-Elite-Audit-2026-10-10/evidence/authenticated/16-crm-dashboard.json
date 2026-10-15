@@ -1,0 +1,33 @@
+{
+  "route": "/lead-dashboard",
+  "modules": [
+    "Lead Activity",
+    "Percent with Activity last 30 days",
+    "Percent Subscribed",
+    "Pipeline Status",
+    "Lead Sources last 30 days",
+    "Lead Metric Comparisons past 12 months",
+    "Team Stats",
+    "Tasks this Week",
+    "Upcoming Dates"
+  ],
+  "pipeline": [
+    "Uncontacted",
+    "Attempted Contact",
+    "Nurturing",
+    "Under Contract",
+    "Closed YTD"
+  ],
+  "comparisonTabs": [
+    "Lead Actions",
+    "Viewed Listings",
+    "Site Searches"
+  ],
+  "teamColumns": [
+    "Agent",
+    "Active Leads",
+    "Uncontacted Leads",
+    "Calls Logged last 7 days"
+  ],
+  "scope": "Lead names, identifiers and individual behavior omitted."
+}

@@ -4,3 +4,6 @@
 *.jpg binary
 *.webp binary
 *.ico binary
+# Preserve captured reference evidence as bytes, including original whitespace.
+evidence/** -text
+Agent-Elite-Audit-2026-10-10/evidence/** -text

@@ -1,0 +1,100 @@
+{
+  "buttons": [
+    "Block Inserter",
+    "Undo",
+    "Redo",
+    "Document Overview",
+    "Property Management\n· Landing Page\nCtrl+K",
+    "View",
+    "Yoast SEO",
+    "Settings",
+    "Save",
+    "Options",
+    "Add block",
+    "Keep as HTML",
+    "Move up",
+    "Move down",
+    "Toggle panel: Yoast SEO",
+    "Google preview",
+    "Insert variable",
+    "SEO analysis\nEnter a focus keyphrase to calculate the SEO score",
+    "Premium SEO analysis",
+    "Add related keyphrase",
+    "Advanced",
+    "Insights",
+    "Landing Page",
+    "Block",
+    "Close Settings",
+    "Actions",
+    "Published",
+    "December 12, 2025 8:53 pm UTC",
+    "property-management",
+    "Full Screen Template",
+    "Move to trash",
+    "Improve your post with Yoast SEO",
+    "Toggle panel: Post Meta Awesomeberg CSS",
+    "Open save panel"
+  ],
+  "fields": [
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "radio"
+    },
+    {
+      "placeholder": "",
+      "type": "text"
+    },
+    {
+      "placeholder": "",
+      "type": "textarea"
+    }
+  ],
+  "headings": [
+    "Edit Landing Pages",
+    "Property Management\n· Landing Page",
+    "Property Management",
+    "Great Start Realty Property Management",
+    "Why Owners Choose Great Start Realty",
+    "Marketing and Advertising",
+    "Tenant Screening",
+    "Lease Agreements",
+    "Deposits",
+    "Pets",
+    "Collections",
+    "Keys and Locks",
+    "Rent Collection",
+    "Accounting and Reporting",
+    "Maintenance and Repairs",
+    "Rent Ready Standards",
+    "HOA Coordination",
+    "Yoast SEO",
+    "Google preview",
+    "SEO analysis\nEnter a focus keyphrase to calculate the SEO score",
+    "Premium SEO analysis",
+    "Add related keyphrase",
+    "Advanced",
+    "Insights",
+    "Property Management",
+    "Yoast SEO",
+    "Post Meta Awesomeberg CSS"
+  ],
+  "labels": [
+    "Focus keyphrase",
+    "Mobile result",
+    "Desktop result"
+  ],
+  "queryKeys": [
+    "post",
+    "action"
+  ],
+  "route": "/wp-admin/post.php",
+  "tableHeaders": []
+}
