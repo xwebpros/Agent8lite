@@ -49,6 +49,35 @@ describe("retention dev route", () => {
   });
 });
 
+describe("dispatch auth boundaries", () => {
+  it("rejects unauthenticated broadcast dispatch", async () => {
+    const response = await fetch("http://127.0.0.1:3001/dev/dispatch-broadcasts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect([401, 403]).toContain(response.status);
+  });
+
+  it("rejects unauthenticated action dispatch", async () => {
+    const response = await fetch("http://127.0.0.1:3001/dev/dispatch-actions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect([401, 403]).toContain(response.status);
+  });
+
+  it("rejects unauthenticated retention", async () => {
+    const response = await fetch("http://127.0.0.1:3001/dev/retention", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect([401, 403]).toContain(response.status);
+  });
+});
+
 describe("job listing endpoint", () => {
   it("lists integration jobs for the current member", async () => {
     const response = await owner.request(`/v1/orgs/${owner.orgId}/jobs`);
@@ -77,5 +106,10 @@ describe("job listing endpoint", () => {
     for (const job of body.items) {
       expect(job.kind).toBe("data.export");
     }
+  });
+
+  it("rejects unauthenticated job listing", async () => {
+    const response = await fetch(`http://127.0.0.1:3001/v1/orgs/${owner.orgId}/jobs`);
+    expect([401, 403]).toContain(response.status);
   });
 });
