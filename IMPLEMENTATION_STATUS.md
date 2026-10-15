@@ -1,5 +1,43 @@
 # Implementation status — 2026-10-16
 
+## Phase 4–5 provider readiness and notification fix — 2026-10-16
+
+**Committed:**
+- `2251e5b` docs: update evidence ledger and status with Phase 0-3 results
+- `efc4853` feat: add consent event validation boundary tests
+- `b59a550` fix: add retry logic for async notification producer tests
+- `9deea30` fix: use DB-direct queries in notification producer tests
+
+**Bug fixes:**
+- Notification producer tests: root-caused flaky pagination failure — API orders by UUID not created_at, so new notifications fall outside first page when >100 exist. Fixed by querying DB directly with `ORDER BY created_at DESC`.
+
+**New tests:** 3 consent event validation boundary tests in `consent-sms-api.test.ts`:
+- Missing fields rejection (400/422), unknown contact rejection, unauthenticated rejection
+
+**Provider audit (Phase 5):**
+| Provider | Port | Mock | Real Adapter | Status |
+|----------|------|------|-------------|--------|
+| Billing | Yes | Yes | No | M6 gate |
+| Email | Yes | Yes | No | no-delivery mode |
+| Identity | Yes | Yes | OIDC adapter | Functional |
+| MLS | Yes | Yes | Trestle adapter (W07) | M6 gate |
+| Storage | Yes | Yes | No | M6 gate |
+| AI jobs | Inline CRM | — | No | M6 gate |
+| Push | Inline routes | — | No | M6 gate |
+| SMS | None | None | None | Future |
+
+**Full verification sweep:**
+- Build: pass (146 files, 18 JSON resources)
+- Runtime verification: pass
+- Contract validation: pass (174 operations, 174 schemas, ADR-022/043/049/055)
+- TypeScript: clean in owned code (6 pre-existing errors in W07 trestle files only)
+- Unit tests: 81 suites, 2550 pass
+- Shared-DB integration: 48 suites, 342 pass
+- Disposable-DB control: 4 suites, 66 pass
+- **Total: 133 suites, 2958 tests pass**
+
+---
+
 ## Phase 0–3 baseline, test expansion, PWA and contract fixes — 2026-10-16
 
 **Committed:**

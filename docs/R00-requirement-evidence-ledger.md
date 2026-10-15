@@ -1,7 +1,7 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Updated:** 2026-10-16 at commit `fab983e` — 339 integration tests across 47 suites (shared DB), 66 disposable-DB tests across 4 suites, 3287 unit tests across 96 suites. Contract check, build and runtime verification pass.
+**Updated:** 2026-10-16 at commit `deb65ae` — 349 integration tests across 49 suites (shared DB), 66 disposable-DB tests across 4 suites, 2550 unit tests across 81 suites. Contract check (174 ops, 174 schemas, ADR-022/043/049/055), build and runtime verification pass. TypeScript clean in owned code. Provider audit completed: email/billing/identity/MLS/storage have port+mock; AI/push/dashboard inline; SMS future.
 **Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
@@ -44,7 +44,7 @@
 | MOD-B-002 | Implemented | Dashboard returns 6 metrics: leads.created, contacts.created, deals.created, deals.pipeline_value, tasks.completed, revenue (unconfigured). Frontend definitions with titles/descriptions/denominators. Period/timezone labels. | Revenue metric blocked on billing provider. |
 | MOD-B-003 | Deferred | Frontend scope (R09). API supports detail/drawer routes. | |
 | MOD-B-004 | Partial | `appointments-api.test.ts` (disposable DB); `appointment-list-api.test.ts` (2 tests, shared DB): paginated listing verified; `AppointmentService` implemented | No scheduling provider integration yet. |
-| MOD-B-005 | Implemented | `notifications-api.test.ts` (disposable DB); `notification-producer-api.test.ts` (4 tests); `notification-read-api.test.ts` (3 tests, shared DB): mark-read, nonexistent rejection, listing with seeded data; notification list/mark-read + producer (lead.assigned, task.assigned, lead.stage_changed); `push-settings.tsx` subscription management UI | Poll-based. SSE deferred per spec. SECURITY DEFINER `app.create_notification` validates active membership. Dashboard returns real unread notifications. Push subscription UI permission-gated (self.push.write). |
+| MOD-B-005 | Implemented | `notifications-api.test.ts` (disposable DB); `notification-producer-api.test.ts` (4 tests, DB-direct verification); `notification-read-api.test.ts` (3 tests, shared DB): mark-read, nonexistent rejection, listing with seeded data; notification list/mark-read + producer (lead.assigned, task.assigned, lead.stage_changed, self-assign suppression); `push-subscription-boundary-api.test.ts` (4 tests): self-subscribe, cross-member denial, unauth, CSRF; `push-settings.tsx` subscription management UI | Poll-based. SSE deferred per spec. SECURITY DEFINER `app.create_notification` validates active membership. Dashboard returns real unread notifications. Push subscription UI permission-gated (self.push.write). |
 
 ---
 
@@ -55,7 +55,7 @@
 | MOD-D-001 | Implemented | `crm-api.test.ts`, `contact-edit-api`, `lead-notes-activity-api.test.ts` (5 tests), `crm-configuration-api.test.ts` (11 tests), `lead-tags-api.test.ts` (5 tests) | Contacts, leads, deals separated. Emails/phones normalized. Tags, stage history, notes, activity timeline all verified. |
 | MOD-D-002 | Implemented | `crm-configuration-api.test.ts`: pipeline stages; `crm-service.ts`: list filters, pagination; `contact-filter-api.test.ts` (6 tests); `lead-filter-api.test.ts` (8 tests); `task-filter-api.test.ts` (7 tests); `deal-filter-api.test.ts` (5 tests) | 6 default stages seeded. Configurable stages with optimistic versions. Server pagination with cursor. All 6 filter fields (q, ownerMemberId, tagIds, stageId, sourceId, intent) implemented and tested for contacts, leads, tasks and deals. Frontend filter controls (intent/stage/source dropdowns) added to contacts search, pipeline board, task list and deals panel — verified in browser. |
 | MOD-D-003 | Partial | `routing-capture-api.test.ts` (routing config); routing service implemented | Round-robin and rule evaluation in `routing-service.ts`. Full geographic routing not yet tested. |
-| MOD-D-004 | Implemented | `scoring-api.test.ts` (scoring CRUD); `engagement-scoring-trigger` migration | Versioned deterministic formula. Score is prioritization only. |
+| MOD-D-004 | Implemented | `scoring-api.test.ts` (scoring CRUD); `scoring-edge-api.test.ts` (5 tests): initial score, cross-type events, unknown events, independent leads, cap overflow; `scoring-compute.test.ts` (9 unit tests): empty events, weights, aggregation, cap, sort, all 13 event types; `engagement-scoring-trigger` migration | Versioned deterministic formula. Score is prioritization only. |
 | MOD-D-005 | Implemented | `data-transfer-api.test.ts` (9 tests): upload/mapping/preview/commit/export | CSV import with preview, duplicate candidates, merge/skip. Idempotent commit. |
 | MOD-D-006 | Implemented | `archive-api.test.ts`: contact/lead archive; `data-transfer-api.test.ts`: exports. `retention-service.ts`: purges expired idempotency records and old outbox receipts, reports archived contacts/leads past 365-day threshold. `POST /dev/retention` dev route. | Export as durable job implemented. Archive cancels sends. Retention enforcement wired. |
 | MOD-D-007 | Implemented | `task-create-api`, `task-edit-api` (disposable DB); `crm-api.test.ts`: concurrency test | Tasks with assignee/title/due/tz. If-Match versioning. 412 on conflict. |
