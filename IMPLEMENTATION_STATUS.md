@@ -1,4 +1,34 @@
-# Implementation status — 2026-10-13
+# Implementation status — 2026-10-16
+
+## Phase 0–3 baseline, test expansion, PWA and contract fixes — 2026-10-16
+
+**Committed:**
+- `0d528bb` fix: notification producer pagination and contract comparison
+- `1b61bc2` feat: add scoring unit tests, routing rules and scoring edge case suites
+- `51422cc` feat: add PWA manifest validation and push subscription boundary tests
+- `fab983e` fix: register ADR-055 job listing amendment in contract checker
+
+**Bug fixes:**
+- Notification producer tests: switched from count-based to ID-based comparison to handle paginated results (100-item limit)
+- Contract attribution test: stripped ADR-055 job listing path before frozen-contract comparison
+- Contract checker: registered ADR-055 amendment with correct key ordering; regenerated API types
+
+**New tests:** 27 tests across 5 new suites:
+- `scoring-compute.test.ts` (9 unit tests): empty events, known/unknown weights, aggregation, cap, sort, all 13 event types
+- `routing-rules-api.test.ts` (4 integration tests): owner list, agent denial, unauth rejection, concurrency control
+- `scoring-edge-api.test.ts` (5 integration tests): initial score, cross-type events, unknown events, independent leads, cap overflow
+- `pwa-manifest.test.ts` (8 unit tests): name, display, start URL, scope, icons, maskable, colors, app ID
+- `push-subscription-boundary-api.test.ts` (4 integration tests): agent self-subscribe, cross-member denial, unauth, CSRF
+
+**Disposable DB verified:** First local execution of `tests/control/run.mjs` — 66/66 tests across 4 suites pass.
+
+**Build & runtime:** Application build passes, runtime verification passes (146 files, 18 JSON resources).
+
+**Contract check:** 174 operations, 174 schemas, ADR-022/043/049/055 amendments verified.
+
+**Test totals:** 339 shared-DB integration (47 suites), 66 disposable-DB (4 suites), 3287 unit (96 suites).
+
+---
 
 ## Enrollment and organization integration tests — 2026-10-13
 

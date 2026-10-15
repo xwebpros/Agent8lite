@@ -1,7 +1,7 @@
 # R00 — Requirement-to-Evidence Ledger
 
 **Generated:** 2026-10-13 at commit `4be79c5` on `feat/W01-foundation`.
-**Updated:** 2026-10-13 at commit `2697b5b` — 318 integration tests across 43 suites.
+**Updated:** 2026-10-16 at commit `fab983e` — 339 integration tests across 47 suites (shared DB), 66 disposable-DB tests across 4 suites, 3287 unit tests across 96 suites. Contract check, build and runtime verification pass.
 **Status:** Reconcile each row to current evidence and update when work is split.
 
 ## Legend
@@ -184,24 +184,24 @@
 
 | Milestone | Status | Blockers |
 |-----------|--------|----------|
-| M1 | Partial | Contracts validate ✓. Empty DB migrates ✓ (66 control tests). Tenant/identity role tests pass ✓. Fixtures work ✓. No-delivery transport ✓. CI isolation needs green remote run. |
-| M2 | Partial | Invite/switch/last-owner ✓. Capture→assignment needs disposable DB verification. Import/export ✓. Billing reconciliation ✓. Cross-tenant denial ✓. Scope/revocation tested. Data retention enforcement ✓. Integration job listing ✓. Full coverage requires disposable DB suites. |
+| M1 | Partial | Contracts validate ✓ (174 ops, ADR-022/043/049/055). Empty DB migrates ✓ (66 control tests). Tenant/identity role tests pass ✓. Fixtures work ✓. No-delivery transport ✓. Build ✓. Runtime verify ✓. CI isolation needs green remote run. |
+| M2 | Partial | Invite/switch/last-owner ✓. Capture→assignment ✓ (disposable DB verified locally, 66/66). Import/export ✓. Billing reconciliation ✓. Cross-tenant denial ✓. Scope/revocation tested. Data retention enforcement ✓. Integration job listing ✓. Scoring unit + edge tests ✓. Routing rules API ✓. Push subscription boundaries ✓. |
 | M3 | Partial | CMS adapter routes wired. Blocks W05 CMS owner for rendering/domains/media. |
 | M4 | Substantial | All MOD-E acceptance criteria implemented: campaign drafts, message designs, workflow versions, automation CRUD/UI, broadcast dispatch with consent, action worker, idempotency. Live send gated on provider. |
 | M5–M6 | Blocked | MLS mock adapter exists. No CoreLogic/Trestle access. |
 | M7 | Blocked | AI and reporting blocked on provider agreements. |
-| M8 | Not started | Physical device testing, production deployment gates. |
+| M8 | Not started | Build passes ✓. Runtime verifies ✓. Physical device testing, production deployment gates pending. |
 
 ---
 
-## Test Evidence Summary (2026-10-13)
+## Test Evidence Summary (2026-10-16)
 
 | Category | Count | Suites |
 |----------|-------|--------|
-| Control (disposable DB) | 66 | 4 |
-| Integration (shared DB) | 318 | 43 |
-| Integration (disposable DB) | ~250+ | 27 (requires `run.mjs` harness) |
-| Unit | 2,534 | 79 |
-| Package | 737 | 15 |
-| Contract validation | 173 ops / 174 schemas | PASS |
-| TypeScript | PASS | all targets |
+| Control (disposable DB) | 66 | 4 (verified locally, all pass) |
+| Integration (shared DB) | 339 | 47 |
+| Integration (disposable DB env) | 23 suites | require `TEST_DATABASE_URL` (expected failure in shared-DB mode) |
+| Unit + Package | 3,287 | 96 |
+| Contract validation | 174 ops / 174 schemas | PASS (ADR-022/043/049/055) |
+| Build | PASS | application-built |
+| Runtime verification | PASS | 146 files, 18 JSON resources |
